@@ -17,6 +17,11 @@ struct TrackdApp: App {
                 .environmentObject(services)
                 .preferredColorScheme(appearance.colorScheme)
                 .tint(Theme.Colors.accent)
+                .task {
+                    // Make AppServices reachable from AppIntents (which run
+                    // outside the SwiftUI environment).
+                    IntentBridge.services = services
+                }
         }
     }
 }

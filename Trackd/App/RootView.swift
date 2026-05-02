@@ -30,6 +30,15 @@ struct RootView: View {
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
             if let url = activity.webpageURL { handle(url: url) }
         }
+        .onContinueUserActivity("com.apple.corespotlightitem") { activity in
+            // Tapping a Trackd record in Spotlight delivers the recordID
+            // here; reuse the openRecord pipeline so the same sheet shows.
+            if let recordID = activity.userInfo?["kCSSearchableItemActivityIdentifier"] as? String {
+                NotificationCenter.default.post(
+                    name: .openRecord, object: nil, userInfo: ["record_id": recordID]
+                )
+            }
+        }
         .sheet(item: Binding(
             get: { publicListToken.map(PublicListPresentation.init) },
             set: { publicListToken = $0?.token }

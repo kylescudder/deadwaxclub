@@ -31,6 +31,7 @@ final class RecordsRepository: ObservableObject {
                     await MainActor.run {
                         self.records = mapped
                         self.isLoading = false
+                        SpotlightIndex.index(records: mapped)
                     }
                 }
             } catch {
@@ -129,6 +130,7 @@ final class RecordsRepository: ObservableObject {
                 sql: "update records set deleted_at = ?, updated_at = ? where id = ?",
                 parameters: [now, now, recordID]
             )
+            SpotlightIndex.remove(recordIDs: [recordID])
         } catch {
             Log.error(error, category: "records.softDelete")
         }
