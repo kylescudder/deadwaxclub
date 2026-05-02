@@ -14,6 +14,10 @@ final class AppServices: ObservableObject {
     let lists: ListsRepository
     let onboarding: OnboardingCoordinator
 
+    /// Set when iOS hands us a notification with a `record_id`; RootView
+    /// observes and presents the record detail in a sheet.
+    @Published var pendingDeepLinkRecord: VinylRecord?
+
     private var cancellables = Set<AnyCancellable>()
 
     init() {
@@ -41,6 +45,13 @@ final class AppServices: ObservableObject {
         PushManager.shared.bind(auth: auth)
         Task { await sync.startObservingAuth() }
 
+        NotificationCenter.default.publisher(for: .openRecord)
+            .compactMap { $0.userInfo?["record_id"] as? String }
+            .sink { [weak self] recordID in
+                Task { [weak self] in await self?.openRecordByID(recordID) }
+            }
+            .store(in: &cancellables)
+
         // When the user signs in, start watching their profile and trigger
         // onboarding evaluation. When they sign out, stop watching.
         auth.$state
@@ -61,6 +72,22 @@ final class AppServices: ObservableObject {
         profile.startWatching(userID: id)
         lists.startWatching(userID: id)
         evaluateOnboarding()
+        Task { await PushManager.shared.registerIfAuthorized() }
+    }
+
+    private func openRecordByID(_ recordID: String) async {
+        // Find from local SQLite — works offline because PowerSync syncs.
+        do {
+            let rows = try await sync.database.getAll(
+                sql: "select * from records where id = ? limit 1",
+                parameters: [recordID]
+            )
+            if let row = rows.first as? [String: Any], let r = VinylRecord.from(row: row) {
+                await MainActor.run { self.pendingDeepLinkRecord = r }
+            }
+        } catch {
+            Log.error(error, category: "deeplink")
+        }
     }
 
     func evaluateOnboarding() {

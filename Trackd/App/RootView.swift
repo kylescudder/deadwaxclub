@@ -36,6 +36,12 @@ struct RootView: View {
         )) { presentation in
             NavigationStack { PublicListView(token: presentation.token) }
         }
+        .sheet(item: Binding(
+            get: { services.pendingDeepLinkRecord },
+            set: { services.pendingDeepLinkRecord = $0 }
+        )) { record in
+            NavigationStack { RecordDetailView(record: record) }
+        }
         .animation(.easeInOut(duration: 0.2), value: services.auth.state)
     }
 

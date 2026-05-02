@@ -42,6 +42,17 @@ final class PushManager: NSObject, ObservableObject {
         }
     }
 
+    /// Idempotent: if the user has already granted permission, ensures the
+    /// device is registered with APNs so the latest token is uploaded.
+    /// Call on sign-in and on app foreground.
+    func registerIfAuthorized() async {
+        await refreshAuthorizationStatus()
+        guard authorizationStatus == .authorized
+            || authorizationStatus == .provisional
+            || authorizationStatus == .ephemeral else { return }
+        await UIApplication.shared.registerForRemoteNotifications()
+    }
+
     /// Called from the AppDelegate after iOS hands us a device token.
     func didRegister(deviceToken data: Data) async {
         let token = data.map { String(format: "%02x", $0) }.joined()
