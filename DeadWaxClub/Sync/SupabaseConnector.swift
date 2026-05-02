@@ -19,7 +19,7 @@ final class SupabaseConnector: PowerSyncBackendConnector {
         return PowerSyncCredentials(
             endpoint: AppSecrets.powerSyncURL.absoluteString,
             token: token,
-            userID: userID
+            userId: userID
         )
     }
 
