@@ -15,16 +15,17 @@ struct PriceChartView: View {
             }
         } else {
             Chart(entries) { entry in
+                let price = (entry.priceMajor as NSDecimalNumber).doubleValue
                 LineMark(
                     x: .value("Date", entry.scannedAt),
-                    y: .value("Price", entry.priceMajor as NSDecimalNumber)
+                    y: .value("Price", price)
                 )
                 .interpolationMethod(.monotone)
                 .foregroundStyle(Theme.Colors.accent)
 
                 PointMark(
                     x: .value("Date", entry.scannedAt),
-                    y: .value("Price", entry.priceMajor as NSDecimalNumber)
+                    y: .value("Price", price)
                 )
                 .foregroundStyle(Theme.Colors.accent)
             }

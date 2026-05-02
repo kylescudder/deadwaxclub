@@ -1,4 +1,5 @@
 import Foundation
+import PowerSync
 
 enum RecordStatus: String, CaseIterable, Codable, Identifiable {
     case owned, wishlist
@@ -34,40 +35,38 @@ struct VinylRecord: Identifiable, Hashable {
 }
 
 extension VinylRecord {
-    static func from(row: [String: Any]) -> VinylRecord? {
-        guard let id = row["id"] as? String,
-              let ownerID = row["owner_id"] as? String,
-              let statusRaw = row["status"] as? String,
-              let status = RecordStatus(rawValue: statusRaw),
-              let title = row["title"] as? String,
-              let artist = row["artist"] as? String else {
+    static func from(cursor: SqlCursor) -> VinylRecord? {
+        do {
+            let statusRaw = try cursor.getString(name: "status")
+            guard let status = RecordStatus(rawValue: statusRaw) else { return nil }
+            return VinylRecord(
+                id: try cursor.getString(name: "id"),
+                ownerID: try cursor.getString(name: "owner_id"),
+                status: status,
+                title: try cursor.getString(name: "title"),
+                artist: try cursor.getString(name: "artist"),
+                year: try cursor.getIntOptional(name: "year"),
+                colourway: try cursor.getStringOptional(name: "colourway"),
+                coverArtSourceURL: try cursor.getStringOptional(name: "cover_art_source_url"),
+                coverArtStoragePath: try cursor.getStringOptional(name: "cover_art_storage_path"),
+                discogsReleaseID: try cursor.getInt64Optional(name: "discogs_release_id"),
+                barcode: try cursor.getStringOptional(name: "barcode"),
+                notes: try cursor.getStringOptional(name: "notes"),
+                estimatedPriceCents: try cursor.getIntOptional(name: "estimated_price_cents"),
+                estimatedPriceCurrency: try cursor.getStringOptional(name: "estimated_price_currency"),
+                estimatedPriceUpdatedAt: parseDate(try cursor.getStringOptional(name: "estimated_price_updated_at")),
+                createdAt: parseDate(try cursor.getStringOptional(name: "created_at")) ?? Date(),
+                updatedAt: parseDate(try cursor.getStringOptional(name: "updated_at")) ?? Date(),
+                deletedAt: parseDate(try cursor.getStringOptional(name: "deleted_at"))
+            )
+        } catch {
             return nil
         }
-        return VinylRecord(
-            id: id,
-            ownerID: ownerID,
-            status: status,
-            title: title,
-            artist: artist,
-            year: row["year"] as? Int,
-            colourway: row["colourway"] as? String,
-            coverArtSourceURL: row["cover_art_source_url"] as? String,
-            coverArtStoragePath: row["cover_art_storage_path"] as? String,
-            discogsReleaseID: row["discogs_release_id"] as? Int64,
-            barcode: row["barcode"] as? String,
-            notes: row["notes"] as? String,
-            estimatedPriceCents: row["estimated_price_cents"] as? Int,
-            estimatedPriceCurrency: row["estimated_price_currency"] as? String,
-            estimatedPriceUpdatedAt: parseDate(row["estimated_price_updated_at"]),
-            createdAt: parseDate(row["created_at"]) ?? Date(),
-            updatedAt: parseDate(row["updated_at"]) ?? Date(),
-            deletedAt: parseDate(row["deleted_at"])
-        )
     }
 }
 
-func parseDate(_ value: Any?) -> Date? {
-    guard let s = value as? String, !s.isEmpty else { return nil }
+func parseDate(_ value: String?) -> Date? {
+    guard let s = value, !s.isEmpty else { return nil }
     return ISO8601DateFormatter.iso.date(from: s)
         ?? ISO8601DateFormatter.isoFractional.date(from: s)
 }

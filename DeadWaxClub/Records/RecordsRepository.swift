@@ -26,8 +26,13 @@ final class RecordsRepository: ObservableObject {
                 order by updated_at desc
             """
             do {
-                for try await rows in database.watch(sql: sql, parameters: [ownerID, status.rawValue]) {
-                    let mapped = rows.compactMap { VinylRecord.from(row: $0 as? [String: Any] ?? [:]) }
+                let stream = try database.watch(
+                    sql: sql,
+                    parameters: [ownerID, status.rawValue],
+                    mapper: { VinylRecord.from(cursor: $0) }
+                )
+                for try await rows in stream {
+                    let mapped = rows.compactMap { $0 }
                     await MainActor.run {
                         self.records = mapped
                         self.isLoading = false
@@ -74,16 +79,16 @@ final class RecordsRepository: ObservableObject {
                     record.status.rawValue,
                     record.title,
                     record.artist,
-                    record.year as Any,
-                    record.colourway as Any,
-                    record.coverArtSourceURL as Any,
-                    record.coverArtStoragePath as Any,
-                    record.discogsReleaseID as Any,
-                    record.barcode as Any,
-                    record.notes as Any,
-                    record.estimatedPriceCents as Any,
-                    record.estimatedPriceCurrency as Any,
-                    record.estimatedPriceUpdatedAt.map(ISO8601DateFormatter.iso.string(from:)) as Any,
+                    record.year,
+                    record.colourway,
+                    record.coverArtSourceURL,
+                    record.coverArtStoragePath,
+                    record.discogsReleaseID,
+                    record.barcode,
+                    record.notes,
+                    record.estimatedPriceCents,
+                    record.estimatedPriceCurrency,
+                    record.estimatedPriceUpdatedAt.map(ISO8601DateFormatter.iso.string(from:)),
                     ISO8601DateFormatter.iso.string(from: record.createdAt),
                     ISO8601DateFormatter.iso.string(from: Date()),
                 ]
@@ -144,10 +149,10 @@ final class RecordsRepository: ObservableObject {
                 where owner_id = ? and barcode = ? and deleted_at is null
                 limit 1
                 """,
-                parameters: [ownerID, barcode]
+                parameters: [ownerID, barcode],
+                mapper: { VinylRecord.from(cursor: $0) }
             )
-            guard let row = rows.first as? [String: Any] else { return nil }
-            return VinylRecord.from(row: row)
+            return rows.compactMap { $0 }.first
         } catch {
             Log.error(error, category: "records.findByBarcode")
             return nil

@@ -36,8 +36,13 @@ final class ListContentsRepository: ObservableObject {
             order by li.position asc, li.created_at asc
             """
             do {
-                for try await rows in database.watch(sql: sql, parameters: [listID]) {
-                    let mapped = rows.compactMap { VinylRecord.from(row: $0 as? [String: Any] ?? [:]) }
+                let stream = try database.watch(
+                    sql: sql,
+                    parameters: [listID],
+                    mapper: { VinylRecord.from(cursor: $0) }
+                )
+                for try await rows in stream {
+                    let mapped = rows.compactMap { $0 }
                     await MainActor.run { self.records = mapped }
                 }
             } catch {
@@ -50,20 +55,26 @@ final class ListContentsRepository: ObservableObject {
             guard let self else { return }
             let sql = "select * from list_members where list_id = ?"
             do {
-                for try await rows in database.watch(sql: sql, parameters: [listID]) {
-                    let mapped: [VinylListMember] = rows.compactMap { raw in
-                        guard let r = raw as? [String: Any],
-                              let listID = r["list_id"] as? String,
-                              let userID = r["user_id"] as? String,
-                              let roleRaw = r["role"] as? String,
-                              let role = ListMemberRole(rawValue: roleRaw) else { return nil }
-                        return VinylListMember(
-                            listID: listID,
-                            userID: userID,
-                            role: role,
-                            joinedAt: parseDate(r["joined_at"]) ?? Date()
-                        )
+                let stream = try database.watch(
+                    sql: sql,
+                    parameters: [listID],
+                    mapper: { (cursor: SqlCursor) -> VinylListMember? in
+                        do {
+                            let roleRaw = try cursor.getString(name: "role")
+                            guard let role = ListMemberRole(rawValue: roleRaw) else { return nil }
+                            return VinylListMember(
+                                listID: try cursor.getString(name: "list_id"),
+                                userID: try cursor.getString(name: "user_id"),
+                                role: role,
+                                joinedAt: parseDate(try cursor.getStringOptional(name: "joined_at")) ?? Date()
+                            )
+                        } catch {
+                            return nil
+                        }
                     }
+                )
+                for try await rows in stream {
+                    let mapped = rows.compactMap { $0 }
                     await MainActor.run { self.members = mapped }
                 }
             } catch {
@@ -80,8 +91,13 @@ final class ListContentsRepository: ObservableObject {
             order by created_at desc
             """
             do {
-                for try await rows in database.watch(sql: sql, parameters: [listID]) {
-                    let mapped = rows.compactMap { PendingInvite.from(row: $0 as? [String: Any] ?? [:]) }
+                let stream = try database.watch(
+                    sql: sql,
+                    parameters: [listID],
+                    mapper: { PendingInvite.from(cursor: $0) }
+                )
+                for try await rows in stream {
+                    let mapped = rows.compactMap { $0 }
                     await MainActor.run { self.pendingInvites = mapped }
                 }
             } catch {

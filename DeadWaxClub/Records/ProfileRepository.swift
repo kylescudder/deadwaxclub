@@ -21,11 +21,13 @@ final class ProfileRepository: ObservableObject {
         watchTask = Task { [weak self, database] in
             guard let self else { return }
             do {
-                for try await rows in database.watch(
+                let stream = try database.watch(
                     sql: "select * from profiles where id = ? limit 1",
-                    parameters: [userID]
-                ) {
-                    let next = (rows.first as? [String: Any]).flatMap(Profile.from(row:))
+                    parameters: [userID],
+                    mapper: { Profile.from(cursor: $0) }
+                )
+                for try await rows in stream {
+                    let next = rows.first.flatMap { $0 }
                     await MainActor.run { self.profile = next }
                 }
             } catch {
