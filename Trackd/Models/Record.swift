@@ -25,6 +25,9 @@ struct VinylRecord: Identifiable, Hashable {
     var discogsReleaseID: Int64?
     var barcode: String?
     var notes: String?
+    var estimatedPriceCents: Int?
+    var estimatedPriceCurrency: String?
+    var estimatedPriceUpdatedAt: Date?
     var createdAt: Date
     var updatedAt: Date
     var deletedAt: Date?
@@ -46,13 +49,16 @@ extension VinylRecord {
             status: status,
             title: title,
             artist: artist,
-            year: (row["year"] as? Int).flatMap(Int.init),
+            year: row["year"] as? Int,
             colourway: row["colourway"] as? String,
             coverArtSourceURL: row["cover_art_source_url"] as? String,
             coverArtStoragePath: row["cover_art_storage_path"] as? String,
             discogsReleaseID: row["discogs_release_id"] as? Int64,
             barcode: row["barcode"] as? String,
             notes: row["notes"] as? String,
+            estimatedPriceCents: row["estimated_price_cents"] as? Int,
+            estimatedPriceCurrency: row["estimated_price_currency"] as? String,
+            estimatedPriceUpdatedAt: parseDate(row["estimated_price_updated_at"]),
             createdAt: parseDate(row["created_at"]) ?? Date(),
             updatedAt: parseDate(row["updated_at"]) ?? Date(),
             deletedAt: parseDate(row["deleted_at"])

@@ -1,6 +1,5 @@
 # PowerSync sync rules for Trackd.
 # Apply via the PowerSync dashboard or `powersync sync-rules apply`.
-# Each user only sees their own rows; soft-deletes propagate.
 
 bucket_definitions:
   user_profile:
@@ -17,3 +16,29 @@ bucket_definitions:
     parameters: select request.user_id() as user_id
     data:
       - select * from price_entries where owner_id = bucket.user_id
+
+  # Lists owned by the user.
+  user_lists:
+    parameters: select request.user_id() as user_id
+    data:
+      - select * from lists where owner_id = bucket.user_id
+      - select * from list_items where list_id in (select id from lists where owner_id = bucket.user_id)
+      - select * from list_members where list_id in (select id from lists where owner_id = bucket.user_id)
+
+  # Lists the user is a member of (not the owner). Records on those lists
+  # are pulled too, so collaborators can render them offline.
+  member_lists:
+    parameters: |
+      select request.user_id() as user_id, list_id from list_members where user_id = request.user_id()
+    data:
+      - select * from lists where id = bucket.list_id
+      - select * from list_items where list_id = bucket.list_id
+      - select * from list_members where list_id = bucket.list_id
+      # Also pull the actual record rows referenced by the list.
+      - select r.* from records r join list_items li on li.record_id = r.id where li.list_id = bucket.list_id
+      - select pe.* from price_entries pe join list_items li on li.record_id = pe.record_id where li.list_id = bucket.list_id
+
+  user_devices:
+    parameters: select request.user_id() as user_id
+    data:
+      - select * from device_tokens where user_id = bucket.user_id
