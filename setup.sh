@@ -150,11 +150,11 @@ if is_mac; then
             xcodebuild build \
                 -project DeadWaxClub.xcodeproj \
                 -scheme DeadWaxClub \
-                -destination 'platform=iOS Simulator,name=iPhone 15' \
+                -destination 'generic/platform=iOS Simulator' \
                 -quiet
             ok "Simulator build succeeded"
         else
-            note "Skipped. Run later with: xcodebuild build -project DeadWaxClub.xcodeproj -scheme DeadWaxClub -destination 'platform=iOS Simulator,name=iPhone 15'"
+            note "Skipped. Run later with: xcodebuild build -project DeadWaxClub.xcodeproj -scheme DeadWaxClub -destination 'generic/platform=iOS Simulator'"
         fi
     fi
 fi

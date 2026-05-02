@@ -147,7 +147,7 @@ In Xcode:
 xcodebuild build \
   -project DeadWaxClub.xcodeproj \
   -scheme DeadWaxClub \
-  -destination 'platform=iOS Simulator,name=iPhone 15'
+  -destination 'generic/platform=iOS Simulator'
 ```
 
 Or hit ⌘R in Xcode. Barcode scanning needs a real device.
