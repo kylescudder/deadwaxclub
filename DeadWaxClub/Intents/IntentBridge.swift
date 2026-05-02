@@ -2,10 +2,10 @@ import Foundation
 
 /// Static bridge from AppIntents (which run in their own extension-like
 /// context with no `@EnvironmentObject`) into the live AppServices instance.
-/// `TrackdApp` registers itself on launch so intents can read/write through
+/// `DeadWaxClubApp` registers itself on launch so intents can read/write through
 /// the same PowerSync database the UI uses.
 enum IntentBridge {
-    /// Set by `TrackdApp` shortly after launch.
+    /// Set by `DeadWaxClubApp` shortly after launch.
     @MainActor static weak var services: AppServices?
 
     @MainActor
@@ -55,8 +55,8 @@ enum IntentBridge {
     @MainActor
     static func logPrice(recordID: String, priceMajor: Double, currency: String, shop: String?) async throws {
         guard let services, let ownerID = services.auth.currentUserID?.uuidString else {
-            throw NSError(domain: "trackd.intents", code: 401, userInfo: [
-                NSLocalizedDescriptionKey: "Sign in to Trackd to log prices."
+            throw NSError(domain: "deadwaxclub.intents", code: 401, userInfo: [
+                NSLocalizedDescriptionKey: "Sign in to Dead Wax Club to log prices."
             ])
         }
         let entry = PriceEntry(

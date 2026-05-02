@@ -26,5 +26,5 @@ enum AppSecrets {
         Bundle.main.object(forInfoDictionaryKey: "SENTRY_DSN") as? String ?? ""
     }()
 
-    static let authRedirectURL: URL = URL(string: "trackd://auth-callback")!
+    static let authRedirectURL: URL = URL(string: "deadwaxclub://auth-callback")!
 }

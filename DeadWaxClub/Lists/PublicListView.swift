@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Renders a list shared via `link_public` mode using the unauthenticated
 /// `get_shared_list` and `get_shared_list_records` RPCs. Works without a
-/// Trackd account; that's the whole point of "public link" mode.
+/// DeadWaxClub account; that's the whole point of "public link" mode.
 struct PublicListView: View {
     let token: String
 

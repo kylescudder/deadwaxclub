@@ -2,7 +2,7 @@
 // `get_shared_list_records` Postgres RPCs from Supabase using the project's
 // anon key (which is safe to ship in the browser — RLS still applies).
 
-const config = window.TRACKD_CONFIG ?? {};
+const config = window.DEADWAXCLUB_CONFIG ?? {};
 const main = document.getElementById("main");
 
 const token = location.pathname.split("/").filter(Boolean).pop();
@@ -95,7 +95,7 @@ function renderList(info, records) {
             ${owner ? `<p class="muted">${owner}</p>` : ""}
             ${description}
             <div class="button-row" style="justify-content:flex-start;margin-top:16px;">
-                <a class="button button-primary" href="trackd://list/${encodeURIComponent(token)}">Open in Trackd</a>
+                <a class="button button-primary" href="deadwaxclub://list/${encodeURIComponent(token)}">Open in Dead Wax Club</a>
                 <a class="button button-secondary" href="/">Get the app</a>
             </div>
         </div>
@@ -127,7 +127,7 @@ async function load() {
             renderError("This list isn't available — the owner may have made it private or deleted it.");
             return;
         }
-        document.title = `${info.name} · Trackd`;
+        document.title = `${info.name} · Dead Wax Club`;
         renderList(info, Array.isArray(records) ? records : []);
     } catch (err) {
         renderError(err.message ?? String(err));

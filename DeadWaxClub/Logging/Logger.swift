@@ -4,7 +4,7 @@ import Sentry
 
 /// Thin wrapper that fans out to OSLog (visible in Console.app / Xcode) and Sentry.
 enum Log {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.trackd.app"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.deadwaxclub.app"
 
     static func logger(_ category: String) -> Logger {
         Logger(subsystem: subsystem, category: category)

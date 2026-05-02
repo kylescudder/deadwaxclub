@@ -69,7 +69,7 @@ final class PushManager: NSObject, ObservableObject {
             "user_id": userID,
             "apns_token": apnsToken,
             "device_name": UIDevice.current.name,
-            "bundle_id": Bundle.main.bundleIdentifier ?? "com.trackd.app",
+            "bundle_id": Bundle.main.bundleIdentifier ?? "com.deadwaxclub.app",
             "environment": Self.apnsEnvironment,
         ]
         do {
@@ -119,5 +119,5 @@ extension PushManager: UNUserNotificationCenterDelegate {
 }
 
 extension Notification.Name {
-    static let openRecord = Notification.Name("trackd.openRecord")
+    static let openRecord = Notification.Name("deadwaxclub.openRecord")
 }

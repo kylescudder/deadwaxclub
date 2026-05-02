@@ -7,7 +7,7 @@ DerivedData/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 
 # XcodeGen generates this from project.yml
-Trackd.xcodeproj/
+DeadWaxClub.xcodeproj/
 
 # Swift Package Manager
 .swiftpm/
@@ -26,7 +26,7 @@ fastlane/test_output
 # Secrets / local config
 .env
 .env.local
-Trackd/Generated/Secrets.swift
+DeadWaxClub/Generated/Secrets.swift
 Config/Secrets.xcconfig
 
 # macOS

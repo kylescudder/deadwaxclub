@@ -161,7 +161,7 @@ final class AuthClient: ObservableObject {
                 redirectTo: AppSecrets.authRedirectURL,
                 scopes: "openid email profile"
             )
-            let callback = try await GoogleSignIn.start(authURL: url, callbackScheme: "trackd")
+            let callback = try await GoogleSignIn.start(authURL: url, callbackScheme: "deadwaxclub")
             try await supabase.auth.session(from: callback)
         } catch {
             lastError = error.localizedDescription
@@ -169,7 +169,7 @@ final class AuthClient: ObservableObject {
         }
     }
 
-    /// Handle a callback URL when iOS reopens the app on the trackd:// scheme
+    /// Handle a callback URL when iOS reopens the app on the deadwaxclub:// scheme
     /// (e.g. for magic links or OAuth completion routed back to the app).
     func handle(callbackURL url: URL) async {
         do {

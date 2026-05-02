@@ -31,7 +31,7 @@ struct RootView: View {
             if let url = activity.webpageURL { handle(url: url) }
         }
         .onContinueUserActivity("com.apple.corespotlightitem") { activity in
-            // Tapping a Trackd record in Spotlight delivers the recordID
+            // Tapping a DeadWaxClub record in Spotlight delivers the recordID
             // here; reuse the openRecord pipeline so the same sheet shows.
             if let recordID = activity.userInfo?["kCSSearchableItemActivityIdentifier"] as? String {
                 NotificationCenter.default.post(
@@ -55,12 +55,12 @@ struct RootView: View {
     }
 
     private func handle(url: URL) {
-        // Public list share link: https://trackd.app/l/<token> or trackd://list/<token>
-        if url.host == "trackd.app", url.pathComponents.count >= 3, url.pathComponents[1] == "l" {
+        // Public list share link: https://deadwaxclub.app/l/<token> or deadwaxclub://list/<token>
+        if url.host == "deadwaxclub.app", url.pathComponents.count >= 3, url.pathComponents[1] == "l" {
             publicListToken = url.pathComponents[2]
             return
         }
-        if url.scheme == "trackd", url.host == "list", let token = url.pathComponents.last, !token.isEmpty {
+        if url.scheme == "deadwaxclub", url.host == "list", let token = url.pathComponents.last, !token.isEmpty {
             publicListToken = token
             return
         }

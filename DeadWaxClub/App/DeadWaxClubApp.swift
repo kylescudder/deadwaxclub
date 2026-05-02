@@ -2,7 +2,7 @@ import SwiftUI
 import Sentry
 
 @main
-struct TrackdApp: App {
+struct DeadWaxClubApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var services = AppServices()
     @AppStorage("appearance") private var appearance: Appearance = .system

@@ -1,4 +1,4 @@
-# Trackd
+# Dead Wax Club
 
 Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl you want. Offline-first, syncs to Postgres, scans barcodes in shops, plots price changes over time, alerts you when a record on your wishlist drops to a new low, and lets you share lists with friends — privately, by link, or collaboratively.
 
@@ -14,7 +14,7 @@ Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl y
 - **Push notifications** when any wishlist record (yours or one a list-mate added) hits a new all-time low price
 - **Stats** — total spent, collection value, breakdown by decade and colour way, top owned, lowest wishlist
 - Cover art cached on device **and** mirrored to Supabase Storage so cover art works fully offline and other devices fetch from your bucket instead of Discogs
-- **AppIntents + Spotlight** — find records from system search, "Hey Siri, log a price in Trackd"
+- **AppIntents + Spotlight** — find records from system search, "Hey Siri, log a price in Dead Wax Club"
 - **Onboarding sheets** for display name, Discogs token, and notification permission
 - Light / Dark / System appearance toggle
 - Account deletion (App Store 5.1.1(v) compliant)
@@ -72,7 +72,7 @@ In **Authentication → Providers**:
 - Enable **Email**.
 - Enable **Apple** (paste a Services ID + key).
 - Enable **Google** (Google Cloud OAuth client ID + secret).
-- Set redirect URI to `trackd://auth-callback`.
+- Set redirect URI to `deadwaxclub://auth-callback`.
 
 ### 4. Provision PowerSync
 
@@ -90,7 +90,7 @@ For lowest-price alerts:
    - `APNS_TEAM_ID` — your team ID
    - `APNS_KEY_ID` — the key's ID
    - `APNS_PRIVATE_KEY` — full contents of the `.p8` file (newlines preserved)
-   - `APNS_BUNDLE_ID` — `com.trackd.app` (or your own)
+   - `APNS_BUNDLE_ID` — `com.deadwaxclub.app` (or your own)
 3. Deploy the Edge Function:
    ```sh
    supabase functions deploy notify-price-change
@@ -101,7 +101,7 @@ The function only sends when `is_new_low` is true (set by a `BEFORE INSERT` trig
 
 ### 6. Public list web viewer (optional)
 
-A small static site under `web/` renders public-link lists in any browser and serves the Universal Links manifest. Drop it onto Netlify (or any static host) at `trackd.app`:
+A small static site under `web/` renders public-link lists in any browser and serves the Universal Links manifest. Drop it onto Netlify (or any static host) at `deadwaxclub.app`:
 
 ```sh
 cp web/js/config.example.js web/js/config.js
@@ -109,7 +109,7 @@ cp web/js/config.example.js web/js/config.js
 npx netlify deploy --dir=web --prod
 ```
 
-Edit `web/.well-known/apple-app-site-association` and replace `TEAMID.com.trackd.app` with your real Apple Team ID + bundle. The `applinks:trackd.app` entry is already in `Trackd.entitlements`. After this is live, tapping any `https://trackd.app/l/<token>` link from another iOS app launches Trackd directly; if the app isn't installed, the recipient sees the web list.
+Edit `web/.well-known/apple-app-site-association` and replace `TEAMID.com.deadwaxclub.app` with your real Apple Team ID + bundle. The `applinks:deadwaxclub.app` entry is already in `DeadWaxClub.entitlements`. After this is live, tapping any `https://deadwaxclub.app/l/<token>` link from another iOS app launches Dead Wax Club directly; if the app isn't installed, the recipient sees the web list.
 
 See `web/README.md` for full deployment notes.
 
@@ -121,21 +121,21 @@ In the running app: **Settings → Discogs API**, paste a personal token from <h
 
 ```sh
 xcodegen generate
-open Trackd.xcodeproj
+open DeadWaxClub.xcodeproj
 ```
 
-`Trackd.xcodeproj` is git-ignored — regenerate from `project.yml` whenever dependencies or sources change.
+`DeadWaxClub.xcodeproj` is git-ignored — regenerate from `project.yml` whenever dependencies or sources change.
 
 In Xcode:
 - Set your Development Team under **Signing & Capabilities**.
-- Confirm the **Sign in with Apple**, **Push Notifications**, and **Associated Domains** capabilities are present (XcodeGen wires them via `Trackd.entitlements`).
+- Confirm the **Sign in with Apple**, **Push Notifications**, and **Associated Domains** capabilities are present (XcodeGen wires them via `DeadWaxClub.entitlements`).
 
 ### 9. Build
 
 ```sh
 xcodebuild build \
-  -project Trackd.xcodeproj \
-  -scheme Trackd \
+  -project DeadWaxClub.xcodeproj \
+  -scheme DeadWaxClub \
   -destination 'platform=iOS Simulator,name=iPhone 15'
 ```
 
@@ -144,7 +144,7 @@ Or hit ⌘R in Xcode. Barcode scanning needs a real device.
 ## Repo layout
 
 ```
-Trackd/
+DeadWaxClub/
   App/             entry point, services container, secrets, AppDelegate
   Auth/            AuthClient, sign-in views, Apple + Google flows
   Sync/            PowerSync schema, manager, status indicator
@@ -182,10 +182,10 @@ web/                static landing + public list viewer (Netlify-ready)
 
 ## Status
 
-This is a comprehensive scaffold. The architecture is in place across all features, but the project has not yet been built against a real Mac/Xcode toolchain — expect a small round of compile-time fixes when you run `xcodegen generate && open Trackd.xcodeproj` and hit ⌘B for the first time. Areas where SDK API names move between minor versions and may need a tweak:
+This is a comprehensive scaffold. The architecture is in place across all features, but the project has not yet been built against a real Mac/Xcode toolchain — expect a small round of compile-time fixes when you run `xcodegen generate && open DeadWaxClub.xcodeproj` and hit ⌘B for the first time. Areas where SDK API names move between minor versions and may need a tweak:
 
-- **PowerSync Swift SDK** — `Trackd/Sync/*` and the repos use names matching the documented 1.x API.
-- **`supabase-swift` 2.x** — OAuth helpers and `signInWithIdToken` occasionally rename. `Trackd/Auth/AuthClient.swift` is the focal point.
+- **PowerSync Swift SDK** — `DeadWaxClub/Sync/*` and the repos use names matching the documented 1.x API.
+- **`supabase-swift` 2.x** — OAuth helpers and `signInWithIdToken` occasionally rename. `DeadWaxClub/Auth/AuthClient.swift` is the focal point.
 - **AppIntents** — the `DisplayRepresentation.Image(url:)` initializer and the parameter syntax have evolved across iOS 17.x; small adjustments may be needed.
 
 ## Development notes
@@ -193,5 +193,5 @@ This is a comprehensive scaffold. The architecture is in place across all featur
 - `AppServices` constructs and owns long-lived objects. Views read them via `@EnvironmentObject`.
 - All deletions are soft (`deleted_at`) so PowerSync propagates tombstones reliably.
 - Cover art lookup order on display: local Caches file → Supabase Storage public URL → Discogs URL → SF Symbol placeholder. First display of any record both writes the bytes to disk and uploads to Supabase Storage so subsequent launches and other devices render it without Discogs.
-- Sharing a list with `link_public` mode mints a 12-char token and a public URL. The unauthenticated `get_shared_list` and `get_shared_list_records` RPCs serve the data — no Trackd account required to view.
-- Trackd.xcodeproj is regenerated from `project.yml`. Don't commit it.
+- Sharing a list with `link_public` mode mints a 12-char token and a public URL. The unauthenticated `get_shared_list` and `get_shared_list_records` RPCs serve the data — no Dead Wax Club account required to view.
+- DeadWaxClub.xcodeproj is regenerated from `project.yml`. Don't commit it.

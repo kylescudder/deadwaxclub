@@ -3,7 +3,7 @@ import UIKit
 
 enum GoogleSignIn {
     /// Presents an ASWebAuthenticationSession that opens the Supabase OAuth URL
-    /// and waits for the trackd:// callback. Returns the callback URL so
+    /// and waits for the deadwaxclub:// callback. Returns the callback URL so
     /// supabase-swift can extract the session from it.
     @MainActor
     static func start(authURL: URL, callbackScheme: String) async throws -> URL {

@@ -87,7 +87,7 @@ struct ShareListSheet: View {
                     } header: {
                         Text("Invite by email")
                     } footer: {
-                        Text("They'll need a Trackd account using that email. Collaborative lists are always invited as editors.")
+                        Text("They'll need a Dead Wax Club account using that email. Collaborative lists are always invited as editors.")
                     }
 
                     if let repo = contents.repo {
@@ -148,6 +148,6 @@ struct ShareListSheet: View {
     }
 
     static func shareURL(token: String) -> URL {
-        URL(string: "https://trackd.app/l/\(token)")!
+        URL(string: "https://deadwaxclub.app/l/\(token)")!
     }
 }

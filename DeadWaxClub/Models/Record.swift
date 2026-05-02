@@ -68,17 +68,17 @@ extension VinylRecord {
 
 func parseDate(_ value: Any?) -> Date? {
     guard let s = value as? String, !s.isEmpty else { return nil }
-    return ISO8601DateFormatter.trackd.date(from: s)
-        ?? ISO8601DateFormatter.trackdFractional.date(from: s)
+    return ISO8601DateFormatter.iso.date(from: s)
+        ?? ISO8601DateFormatter.isoFractional.date(from: s)
 }
 
 extension ISO8601DateFormatter {
-    static let trackd: ISO8601DateFormatter = {
+    static let iso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
-    static let trackdFractional: ISO8601DateFormatter = {
+    static let isoFractional: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f

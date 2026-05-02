@@ -31,7 +31,7 @@ final class PowerSyncManager: ObservableObject {
     private static func databasePath() -> String {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("trackd.sqlite").path
+        return dir.appendingPathComponent("deadwaxclub.sqlite").path
     }
 
     func startObservingAuth() async {

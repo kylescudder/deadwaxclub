@@ -90,7 +90,7 @@ final class CoverArtCache: ObservableObject {
 
         do {
             var request = URLRequest(url: url)
-            request.setValue("Trackd/0.1", forHTTPHeaderField: "User-Agent")
+            request.setValue("DeadWaxClub/0.1", forHTTPHeaderField: "User-Agent")
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
                 return nil

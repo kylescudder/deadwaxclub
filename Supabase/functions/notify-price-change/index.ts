@@ -11,7 +11,7 @@
 //   APNS_TEAM_ID                 Apple Developer team ID
 //   APNS_KEY_ID                  Key ID of the APNs auth key
 //   APNS_PRIVATE_KEY             Contents of the AuthKey_XXXX.p8 file
-//   APNS_BUNDLE_ID               e.g. com.trackd.app
+//   APNS_BUNDLE_ID               e.g. com.deadwaxclub.app
 //
 // Configure the webhook in Supabase Studio:
 //   Database -> Webhooks -> Create

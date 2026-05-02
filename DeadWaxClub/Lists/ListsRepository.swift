@@ -80,8 +80,8 @@ final class ListsRepository: ObservableObject {
                     list.id, list.ownerID, list.name, list.description as Any,
                     list.shareMode.rawValue, list.shareToken as Any,
                     list.coverRecordID as Any,
-                    ISO8601DateFormatter.trackd.string(from: list.createdAt),
-                    ISO8601DateFormatter.trackd.string(from: Date()),
+                    ISO8601DateFormatter.iso.string(from: list.createdAt),
+                    ISO8601DateFormatter.iso.string(from: Date()),
                 ]
             )
         } catch {
@@ -97,7 +97,7 @@ final class ListsRepository: ObservableObject {
                 update lists set share_mode = ?, share_token = ?, updated_at = ? where id = ?
                 """,
                 parameters: [mode.rawValue, token as Any,
-                             ISO8601DateFormatter.trackd.string(from: Date()),
+                             ISO8601DateFormatter.iso.string(from: Date()),
                              listID]
             )
         } catch {
@@ -107,7 +107,7 @@ final class ListsRepository: ObservableObject {
 
     func softDelete(listID: String) async {
         do {
-            let now = ISO8601DateFormatter.trackd.string(from: Date())
+            let now = ISO8601DateFormatter.iso.string(from: Date())
             try await database.execute(
                 sql: "update lists set deleted_at = ?, updated_at = ? where id = ?",
                 parameters: [now, now, listID]
@@ -120,7 +120,7 @@ final class ListsRepository: ObservableObject {
     func addRecord(_ recordID: String, to listID: String) async {
         guard let userID = auth.currentUserID?.uuidString else { return }
         let id = UUID().uuidString.lowercased()
-        let now = ISO8601DateFormatter.trackd.string(from: Date())
+        let now = ISO8601DateFormatter.iso.string(from: Date())
         do {
             try await database.execute(
                 sql: """
@@ -156,8 +156,8 @@ final class ListsRepository: ObservableObject {
             .execute()
             .value
         guard let userID = result.first?.user_id else {
-            throw NSError(domain: "trackd.lists", code: 404, userInfo: [
-                NSLocalizedDescriptionKey: "No Trackd user found with that email."
+            throw NSError(domain: "deadwaxclub.lists", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "No Dead Wax Club user found with that email."
             ])
         }
         try await auth.supabase

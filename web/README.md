@@ -1,6 +1,6 @@
-# Trackd web
+# Dead Wax Club web
 
-A small static site that renders public-link share lists (`https://trackd.app/l/<token>`) and serves as a landing page. Pure HTML / CSS / vanilla JS — no build step, no framework.
+A small static site that renders public-link share lists (`https://deadwaxclub.app/l/<token>`) and serves as a landing page. Pure HTML / CSS / vanilla JS — no build step, no framework.
 
 ```
 web/
@@ -34,10 +34,10 @@ npx netlify deploy --dir=web --prod
 
 ## Universal Links
 
-Edit `web/.well-known/apple-app-site-association` and replace `TEAMID.com.trackd.app` with your real Apple Team ID + bundle identifier (e.g. `ABCDE12345.com.trackd.app`). Netlify serves the file with the correct `application/json` content type via `netlify.toml`. Verify with:
+Edit `web/.well-known/apple-app-site-association` and replace `TEAMID.com.deadwaxclub.app` with your real Apple Team ID + bundle identifier (e.g. `ABCDE12345.com.deadwaxclub.app`). Netlify serves the file with the correct `application/json` content type via `netlify.toml`. Verify with:
 
 ```sh
-curl -i https://trackd.app/.well-known/apple-app-site-association
+curl -i https://deadwaxclub.app/.well-known/apple-app-site-association
 ```
 
 ## How it works

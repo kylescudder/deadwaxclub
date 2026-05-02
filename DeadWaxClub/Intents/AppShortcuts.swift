@@ -1,6 +1,6 @@
 import AppIntents
 
-struct TrackdShortcuts: AppShortcutsProvider {
+struct DeadWaxClubShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
             intent: LogPriceIntent(),

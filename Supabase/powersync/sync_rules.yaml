@@ -1,4 +1,4 @@
-# PowerSync sync rules for Trackd.
+# PowerSync sync rules for DeadWaxClub.
 # Apply via the PowerSync dashboard or `powersync sync-rules apply`.
 
 bucket_definitions:

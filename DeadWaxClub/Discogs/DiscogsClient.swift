@@ -107,7 +107,7 @@ final class DiscogsClient: ObservableObject {
     private func get<T: Decodable>(url: URL, token: String) async throws -> T {
         var req = URLRequest(url: url)
         req.setValue("Discogs token=\(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("Trackd/0.1 +https://github.com/kylescudder/trackd", forHTTPHeaderField: "User-Agent")
+        req.setValue("DeadWaxClub/0.1 +https://github.com/kylescudder/deadwaxclub", forHTTPHeaderField: "User-Agent")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await session.data(for: req)

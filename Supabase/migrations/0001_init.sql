@@ -1,4 +1,4 @@
--- Trackd initial schema.
+-- DeadWaxClub initial schema.
 -- Run via: supabase db push  (CLI)  or paste into the SQL editor.
 
 create extension if not exists pgcrypto;

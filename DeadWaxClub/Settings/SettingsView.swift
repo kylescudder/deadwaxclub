@@ -76,7 +76,7 @@ struct SettingsView: View {
 
             Section("About") {
                 LabeledContent("Version", value: appVersion)
-                Link("View Trackd on GitHub", destination: URL(string: "https://github.com/kylescudder/trackd")!)
+                Link("View Dead Wax Club on GitHub", destination: URL(string: "https://github.com/kylescudder/deadwaxclub")!)
             }
         }
         .navigationTitle("Settings")
@@ -85,14 +85,14 @@ struct SettingsView: View {
         } message: {
             Text("Discogs token stored securely in the keychain.")
         }
-        .confirmationDialog("Sign out of Trackd?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
+        .confirmationDialog("Sign out of Dead Wax Club?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) {
                 Task { await services.auth.signOut() }
             }
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(
-            "Delete your Trackd account?",
+            "Delete your Dead Wax Club account?",
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {

@@ -83,9 +83,9 @@ final class RecordsRepository: ObservableObject {
                     record.notes as Any,
                     record.estimatedPriceCents as Any,
                     record.estimatedPriceCurrency as Any,
-                    record.estimatedPriceUpdatedAt.map(ISO8601DateFormatter.trackd.string(from:)) as Any,
-                    ISO8601DateFormatter.trackd.string(from: record.createdAt),
-                    ISO8601DateFormatter.trackd.string(from: Date()),
+                    record.estimatedPriceUpdatedAt.map(ISO8601DateFormatter.iso.string(from:)) as Any,
+                    ISO8601DateFormatter.iso.string(from: record.createdAt),
+                    ISO8601DateFormatter.iso.string(from: Date()),
                 ]
             )
         } catch {
@@ -95,7 +95,7 @@ final class RecordsRepository: ObservableObject {
 
     func updateEstimate(recordID: String, cents: Int, currency: String) async {
         do {
-            let now = ISO8601DateFormatter.trackd.string(from: Date())
+            let now = ISO8601DateFormatter.iso.string(from: Date())
             try await database.execute(
                 sql: """
                 update records set
@@ -116,7 +116,7 @@ final class RecordsRepository: ObservableObject {
         do {
             try await database.execute(
                 sql: "update records set cover_art_storage_path = ?, updated_at = ? where id = ?",
-                parameters: [storagePath, ISO8601DateFormatter.trackd.string(from: Date()), recordID]
+                parameters: [storagePath, ISO8601DateFormatter.iso.string(from: Date()), recordID]
             )
         } catch {
             Log.error(error, category: "records.updateStoragePath")
@@ -125,7 +125,7 @@ final class RecordsRepository: ObservableObject {
 
     func softDelete(recordID: String) async {
         do {
-            let now = ISO8601DateFormatter.trackd.string(from: Date())
+            let now = ISO8601DateFormatter.iso.string(from: Date())
             try await database.execute(
                 sql: "update records set deleted_at = ?, updated_at = ? where id = ?",
                 parameters: [now, now, recordID]

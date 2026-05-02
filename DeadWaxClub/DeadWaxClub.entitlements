@@ -12,7 +12,7 @@
     <true/>
     <key>com.apple.developer.associated-domains</key>
     <array>
-        <string>applinks:trackd.app</string>
+        <string>applinks:deadwaxclub.app</string>
     </array>
 </dict>
 </plist>

@@ -5,7 +5,7 @@ import UIKit
 /// Pushes record metadata into CoreSpotlight so users can find their records
 /// from Spotlight, Lock Screen search, and Siri Knowledge.
 enum SpotlightIndex {
-    static let domain = "com.trackd.records"
+    static let domain = "com.deadwaxclub.records"
 
     static func index(records: [VinylRecord]) {
         let items: [CSSearchableItem] = records.map { record in
