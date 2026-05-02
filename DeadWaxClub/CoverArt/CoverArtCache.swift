@@ -115,7 +115,7 @@ final class CoverArtCache: ObservableObject {
         coversDir.appendingPathComponent("\(recordID).jpg")
     }
 
-    static func publicStorageURL(path: String) -> URL? {
+    nonisolated static func publicStorageURL(path: String) -> URL? {
         // covers is a public bucket; URL form is /storage/v1/object/public/covers/<path>
         var components = URLComponents(url: AppSecrets.supabaseURL, resolvingAgainstBaseURL: false)
         components?.path = "/storage/v1/object/public/covers/\(path)"
