@@ -42,7 +42,7 @@ curl -i https://deadwaxclub.app/.well-known/apple-app-site-association
 
 ## How it works
 
-The list viewer hits two unauthenticated Postgres RPCs that ship in `Supabase/migrations/0004_lists.sql`:
+The list viewer hits two unauthenticated Postgres RPCs that ship in `supabase/migrations/0004_lists.sql`:
 
 - `get_shared_list(token)` — list metadata + owner display name
 - `get_shared_list_records(token)` — record rows in display order
