@@ -41,5 +41,11 @@ Config/Secrets.xcconfig
 # users to copy from .example.js keeps templates clean for forks).
 web/js/config.js
 
+# supabase CLI scratch state (project ref, version pins, branches)
+Supabase/.temp/
+Supabase/.branches/
+supabase/.temp/
+supabase/.branches/
+
 # Local Netlify folder
 .netlify

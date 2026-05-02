@@ -29,8 +29,13 @@ final class ListsRepository: ObservableObject {
             order by l.updated_at desc
             """
             do {
-                for try await rows in database.watch(sql: sql, parameters: [userID, userID]) {
-                    let mapped = rows.compactMap { VinylList.from(row: $0 as? [String: Any] ?? [:]) }
+                let stream = try database.watch(
+                    sql: sql,
+                    parameters: [userID, userID],
+                    mapper: { VinylList.from(cursor: $0) }
+                )
+                for try await rows in stream {
+                    let mapped = rows.compactMap { $0 }
                     await MainActor.run { self.lists = mapped }
                 }
             } catch {
@@ -77,9 +82,9 @@ final class ListsRepository: ObservableObject {
                   updated_at = excluded.updated_at
                 """,
                 parameters: [
-                    list.id, list.ownerID, list.name, list.description as Any,
-                    list.shareMode.rawValue, list.shareToken as Any,
-                    list.coverRecordID as Any,
+                    list.id, list.ownerID, list.name, list.description,
+                    list.shareMode.rawValue, list.shareToken,
+                    list.coverRecordID,
                     ISO8601DateFormatter.iso.string(from: list.createdAt),
                     ISO8601DateFormatter.iso.string(from: Date()),
                 ]
@@ -96,7 +101,7 @@ final class ListsRepository: ObservableObject {
                 sql: """
                 update lists set share_mode = ?, share_token = ?, updated_at = ? where id = ?
                 """,
-                parameters: [mode.rawValue, token as Any,
+                parameters: [mode.rawValue, token,
                              ISO8601DateFormatter.iso.string(from: Date()),
                              listID]
             )

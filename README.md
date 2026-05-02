@@ -68,13 +68,16 @@ Fill in:
 
 In the Supabase SQL editor, run in order:
 
-1. `Supabase/migrations/0001_init.sql` — tables, triggers, RLS.
-2. `Supabase/migrations/0002_storage_covers.sql` — public `covers` bucket.
-3. `Supabase/migrations/0003_estimated_price.sql` — Discogs estimate columns.
-4. `Supabase/migrations/0004_lists.sql` — lists, list_items, list_members + share-link RPCs.
-5. `Supabase/migrations/0005_notifications.sql` — device tokens + new-low trigger.
-6. `Supabase/migrations/0006_account_delete.sql` — `delete_my_account()` RPC.
-7. `Supabase/migrations/0007_user_lookup.sql` — invite-by-email helper.
+1. `supabase/migrations/0001_init.sql` — tables, triggers, RLS.
+2. `supabase/migrations/0002_storage_covers.sql` — public `covers` bucket.
+3. `supabase/migrations/0003_estimated_price.sql` — Discogs estimate columns.
+4. `supabase/migrations/0004_lists.sql` — lists, list_items, list_members + share-link RPCs.
+5. `supabase/migrations/0005_notifications.sql` — device tokens + new-low trigger.
+6. `supabase/migrations/0006_account_delete.sql` — `delete_my_account()` RPC.
+7. `supabase/migrations/0007_user_lookup.sql` — invite-by-email helper.
+8. `supabase/migrations/0008_pending_invites.sql` — pending list invites by email.
+
+Or, with the project linked, just `supabase db push` from the repo root.
 
 In **Authentication → Providers**:
 - Enable **Email**.
@@ -86,7 +89,7 @@ In **Authentication → Providers**:
 
 1. Create an instance at <https://powersync.com>.
 2. Connect it to your Supabase project.
-3. Apply `Supabase/powersync/sync_rules.yaml`.
+3. Apply `supabase/powersync/sync_rules.yaml`.
 4. Copy the instance URL into `POWERSYNC_URL` in `Secrets.xcconfig`.
 
 ### 5. Push notifications (optional but recommended)
@@ -144,7 +147,7 @@ In Xcode:
 xcodebuild build \
   -project DeadWaxClub.xcodeproj \
   -scheme DeadWaxClub \
-  -destination 'platform=iOS Simulator,name=iPhone 15'
+  -destination 'generic/platform=iOS Simulator'
 ```
 
 Or hit ⌘R in Xcode. Barcode scanning needs a real device.
@@ -171,7 +174,8 @@ DeadWaxClub/
   Logging/         Sentry/OSLog wrapper, Keychain helper
   Resources/       Assets.xcassets
 
-Supabase/
+supabase/
+  config.toml      supabase CLI config
   migrations/      schema, RLS, triggers, RPCs
   powersync/       sync rules
   functions/

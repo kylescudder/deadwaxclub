@@ -1,4 +1,5 @@
 import Foundation
+import PowerSync
 
 struct PriceEntry: Identifiable, Hashable {
     let id: String
@@ -14,23 +15,20 @@ struct PriceEntry: Identifiable, Hashable {
 }
 
 extension PriceEntry {
-    static func from(row: [String: Any]) -> PriceEntry? {
-        guard let id = row["id"] as? String,
-              let recordID = row["record_id"] as? String,
-              let ownerID = row["owner_id"] as? String,
-              let priceCents = row["price_cents"] as? Int,
-              let currency = row["currency"] as? String else {
+    static func from(cursor: SqlCursor) -> PriceEntry? {
+        do {
+            return PriceEntry(
+                id: try cursor.getString(name: "id"),
+                recordID: try cursor.getString(name: "record_id"),
+                ownerID: try cursor.getString(name: "owner_id"),
+                priceCents: try cursor.getInt(name: "price_cents"),
+                currency: try cursor.getString(name: "currency"),
+                shopName: try cursor.getStringOptional(name: "shop_name"),
+                scannedAt: parseDate(try cursor.getStringOptional(name: "scanned_at")) ?? Date(),
+                createdAt: parseDate(try cursor.getStringOptional(name: "created_at")) ?? Date()
+            )
+        } catch {
             return nil
         }
-        return PriceEntry(
-            id: id,
-            recordID: recordID,
-            ownerID: ownerID,
-            priceCents: priceCents,
-            currency: currency,
-            shopName: row["shop_name"] as? String,
-            scannedAt: parseDate(row["scanned_at"]) ?? Date(),
-            createdAt: parseDate(row["created_at"]) ?? Date()
-        )
     }
 }

@@ -24,8 +24,13 @@ final class PriceEntriesRepository: ObservableObject {
                 order by scanned_at asc
             """
             do {
-                for try await rows in database.watch(sql: sql, parameters: [recordID]) {
-                    let mapped = rows.compactMap { PriceEntry.from(row: $0 as? [String: Any] ?? [:]) }
+                let stream = try database.watch(
+                    sql: sql,
+                    parameters: [recordID],
+                    mapper: { PriceEntry.from(cursor: $0) }
+                )
+                for try await rows in stream {
+                    let mapped = rows.compactMap { $0 }
                     await MainActor.run { self.entries = mapped }
                 }
             } catch {
@@ -48,7 +53,7 @@ final class PriceEntriesRepository: ObservableObject {
                     entry.ownerID,
                     entry.priceCents,
                     entry.currency,
-                    entry.shopName as Any,
+                    entry.shopName,
                     ISO8601DateFormatter.iso.string(from: entry.scannedAt),
                     ISO8601DateFormatter.iso.string(from: entry.createdAt),
                 ]
@@ -72,7 +77,7 @@ final class PriceEntriesRepository: ObservableObject {
                 parameters: [
                     entry.priceCents,
                     entry.currency,
-                    entry.shopName as Any,
+                    entry.shopName,
                     ISO8601DateFormatter.iso.string(from: entry.scannedAt),
                     entry.id,
                 ]

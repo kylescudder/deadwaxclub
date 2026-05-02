@@ -23,7 +23,7 @@ final class CoverArtCache: ObservableObject {
         try? fileManager.createDirectory(at: Self.coversDir, withIntermediateDirectories: true)
     }
 
-    static var coversDir: URL {
+    nonisolated static var coversDir: URL {
         let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         return cache.appendingPathComponent("covers", isDirectory: true)
     }
@@ -111,11 +111,11 @@ final class CoverArtCache: ObservableObject {
         )
     }
 
-    static func localFile(for recordID: String) -> URL {
+    nonisolated static func localFile(for recordID: String) -> URL {
         coversDir.appendingPathComponent("\(recordID).jpg")
     }
 
-    static func publicStorageURL(path: String) -> URL? {
+    nonisolated static func publicStorageURL(path: String) -> URL? {
         // covers is a public bucket; URL form is /storage/v1/object/public/covers/<path>
         var components = URLComponents(url: AppSecrets.supabaseURL, resolvingAgainstBaseURL: false)
         components?.path = "/storage/v1/object/public/covers/\(path)"

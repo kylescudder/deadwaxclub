@@ -59,14 +59,8 @@ struct SignInView: View {
                         Rectangle().fill(Theme.Colors.separator).frame(height: 1)
                     }
 
-                    AppleSignInButton {
-                        Task {
-                            isWorking = true
-                            await services.auth.signInWithApple()
-                            isWorking = false
-                        }
-                    }
-                    .frame(height: 50)
+                    AppleSignInButton()
+                        .frame(height: 50)
 
                     SecondaryButton(title: "Continue with Google", systemImage: "globe") {
                         Task {

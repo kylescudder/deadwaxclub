@@ -100,8 +100,8 @@ fi
 # --- 3. Supabase project ---------------------------------------------------
 step "Supabase project"
 
-if [[ ! -d supabase ]]; then
-    note "Initialising local supabase project (creates supabase/config.toml + migrations dir)"
+if [[ ! -f supabase/config.toml ]]; then
+    note "Creating supabase/config.toml via supabase init"
     supabase init >/dev/null
 fi
 
@@ -111,41 +111,27 @@ if ! supabase projects list >/dev/null 2>&1; then
 else
     ok "supabase CLI is logged in"
 
-    if [[ -z "${SUPABASE_PROJECT_REF:-}" ]] && [[ -f supabase/.temp/project-ref ]]; then
-        SUPABASE_PROJECT_REF="$(cat supabase/.temp/project-ref)"
-    fi
-
-    read -p "Apply Supabase migrations from Supabase/migrations/ to your linked project now? [y/N] " -n 1 -r
+    read -p "Apply Supabase migrations from supabase/migrations/ to your linked project now? [y/N] " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        # Copy our migrations into supabase/migrations with a timestamp prefix
-        # so the supabase CLI tracks them in order.
-        mkdir -p supabase/migrations
-        i=0
-        for f in Supabase/migrations/*.sql; do
-            base=$(basename "$f" .sql)
-            target="supabase/migrations/$(date +%Y%m%d%H%M)$(printf "%02d" $i)_${base#????_}.sql"
-            cp "$f" "$target"
-            ((i+=1)) || true
-        done
         supabase db push
         ok "Migrations applied"
     else
         note "Skipped. To apply manually:"
-        note "  for f in Supabase/migrations/*.sql; do psql \"\$DATABASE_URL\" -f \"\$f\"; done"
-        note "Or paste each into the Supabase SQL editor in numbered order."
+        note "  supabase db push"
+        note "Or paste each file in supabase/migrations/ into the Supabase SQL editor in order."
     fi
 fi
 
 # --- 4. PowerSync ----------------------------------------------------------
 step "PowerSync"
 
-note "Sync rules live at Supabase/powersync/sync_rules.yaml."
+note "Sync rules live at supabase/powersync/sync_rules.yaml."
 note "Apply via the PowerSync dashboard:"
 note "  1. https://powersync.com → your instance → Sync rules"
-note "  2. Paste the contents of Supabase/powersync/sync_rules.yaml"
+note "  2. Paste the contents of supabase/powersync/sync_rules.yaml"
 note "  3. Validate, then Deploy"
-note "(Or use the powersync CLI: \`powersync sync-rules apply Supabase/powersync/sync_rules.yaml\`)"
+note "(Or use the powersync CLI: \`powersync sync-rules apply supabase/powersync/sync_rules.yaml\`)"
 
 # --- 5. Xcode project ------------------------------------------------------
 if is_mac; then
@@ -164,11 +150,11 @@ if is_mac; then
             xcodebuild build \
                 -project DeadWaxClub.xcodeproj \
                 -scheme DeadWaxClub \
-                -destination 'platform=iOS Simulator,name=iPhone 15' \
+                -destination 'generic/platform=iOS Simulator' \
                 -quiet
             ok "Simulator build succeeded"
         else
-            note "Skipped. Run later with: xcodebuild build -project DeadWaxClub.xcodeproj -scheme DeadWaxClub -destination 'platform=iOS Simulator,name=iPhone 15'"
+            note "Skipped. Run later with: xcodebuild build -project DeadWaxClub.xcodeproj -scheme DeadWaxClub -destination 'generic/platform=iOS Simulator'"
         fi
     fi
 fi

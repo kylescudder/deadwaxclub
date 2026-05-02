@@ -85,6 +85,7 @@ final class StatsRepository: ObservableObject {
     }
 
     private func countsByStatus(ownerID: String) async throws -> (owned: Int, wishlist: Int) {
+        struct Row { let status: String; let count: Int }
         let rows = try await database.getAll(
             sql: """
             select status, count(*) as c
@@ -92,14 +93,17 @@ final class StatsRepository: ObservableObject {
             where owner_id = ? and deleted_at is null
             group by status
             """,
-            parameters: [ownerID]
+            parameters: [ownerID],
+            mapper: { cursor -> Row? in
+                guard let status = try? cursor.getString(name: "status"),
+                      let c = try? cursor.getInt(name: "c") else { return nil }
+                return Row(status: status, count: c)
+            }
         )
         var owned = 0, wishlist = 0
-        for raw in rows {
-            guard let row = raw as? [String: Any] else { continue }
-            let count = (row["c"] as? Int) ?? 0
-            if (row["status"] as? String) == "owned" { owned = count }
-            else if (row["status"] as? String) == "wishlist" { wishlist = count }
+        for row in rows.compactMap({ $0 }) {
+            if row.status == "owned" { owned = row.count }
+            else if row.status == "wishlist" { wishlist = row.count }
         }
         return (owned, wishlist)
     }
@@ -107,6 +111,7 @@ final class StatsRepository: ObservableObject {
     private func totalSpentCents(ownerID: String) async throws -> (cents: Int, currency: String?) {
         // Sum the latest price for each owned record. PowerSync's SQLite is
         // recent enough for a window-style subquery via correlated subselect.
+        struct Row { let total: Int; let currency: String? }
         let rows = try await database.getAll(
             sql: """
             select sum(latest_price) as total, max(latest_currency) as cur
@@ -126,12 +131,15 @@ final class StatsRepository: ObservableObject {
             )
             where latest_price is not null
             """,
-            parameters: [ownerID]
+            parameters: [ownerID],
+            mapper: { cursor -> Row in
+                let total = (try? cursor.getIntOptional(name: "total")).flatMap { $0 } ?? 0
+                let currency = (try? cursor.getStringOptional(name: "cur")).flatMap { $0 }
+                return Row(total: total, currency: currency)
+            }
         )
-        let row = rows.first as? [String: Any]
-        let total = (row?["total"] as? Int) ?? 0
-        let currency = row?["cur"] as? String
-        return (total, currency)
+        let row = rows.first
+        return (row?.total ?? 0, row?.currency)
     }
 
     private func estimatedValueCents(ownerID: String) async throws -> Int {
@@ -142,9 +150,10 @@ final class StatsRepository: ObservableObject {
             where owner_id = ? and status = 'owned' and deleted_at is null
               and estimated_price_cents is not null
             """,
-            parameters: [ownerID]
+            parameters: [ownerID],
+            mapper: { cursor in (try? cursor.getInt(name: "total")) ?? 0 }
         )
-        return ((rows.first as? [String: Any])?["total"] as? Int) ?? 0
+        return rows.first ?? 0
     }
 
     private func decadeBuckets(ownerID: String) async throws -> [DecadeBucket] {
@@ -156,14 +165,14 @@ final class StatsRepository: ObservableObject {
             group by decade_start
             order by decade_start asc
             """,
-            parameters: [ownerID]
+            parameters: [ownerID],
+            mapper: { cursor -> DecadeBucket? in
+                guard let start = try? cursor.getInt(name: "decade_start"),
+                      let count = try? cursor.getInt(name: "c") else { return nil }
+                return DecadeBucket(decade: "\(start)s", count: count)
+            }
         )
-        return rows.compactMap { raw in
-            guard let row = raw as? [String: Any],
-                  let start = row["decade_start"] as? Int,
-                  let count = row["c"] as? Int else { return nil }
-            return DecadeBucket(decade: "\(start)s", count: count)
-        }
+        return rows.compactMap { $0 }
     }
 
     private func colourwayBuckets(ownerID: String) async throws -> [ColourwayBucket] {
@@ -177,14 +186,14 @@ final class StatsRepository: ObservableObject {
             order by c desc
             limit 8
             """,
-            parameters: [ownerID]
+            parameters: [ownerID],
+            mapper: { cursor -> ColourwayBucket? in
+                guard let cw = try? cursor.getString(name: "colourway"),
+                      let count = try? cursor.getInt(name: "c") else { return nil }
+                return ColourwayBucket(colourway: cw, count: count)
+            }
         )
-        return rows.compactMap { raw in
-            guard let row = raw as? [String: Any],
-                  let cw = row["colourway"] as? String,
-                  let count = row["c"] as? Int else { return nil }
-            return ColourwayBucket(colourway: cw, count: count)
-        }
+        return rows.compactMap { $0 }
     }
 
     private func topPaidEntries(ownerID: String, limit: Int) async throws -> [PaidEntry] {
@@ -197,17 +206,17 @@ final class StatsRepository: ObservableObject {
             order by pe.price_cents desc
             limit ?
             """,
-            parameters: [ownerID, limit]
+            parameters: [ownerID, limit],
+            mapper: { cursor -> PaidEntry? in
+                guard let id = try? cursor.getString(name: "id"),
+                      let title = try? cursor.getString(name: "title"),
+                      let artist = try? cursor.getString(name: "artist"),
+                      let cents = try? cursor.getInt(name: "price_cents"),
+                      let currency = try? cursor.getString(name: "currency") else { return nil }
+                return PaidEntry(recordID: id, title: title, artist: artist, paidCents: cents, currency: currency)
+            }
         )
-        return rows.compactMap { raw in
-            guard let row = raw as? [String: Any],
-                  let id = row["id"] as? String,
-                  let title = row["title"] as? String,
-                  let artist = row["artist"] as? String,
-                  let cents = row["price_cents"] as? Int,
-                  let currency = row["currency"] as? String else { return nil }
-            return PaidEntry(recordID: id, title: title, artist: artist, paidCents: cents, currency: currency)
-        }
+        return rows.compactMap { $0 }
     }
 
     private func lowestSeenEntries(ownerID: String, limit: Int) async throws -> [LowestEntry] {
@@ -221,16 +230,16 @@ final class StatsRepository: ObservableObject {
             order by low asc
             limit ?
             """,
-            parameters: [ownerID, limit]
+            parameters: [ownerID, limit],
+            mapper: { cursor -> LowestEntry? in
+                guard let id = try? cursor.getString(name: "id"),
+                      let title = try? cursor.getString(name: "title"),
+                      let artist = try? cursor.getString(name: "artist"),
+                      let cents = try? cursor.getInt(name: "low"),
+                      let currency = try? cursor.getString(name: "currency") else { return nil }
+                return LowestEntry(recordID: id, title: title, artist: artist, lowestCents: cents, currency: currency)
+            }
         )
-        return rows.compactMap { raw in
-            guard let row = raw as? [String: Any],
-                  let id = row["id"] as? String,
-                  let title = row["title"] as? String,
-                  let artist = row["artist"] as? String,
-                  let cents = row["low"] as? Int,
-                  let currency = row["currency"] as? String else { return nil }
-            return LowestEntry(recordID: id, title: title, artist: artist, lowestCents: cents, currency: currency)
-        }
+        return rows.compactMap { $0 }
     }
 }

@@ -1,6 +1,7 @@
+import AuthenticationServices
+import Combine
 import Foundation
 import Supabase
-import Combine
 
 @MainActor
 final class AuthClient: ObservableObject {
@@ -158,8 +159,8 @@ final class AuthClient: ObservableObject {
             // callback URL.
             let url = try supabase.auth.getOAuthSignInURL(
                 provider: .google,
-                redirectTo: AppSecrets.authRedirectURL,
-                scopes: "openid email profile"
+                scopes: "openid email profile",
+                redirectTo: AppSecrets.authRedirectURL
             )
             let callback = try await GoogleSignIn.start(authURL: url, callbackScheme: "deadwaxclub")
             try await supabase.auth.session(from: callback)

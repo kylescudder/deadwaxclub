@@ -1,4 +1,5 @@
 import Foundation
+import PowerSync
 
 enum ListShareMode: String, CaseIterable, Codable, Identifiable {
     case `private` = "private"
@@ -54,26 +55,25 @@ struct VinylList: Identifiable, Hashable {
 }
 
 extension VinylList {
-    static func from(row: [String: Any]) -> VinylList? {
-        guard let id = row["id"] as? String,
-              let ownerID = row["owner_id"] as? String,
-              let name = row["name"] as? String,
-              let modeRaw = row["share_mode"] as? String,
-              let mode = ListShareMode(rawValue: modeRaw) else {
+    static func from(cursor: SqlCursor) -> VinylList? {
+        do {
+            let modeRaw = try cursor.getString(name: "share_mode")
+            guard let mode = ListShareMode(rawValue: modeRaw) else { return nil }
+            return VinylList(
+                id: try cursor.getString(name: "id"),
+                ownerID: try cursor.getString(name: "owner_id"),
+                name: try cursor.getString(name: "name"),
+                description: try cursor.getStringOptional(name: "description"),
+                shareMode: mode,
+                shareToken: try cursor.getStringOptional(name: "share_token"),
+                coverRecordID: try cursor.getStringOptional(name: "cover_record_id"),
+                createdAt: parseDate(try cursor.getStringOptional(name: "created_at")) ?? Date(),
+                updatedAt: parseDate(try cursor.getStringOptional(name: "updated_at")) ?? Date(),
+                deletedAt: parseDate(try cursor.getStringOptional(name: "deleted_at"))
+            )
+        } catch {
             return nil
         }
-        return VinylList(
-            id: id,
-            ownerID: ownerID,
-            name: name,
-            description: row["description"] as? String,
-            shareMode: mode,
-            shareToken: row["share_token"] as? String,
-            coverRecordID: row["cover_record_id"] as? String,
-            createdAt: parseDate(row["created_at"]) ?? Date(),
-            updatedAt: parseDate(row["updated_at"]) ?? Date(),
-            deletedAt: parseDate(row["deleted_at"])
-        )
     }
 }
 
@@ -105,23 +105,21 @@ struct PendingInvite: Identifiable, Hashable {
 }
 
 extension PendingInvite {
-    static func from(row: [String: Any]) -> PendingInvite? {
-        guard let id = row["id"] as? String,
-              let listID = row["list_id"] as? String,
-              let email = row["email"] as? String,
-              let roleRaw = row["role"] as? String,
-              let role = ListMemberRole(rawValue: roleRaw),
-              let invitedBy = row["invited_by"] as? String else {
+    static func from(cursor: SqlCursor) -> PendingInvite? {
+        do {
+            let roleRaw = try cursor.getString(name: "role")
+            guard let role = ListMemberRole(rawValue: roleRaw) else { return nil }
+            return PendingInvite(
+                id: try cursor.getString(name: "id"),
+                listID: try cursor.getString(name: "list_id"),
+                email: try cursor.getString(name: "email"),
+                role: role,
+                invitedBy: try cursor.getString(name: "invited_by"),
+                createdAt: parseDate(try cursor.getStringOptional(name: "created_at")) ?? Date(),
+                acceptedAt: parseDate(try cursor.getStringOptional(name: "accepted_at"))
+            )
+        } catch {
             return nil
         }
-        return PendingInvite(
-            id: id,
-            listID: listID,
-            email: email,
-            role: role,
-            invitedBy: invitedBy,
-            createdAt: parseDate(row["created_at"]) ?? Date(),
-            acceptedAt: parseDate(row["accepted_at"])
-        )
     }
 }

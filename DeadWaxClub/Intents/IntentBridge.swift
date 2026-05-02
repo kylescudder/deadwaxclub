@@ -20,10 +20,10 @@ enum IntentBridge {
             order by updated_at desc
             limit 25
             """,
-            parameters: [q, q, q]
+            parameters: [q, q, q],
+            mapper: { VinylRecord.from(cursor: $0) }
         )
-        return rows.compactMap { ($0 as? [String: Any]).flatMap(VinylRecord.from(row:)) }
-            .map(VinylRecordEntity.init(record:))
+        return rows.compactMap { $0 }.map(VinylRecordEntity.init(record:))
     }
 
     @MainActor
@@ -32,10 +32,10 @@ enum IntentBridge {
         let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ", ")
         let rows = try await services.sync.database.getAll(
             sql: "select * from records where id in (\(placeholders))",
-            parameters: ids
+            parameters: ids,
+            mapper: { VinylRecord.from(cursor: $0) }
         )
-        return rows.compactMap { ($0 as? [String: Any]).flatMap(VinylRecord.from(row:)) }
-            .map(VinylRecordEntity.init(record:))
+        return rows.compactMap { $0 }.map(VinylRecordEntity.init(record:))
     }
 
     @MainActor
@@ -46,10 +46,10 @@ enum IntentBridge {
             select * from records where deleted_at is null
             order by updated_at desc limit ?
             """,
-            parameters: [limit]
+            parameters: [limit],
+            mapper: { VinylRecord.from(cursor: $0) }
         )
-        return rows.compactMap { ($0 as? [String: Any]).flatMap(VinylRecord.from(row:)) }
-            .map(VinylRecordEntity.init(record:))
+        return rows.compactMap { $0 }.map(VinylRecordEntity.init(record:))
     }
 
     @MainActor

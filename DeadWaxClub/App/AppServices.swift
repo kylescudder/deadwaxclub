@@ -80,9 +80,10 @@ final class AppServices: ObservableObject {
         do {
             let rows = try await sync.database.getAll(
                 sql: "select * from records where id = ? limit 1",
-                parameters: [recordID]
+                parameters: [recordID],
+                mapper: { VinylRecord.from(cursor: $0) }
             )
-            if let row = rows.first as? [String: Any], let r = VinylRecord.from(row: row) {
+            if let r = rows.compactMap({ $0 }).first {
                 await MainActor.run { self.pendingDeepLinkRecord = r }
             }
         } catch {

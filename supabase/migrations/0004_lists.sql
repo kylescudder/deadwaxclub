@@ -162,7 +162,7 @@ returns table (
   colourway text,
   cover_art_storage_path text,
   cover_art_source_url text,
-  position int
+  "position" int
 ) language sql stable security definer set search_path = public as $$
   select r.id, r.title, r.artist, r.year, r.colourway,
          r.cover_art_storage_path, r.cover_art_source_url, li.position
