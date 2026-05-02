@@ -93,3 +93,35 @@ struct VinylListMember: Identifiable, Hashable {
     var role: ListMemberRole
     var joinedAt: Date
 }
+
+struct PendingInvite: Identifiable, Hashable {
+    let id: String
+    var listID: String
+    var email: String
+    var role: ListMemberRole
+    var invitedBy: String
+    var createdAt: Date
+    var acceptedAt: Date?
+}
+
+extension PendingInvite {
+    static func from(row: [String: Any]) -> PendingInvite? {
+        guard let id = row["id"] as? String,
+              let listID = row["list_id"] as? String,
+              let email = row["email"] as? String,
+              let roleRaw = row["role"] as? String,
+              let role = ListMemberRole(rawValue: roleRaw),
+              let invitedBy = row["invited_by"] as? String else {
+            return nil
+        }
+        return PendingInvite(
+            id: id,
+            listID: listID,
+            email: email,
+            role: role,
+            invitedBy: invitedBy,
+            createdAt: parseDate(row["created_at"]) ?? Date(),
+            acceptedAt: parseDate(row["accepted_at"])
+        )
+    }
+}

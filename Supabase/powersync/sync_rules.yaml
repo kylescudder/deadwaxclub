@@ -24,6 +24,7 @@ bucket_definitions:
       - select * from lists where owner_id = bucket.user_id
       - select * from list_items where list_id in (select id from lists where owner_id = bucket.user_id)
       - select * from list_members where list_id in (select id from lists where owner_id = bucket.user_id)
+      - select * from pending_invites where list_id in (select id from lists where owner_id = bucket.user_id)
 
   # Lists the user is a member of (not the owner). Records on those lists
   # are pulled too, so collaborators can render them offline.

@@ -9,6 +9,7 @@ struct ShareListSheet: View {
     @State private var inviteEmail = ""
     @State private var inviteRole: ListMemberRole = .editor
     @State private var inviteError: String?
+    @State private var inviteBanner: String?
     @State private var isInviting = false
     @StateObject private var contents: ListContentsHolder = ListContentsHolder()
 
@@ -81,13 +82,16 @@ struct ShareListSheet: View {
                         }
                         Button("Send invite") { Task { await invite() } }
                             .disabled(inviteEmail.trimmingCharacters(in: .whitespaces).isEmpty || isInviting)
+                        if let inviteBanner {
+                            Text(inviteBanner).font(.footnote).foregroundStyle(.green)
+                        }
                         if let inviteError {
                             Text(inviteError).font(.footnote).foregroundStyle(.red)
                         }
                     } header: {
                         Text("Invite by email")
                     } footer: {
-                        Text("They'll need a Dead Wax Club account using that email. Collaborative lists are always invited as editors.")
+                        Text("If they already have an account they're added straight away. Otherwise we'll save the invite and add them automatically when they sign up. Collaborative lists are always invited as editors.")
                     }
 
                     if let repo = contents.repo {
@@ -112,6 +116,30 @@ struct ShareListSheet: View {
                                 }
                             }
                         }
+
+                        if !repo.pendingInvites.isEmpty {
+                            Section {
+                                ForEach(repo.pendingInvites) { invite in
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(invite.email).font(.callout)
+                                            Text("Pending · \(invite.role.rawValue.capitalized)")
+                                                .font(.caption)
+                                                .foregroundStyle(Theme.Colors.textSecondary)
+                                        }
+                                        Spacer()
+                                        Button(role: .destructive) {
+                                            Task { await services.lists.revokePendingInvite(inviteID: invite.id) }
+                                        } label: { Image(systemName: "minus.circle") }
+                                            .buttonStyle(.borderless)
+                                    }
+                                }
+                            } header: {
+                                Text("Pending invites")
+                            } footer: {
+                                Text("Auto-accepted when the invitee signs up with the matching email.")
+                            }
+                        }
                     }
                 }
             }
@@ -130,16 +158,22 @@ struct ShareListSheet: View {
 
     private func invite() async {
         let role: ListMemberRole = mode == .collaborative ? .editor : inviteRole
+        let email = inviteEmail.trimmingCharacters(in: .whitespacesAndNewlines)
         isInviting = true
         defer { isInviting = false }
+        inviteError = nil
+        inviteBanner = nil
         do {
-            try await services.lists.addMember(
+            let outcome = try await services.lists.invite(
                 listID: list.id,
-                userEmail: inviteEmail.trimmingCharacters(in: .whitespacesAndNewlines),
+                email: email,
                 role: role
             )
+            switch outcome {
+            case .added:   inviteBanner = "Added \(email) to the list."
+            case .pending: inviteBanner = "Invitation saved. They'll join automatically when they sign up with \(email)."
+            }
             inviteEmail = ""
-            inviteError = nil
             Haptics.success()
         } catch {
             inviteError = error.localizedDescription

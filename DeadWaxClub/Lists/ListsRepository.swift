@@ -146,29 +146,33 @@ final class ListsRepository: ObservableObject {
         }
     }
 
-    /// Members live in a separate table; collaborators / invitees only.
-    func addMember(listID: String, userEmail: String, role: ListMemberRole) async throws {
-        // Lookup user_id by email via Supabase RPC (auth.users isn't readable
-        // directly from RLS-protected client). Falls back to error if no user.
-        struct LookupResult: Decodable { let user_id: String? }
-        let result: [LookupResult] = try await auth.supabase
-            .rpc("lookup_user_id_by_email", params: ["email_in": userEmail])
+    enum InviteOutcome: Equatable {
+        case added       // Email matched an existing user; they're now in list_members.
+        case pending     // No account yet; stored in pending_invites and resolved on signup.
+    }
+
+    /// Calls the `invite_to_list` RPC which adds the user directly when they
+    /// already have an account or stores a pending invite that auto-resolves
+    /// when they sign up. Returns which path was taken so the caller can show
+    /// "Added" vs "Invitation sent" accordingly.
+    func invite(listID: String, email: String, role: ListMemberRole) async throws -> InviteOutcome {
+        struct InviteResult: Decodable { let status: String }
+        let result: InviteResult = try await auth.supabase
+            .rpc("invite_to_list", params: [
+                "p_list_id": listID,
+                "p_email": email,
+                "p_role": role.rawValue,
+            ])
             .execute()
             .value
-        guard let userID = result.first?.user_id else {
-            throw NSError(domain: "deadwaxclub.lists", code: 404, userInfo: [
-                NSLocalizedDescriptionKey: "No Dead Wax Club user found with that email."
+        switch result.status {
+        case "added":   return .added
+        case "pending": return .pending
+        default:
+            throw NSError(domain: "deadwaxclub.lists", code: 500, userInfo: [
+                NSLocalizedDescriptionKey: "Unexpected invite response: \(result.status)"
             ])
         }
-        try await auth.supabase
-            .from("list_members")
-            .upsert([
-                "list_id": listID,
-                "user_id": userID,
-                "role": role.rawValue,
-                "invited_by": auth.currentUserID?.uuidString as Any,
-            ])
-            .execute()
     }
 
     func removeMember(listID: String, userID: String) async {
@@ -181,6 +185,16 @@ final class ListsRepository: ObservableObject {
                 .execute()
         } catch {
             Log.error(error, category: "lists.removeMember")
+        }
+    }
+
+    func revokePendingInvite(inviteID: String) async {
+        do {
+            _ = try await auth.supabase
+                .rpc("revoke_pending_invite", params: ["p_invite_id": inviteID])
+                .execute()
+        } catch {
+            Log.error(error, category: "lists.revokePendingInvite")
         }
     }
 

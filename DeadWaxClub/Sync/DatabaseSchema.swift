@@ -104,6 +104,22 @@ enum DatabaseSchema {
         ]
     )
 
+    static let pendingInvites = Table(
+        name: "pending_invites",
+        columns: [
+            Column.text("list_id"),
+            Column.text("email"),
+            Column.text("role"),
+            Column.text("invited_by"),
+            Column.text("created_at"),
+            Column.text("accepted_at"),
+        ],
+        indexes: [
+            Index(name: "pending_invites_list",
+                  columns: [IndexedColumn.ascending("list_id")]),
+        ]
+    )
+
     static let deviceTokens = Table(
         name: "device_tokens",
         columns: [
@@ -118,6 +134,8 @@ enum DatabaseSchema {
     )
 
     static let schema = Schema(tables: [
-        profiles, records, priceEntries, lists, listItems, listMembers, deviceTokens
+        profiles, records, priceEntries,
+        lists, listItems, listMembers, pendingInvites,
+        deviceTokens,
     ])
 }

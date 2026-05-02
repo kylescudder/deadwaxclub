@@ -1,16 +1,18 @@
 import Foundation
 import PowerSync
 
-/// Watches the records belonging to a single list, joined to list_items
-/// so we get ordering. Used by ListDetailView.
+/// Watches the records, members, and outstanding invites belonging to a
+/// single list. Used by ListDetailView and ShareListSheet.
 @MainActor
 final class ListContentsRepository: ObservableObject {
     @Published private(set) var records: [VinylRecord] = []
     @Published private(set) var members: [VinylListMember] = []
+    @Published private(set) var pendingInvites: [PendingInvite] = []
 
     private let database: PowerSyncDatabaseProtocol
     private var recordsTask: Task<Void, Never>?
     private var membersTask: Task<Void, Never>?
+    private var invitesTask: Task<Void, Never>?
 
     init(database: PowerSyncDatabaseProtocol) {
         self.database = database
@@ -19,6 +21,7 @@ final class ListContentsRepository: ObservableObject {
     deinit {
         recordsTask?.cancel()
         membersTask?.cancel()
+        invitesTask?.cancel()
     }
 
     func startWatching(listID: String) {
@@ -65,6 +68,24 @@ final class ListContentsRepository: ObservableObject {
                 }
             } catch {
                 Log.error(error, category: "list.members")
+            }
+        }
+
+        invitesTask?.cancel()
+        invitesTask = Task { [weak self, database] in
+            guard let self else { return }
+            let sql = """
+            select * from pending_invites
+            where list_id = ? and accepted_at is null
+            order by created_at desc
+            """
+            do {
+                for try await rows in database.watch(sql: sql, parameters: [listID]) {
+                    let mapped = rows.compactMap { PendingInvite.from(row: $0 as? [String: Any] ?? [:]) }
+                    await MainActor.run { self.pendingInvites = mapped }
+                }
+            } catch {
+                Log.error(error, category: "list.pendingInvites")
             }
         }
     }
