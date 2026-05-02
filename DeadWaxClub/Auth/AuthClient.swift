@@ -1,6 +1,7 @@
+import AuthenticationServices
+import Combine
 import Foundation
 import Supabase
-import Combine
 
 @MainActor
 final class AuthClient: ObservableObject {
