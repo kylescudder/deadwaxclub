@@ -1,0 +1,38 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# XcodeGen generates this from project.yml
+Trackd.xcodeproj/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+.build/
+
+# CocoaPods (not used, but ignore just in case)
+Pods/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Secrets / local config
+.env
+.env.local
+Trackd/Generated/Secrets.swift
+Config/Secrets.xcconfig
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp

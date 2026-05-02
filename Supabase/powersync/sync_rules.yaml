@@ -1,0 +1,19 @@
+# PowerSync sync rules for Trackd.
+# Apply via the PowerSync dashboard or `powersync sync-rules apply`.
+# Each user only sees their own rows; soft-deletes propagate.
+
+bucket_definitions:
+  user_profile:
+    parameters: select request.user_id() as user_id
+    data:
+      - select * from profiles where id = bucket.user_id
+
+  user_records:
+    parameters: select request.user_id() as user_id
+    data:
+      - select * from records where owner_id = bucket.user_id
+
+  user_prices:
+    parameters: select request.user_id() as user_id
+    data:
+      - select * from price_entries where owner_id = bucket.user_id
