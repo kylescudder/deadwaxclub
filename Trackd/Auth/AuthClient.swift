@@ -99,6 +99,55 @@ final class AuthClient: ObservableObject {
         }
     }
 
+    // MARK: - Apple
+
+    private var pendingAppleNonce: String?
+
+    /// Configures the request — required so we can supply the nonce that
+    /// supabase-swift will validate against the returned identity token.
+    func beginAppleSignIn(request: ASAuthorizationAppleIDRequest) {
+        let nonce = AppleNonce.random()
+        pendingAppleNonce = nonce
+        request.requestedScopes = [.fullName, .email]
+        request.nonce = AppleNonce.sha256(nonce)
+    }
+
+    func completeAppleSignIn(result: Result<ASAuthorization, Error>) async {
+        defer { pendingAppleNonce = nil }
+        switch result {
+        case .failure(let error):
+            if (error as? ASAuthorizationError)?.code == .canceled { return }
+            lastError = error.localizedDescription
+            Log.error(error, category: "auth.apple")
+        case .success(let authorization):
+            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let tokenData = credential.identityToken,
+                  let token = String(data: tokenData, encoding: .utf8),
+                  let nonce = pendingAppleNonce else {
+                lastError = "Apple did not return an identity token."
+                return
+            }
+            do {
+                _ = try await supabase.auth.signInWithIdToken(
+                    credentials: .init(provider: .apple, idToken: token, nonce: nonce)
+                )
+                if let userID = currentUserID?.uuidString,
+                   let components = credential.fullName,
+                   let formatted = PersonNameComponentsFormatter().string(for: components),
+                   !formatted.isEmpty {
+                    _ = try? await supabase
+                        .from("profiles")
+                        .update(["display_name": formatted])
+                        .eq("id", value: userID)
+                        .execute()
+                }
+            } catch {
+                lastError = error.localizedDescription
+                Log.error(error, category: "auth.apple")
+            }
+        }
+    }
+
     // MARK: - Google OAuth
 
     func signInWithGoogle() async {
@@ -136,5 +185,13 @@ final class AuthClient: ObservableObject {
         } catch {
             Log.error(error, category: "auth")
         }
+    }
+
+    /// Calls the `delete_my_account` Postgres function which removes the
+    /// auth.users row; cascading FKs handle the rest of the user's data.
+    /// Locally any cached cover art is purged after the RPC succeeds.
+    func deleteAccount() async throws {
+        try await supabase.rpc("delete_my_account").execute()
+        try await supabase.auth.signOut()
     }
 }

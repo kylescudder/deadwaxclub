@@ -58,6 +58,11 @@ struct RecordsListView: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
+            .refreshable {
+                Haptics.tap()
+                reconfigure()
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            }
             .navigationDestination(for: VinylRecord.self) { record in
                 RecordDetailView(record: record)
             }

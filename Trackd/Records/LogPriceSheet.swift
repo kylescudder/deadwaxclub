@@ -75,6 +75,7 @@ struct LogPriceSheet: View {
             createdAt: Date()
         )
         await services.prices.add(entry)
+        Haptics.success()
         dismiss()
     }
 

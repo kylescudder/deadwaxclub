@@ -87,6 +87,7 @@ struct AddRecordView: View {
             deletedAt: nil
         )
         await services.records.upsert(record)
+        Haptics.success()
         dismiss()
     }
 }

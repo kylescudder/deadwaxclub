@@ -10,5 +10,9 @@
     <string>$(POWERSYNC_URL)</string>
     <key>SENTRY_DSN</key>
     <string>$(SENTRY_DSN)</string>
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>remote-notification</string>
+    </array>
 </dict>
 </plist>

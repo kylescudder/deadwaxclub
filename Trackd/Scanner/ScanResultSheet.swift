@@ -130,6 +130,7 @@ struct ScanResultSheet: View {
             )
             await services.prices.add(entry)
         }
+        Haptics.success()
         dismiss()
     }
 
