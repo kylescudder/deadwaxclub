@@ -99,17 +99,19 @@ For lowest-price alerts:
 
 The function only sends when `is_new_low` is true (set by a `BEFORE INSERT` trigger), so you won't get spammed.
 
-### 6. Universal Links for public list URLs (optional)
+### 6. Public list web viewer (optional)
 
-To open `https://trackd.app/l/<token>` directly in the app:
+A small static site under `web/` renders public-link lists in any browser and serves the Universal Links manifest. Drop it onto Netlify (or any static host) at `trackd.app`:
 
-1. Host an `apple-app-site-association` JSON file at `https://trackd.app/.well-known/apple-app-site-association` mapping `applinks` to your bundle ID. Example:
-   ```json
-   { "applinks": { "details": [{ "appIDs": ["TEAMID.com.trackd.app"], "components": [{ "/" : "/l/*" }] }] } }
-   ```
-2. The `applinks:trackd.app` entry is already in `Trackd.entitlements`.
+```sh
+cp web/js/config.example.js web/js/config.js
+# Edit config.js with your Supabase URL + anon key
+npx netlify deploy --dir=web --prod
+```
 
-Without this step, recipients without the app see nothing at the URL; recipients with the app installed will still get the deep link via `trackd://list/<token>` if you share that scheme directly.
+Edit `web/.well-known/apple-app-site-association` and replace `TEAMID.com.trackd.app` with your real Apple Team ID + bundle. The `applinks:trackd.app` entry is already in `Trackd.entitlements`. After this is live, tapping any `https://trackd.app/l/<token>` link from another iOS app launches Trackd directly; if the app isn't installed, the recipient sees the web list.
+
+See `web/README.md` for full deployment notes.
 
 ### 7. Discogs token
 
@@ -166,6 +168,16 @@ Supabase/
   powersync/       sync rules
   functions/
     notify-price-change/  Edge Function: APNs fan-out on new lows
+
+web/                static landing + public list viewer (Netlify-ready)
+  index.html
+  l/index.html      renders any /l/<token> share link
+  styles.css        shared theme; CSS variables match iOS
+  js/
+    list.js         vanilla module, fetches via Supabase REST RPCs
+    config.example.js   template for Supabase URL + anon key
+  .well-known/
+    apple-app-site-association   Universal Links manifest (template)
 ```
 
 ## Status

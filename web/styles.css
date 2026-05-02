@@ -1,0 +1,364 @@
+/* Trackd web — branding mirrors the iOS app. CSS custom properties match
+   iOS semantic colors so light / dark / SwiftUI vs. Safari are visually
+   consistent. System font stack picks up SF Pro on Apple platforms. */
+
+:root {
+    --accent: #4859d9;
+    --accent-soft: #4859d91a;
+    --bg: #f2f2f7;
+    --surface: #ffffff;
+    --surface-elevated: #f9f9f9;
+    --text-primary: #000000;
+    --text-secondary: rgba(60, 60, 67, 0.66);
+    --text-tertiary: rgba(60, 60, 67, 0.3);
+    --separator: rgba(60, 60, 67, 0.18);
+    --shadow: 0 2px 12px rgba(15, 15, 20, 0.06);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --green: #34c759;
+    --gray: #8e8e93;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --accent: #738eef;
+        --accent-soft: #738eef26;
+        --bg: #000000;
+        --surface: #1c1c1e;
+        --surface-elevated: #2c2c2e;
+        --text-primary: #ffffff;
+        --text-secondary: rgba(235, 235, 245, 0.66);
+        --text-tertiary: rgba(235, 235, 245, 0.3);
+        --separator: rgba(84, 84, 88, 0.6);
+        --shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+        --green: #30d158;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+
+body {
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "SF Pro Text",
+        "SF Pro Display",
+        "Helvetica Neue",
+        sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.4;
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+}
+
+/* ---------------- Header ---------------- */
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.brand .logo {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.brand .logo svg {
+    width: 22px;
+    height: 22px;
+}
+
+.brand .wordmark {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+
+/* ---------------- Hero / landing ---------------- */
+
+.hero {
+    text-align: center;
+    padding: 56px 16px 40px;
+}
+
+.hero h1 {
+    font-size: 36px;
+    margin: 16px 0 12px;
+    letter-spacing: -0.02em;
+}
+
+.hero p {
+    color: var(--text-secondary);
+    font-size: 17px;
+    max-width: 480px;
+    margin: 0 auto 28px;
+}
+
+.hero .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-top: 40px;
+}
+
+.feature {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    box-shadow: var(--shadow);
+}
+
+.feature .icon {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    margin-bottom: 12px;
+}
+
+.feature h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+}
+
+.feature p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* ---------------- Cards ---------------- */
+
+.card {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    box-shadow: var(--shadow);
+}
+
+.card + .card {
+    margin-top: 16px;
+}
+
+.card-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.card-header h2 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+}
+
+.muted {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* ---------------- Buttons ---------------- */
+
+.button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-radius: var(--radius-md);
+    font-size: 15px;
+    font-weight: 600;
+    border: 0;
+    cursor: pointer;
+    transition: transform 0.04s ease, opacity 0.15s ease;
+}
+
+.button:active {
+    transform: scale(0.98);
+}
+
+.button-primary {
+    background: var(--accent);
+    color: white;
+}
+
+.button-secondary {
+    background: var(--surface);
+    color: var(--text-primary);
+    border: 1px solid var(--separator);
+}
+
+.button-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+/* ---------------- List view ---------------- */
+
+.list-meta {
+    margin-bottom: 12px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.records {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px;
+}
+
+.record-tile {
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+}
+
+.record-tile .cover {
+    aspect-ratio: 1;
+    background: var(--surface-elevated);
+    display: grid;
+    place-items: center;
+    color: var(--text-tertiary);
+    overflow: hidden;
+}
+
+.record-tile .cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.record-tile .meta {
+    padding: 10px 12px 12px;
+}
+
+.record-tile .title {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.record-tile .artist {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.record-tile .colour {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---------------- States ---------------- */
+
+.state {
+    text-align: center;
+    padding: 64px 20px;
+    color: var(--text-secondary);
+}
+
+.state .state-icon {
+    width: 56px;
+    height: 56px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--text-tertiary);
+    margin: 0 auto 16px;
+}
+
+.state h2 {
+    color: var(--text-primary);
+    margin: 0 0 8px;
+    font-size: 20px;
+}
+
+.spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--separator);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ---------------- Footer ---------------- */
+
+footer {
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: 13px;
+    padding: 32px 16px;
+}

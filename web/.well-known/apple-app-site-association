@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["TEAMID.com.trackd.app"],
+        "components": [
+          { "/": "/l/*", "comment": "Public list share links" }
+        ]
+      }
+    ]
+  }
+}

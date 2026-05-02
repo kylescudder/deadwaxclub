@@ -1,0 +1,21 @@
+[build]
+  publish = "web"
+
+# Universal Links: Apple fetches /.well-known/apple-app-site-association and
+# requires Content-Type: application/json with no extension. Netlify can't
+# infer the content type from the extensionless path, so set it explicitly.
+[[headers]]
+  for = "/.well-known/apple-app-site-association"
+  [headers.values]
+    Content-Type = "application/json"
+
+# Long cache for the static stylesheet and scripts (immutable once deployed).
+[[headers]]
+  for = "/styles.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

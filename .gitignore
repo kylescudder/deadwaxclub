@@ -36,3 +36,7 @@ Config/Secrets.xcconfig
 .vscode/
 .idea/
 *.swp
+
+# Web — local Supabase config (anon key is safe to commit, but encouraging
+# users to copy from .example.js keeps templates clean for forks).
+web/js/config.js

@@ -1,0 +1,3 @@
+# Rewrite /l/<token> to the list viewer page; the JS reads the token from
+# location.pathname so a single static file handles every share link.
+/l/*  /l/index.html  200
