@@ -82,6 +82,9 @@ struct AddRecordView: View {
             discogsReleaseID: nil,
             barcode: barcode.isEmpty ? nil : barcode,
             notes: notes.isEmpty ? nil : notes,
+            estimatedPriceCents: nil,
+            estimatedPriceCurrency: nil,
+            estimatedPriceUpdatedAt: nil,
             createdAt: now,
             updatedAt: now,
             deletedAt: nil

@@ -47,8 +47,10 @@ final class RecordsRepository: ObservableObject {
                 insert into records
                   (id, owner_id, status, title, artist, year, colourway,
                    cover_art_source_url, cover_art_storage_path,
-                   discogs_release_id, barcode, notes, created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   discogs_release_id, barcode, notes,
+                   estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
+                   created_at, updated_at)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(id) do update set
                   status = excluded.status,
                   title = excluded.title,
@@ -60,6 +62,9 @@ final class RecordsRepository: ObservableObject {
                   discogs_release_id = excluded.discogs_release_id,
                   barcode = excluded.barcode,
                   notes = excluded.notes,
+                  estimated_price_cents = excluded.estimated_price_cents,
+                  estimated_price_currency = excluded.estimated_price_currency,
+                  estimated_price_updated_at = excluded.estimated_price_updated_at,
                   updated_at = excluded.updated_at
                 """,
                 parameters: [
@@ -75,12 +80,34 @@ final class RecordsRepository: ObservableObject {
                     record.discogsReleaseID as Any,
                     record.barcode as Any,
                     record.notes as Any,
+                    record.estimatedPriceCents as Any,
+                    record.estimatedPriceCurrency as Any,
+                    record.estimatedPriceUpdatedAt.map(ISO8601DateFormatter.trackd.string(from:)) as Any,
                     ISO8601DateFormatter.trackd.string(from: record.createdAt),
                     ISO8601DateFormatter.trackd.string(from: Date()),
                 ]
             )
         } catch {
             Log.error(error, category: "records.upsert")
+        }
+    }
+
+    func updateEstimate(recordID: String, cents: Int, currency: String) async {
+        do {
+            let now = ISO8601DateFormatter.trackd.string(from: Date())
+            try await database.execute(
+                sql: """
+                update records set
+                  estimated_price_cents = ?,
+                  estimated_price_currency = ?,
+                  estimated_price_updated_at = ?,
+                  updated_at = ?
+                where id = ?
+                """,
+                parameters: [cents, currency, now, now, recordID]
+            )
+        } catch {
+            Log.error(error, category: "records.updateEstimate")
         }
     }
 

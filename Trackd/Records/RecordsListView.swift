@@ -5,6 +5,13 @@ struct RecordsListView: View {
     @State private var status: RecordStatus = .owned
     @State private var search: String = ""
     @State private var showAddSheet = false
+    @AppStorage("records.sort") private var sortRaw: String = RecordsSort.recentlyUpdated.rawValue
+    @State private var filter: RecordsFilter = .none
+    @State private var showFilterSheet = false
+
+    private var sort: RecordsSort {
+        RecordsSort(rawValue: sortRaw) ?? .recentlyUpdated
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,6 +22,12 @@ struct RecordsListView: View {
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.vertical, Theme.Spacing.sm)
 
+            if filter.isActive {
+                FilterChipsBar(filter: $filter)
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.bottom, Theme.Spacing.sm)
+            }
+
             content
         }
         .background(Theme.Colors.background)
@@ -24,11 +37,31 @@ struct RecordsListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { SyncStatusView() }
             ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort", selection: $sortRaw) {
+                        ForEach(RecordsSort.allCases) { sort in
+                            Text(sort.label).tag(sort.rawValue)
+                        }
+                    }
+                    Divider()
+                    Button {
+                        showFilterSheet = true
+                    } label: {
+                        Label("Filter\(filter.isActive ? " (active)" : "")", systemImage: "line.3.horizontal.decrease.circle")
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down.circle")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { showAddSheet = true } label: { Image(systemName: "plus") }
             }
         }
         .sheet(isPresented: $showAddSheet) {
             NavigationStack { AddRecordView(initialStatus: status) }
+        }
+        .sheet(isPresented: $showFilterSheet) {
+            RecordsFilterSheet(filter: $filter)
         }
         .task(id: status) { reconfigure() }
         .onAppear { reconfigure() }
@@ -36,8 +69,8 @@ struct RecordsListView: View {
 
     @ViewBuilder
     private var content: some View {
-        let filtered = filteredRecords
-        if services.records.records.isEmpty && !services.records.isLoading {
+        let filtered = filteredAndSortedRecords
+        if filtered.isEmpty && !filter.isActive && search.isEmpty {
             EmptyState(
                 systemImage: status == .owned ? "opticaldisc" : "heart",
                 title: status == .owned ? "No records yet" : "Nothing on your wishlist",
@@ -46,6 +79,12 @@ struct RecordsListView: View {
                     : "Save vinyl you want to buy and track price changes over time.",
                 actionTitle: "Add record"
             ) { showAddSheet = true }
+        } else if filtered.isEmpty {
+            EmptyState(
+                systemImage: "magnifyingglass",
+                title: "No matches",
+                message: "Try a different search term or clear your filters."
+            )
         } else {
             List {
                 ForEach(filtered) { record in
@@ -69,12 +108,17 @@ struct RecordsListView: View {
         }
     }
 
-    private var filteredRecords: [VinylRecord] {
-        guard !search.isEmpty else { return services.records.records }
-        let q = search.lowercased()
-        return services.records.records.filter {
-            $0.title.lowercased().contains(q) || $0.artist.lowercased().contains(q)
+    private var filteredAndSortedRecords: [VinylRecord] {
+        var rows = services.records.records.filtered(by: filter).sorted(by: sort)
+        if !search.isEmpty {
+            let q = search.lowercased()
+            rows = rows.filter {
+                $0.title.lowercased().contains(q)
+                    || $0.artist.lowercased().contains(q)
+                    || ($0.colourway?.lowercased().contains(q) ?? false)
+            }
         }
+        return rows
     }
 
     private func reconfigure() {
@@ -83,7 +127,44 @@ struct RecordsListView: View {
     }
 
     private func delete(at offsets: IndexSet) {
-        let toRemove = offsets.map { filteredRecords[$0] }
+        let toRemove = offsets.map { filteredAndSortedRecords[$0] }
         Task { for r in toRemove { await services.records.softDelete(recordID: r.id) } }
+    }
+}
+
+private struct FilterChipsBar: View {
+    @Binding var filter: RecordsFilter
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.xs) {
+                if let range = filter.yearRange {
+                    chip("Year \(range.lowerBound)–\(range.upperBound == .max ? "now" : "\(range.upperBound)")") {
+                        filter.yearRange = nil
+                    }
+                }
+                if let cw = filter.colourwayContains, !cw.isEmpty {
+                    chip("Colour: \(cw)") { filter.colourwayContains = nil }
+                }
+                if filter.hasPriceOnly {
+                    chip("With est. value") { filter.hasPriceOnly = false }
+                }
+                if filter.hasNoPriceOnly {
+                    chip("Missing price") { filter.hasNoPriceOnly = false }
+                }
+            }
+        }
+    }
+
+    private func chip(_ text: String, onClose: @escaping () -> Void) -> some View {
+        HStack(spacing: 4) {
+            Text(text).font(.caption)
+            Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
+                .foregroundStyle(Theme.Colors.textTertiary)
+        }
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, Theme.Spacing.xs)
+        .background(Theme.Colors.surface)
+        .clipShape(Capsule())
     }
 }

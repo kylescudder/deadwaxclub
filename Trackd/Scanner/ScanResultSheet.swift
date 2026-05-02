@@ -111,6 +111,9 @@ struct ScanResultSheet: View {
             discogsReleaseID: lookup.releaseID,
             barcode: lookup.barcode ?? barcode,
             notes: existing?.notes,
+            estimatedPriceCents: lookup.estimatedPriceCents ?? existing?.estimatedPriceCents,
+            estimatedPriceCurrency: lookup.estimatedCurrency ?? existing?.estimatedPriceCurrency,
+            estimatedPriceUpdatedAt: lookup.estimatedPriceCents != nil ? now : existing?.estimatedPriceUpdatedAt,
             createdAt: existing?.createdAt ?? now,
             updatedAt: now,
             deletedAt: nil

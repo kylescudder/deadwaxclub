@@ -56,20 +56,52 @@ final class DiscogsClient: ObservableObject {
         let search: DiscogsModels.SearchResponse = try await get(url: components.url!, token: token)
         guard let first = search.results.first else { throw LookupError.noResults }
 
-        let release: DiscogsModels.Release = try await get(
+        async let release: DiscogsModels.Release = get(
             url: base.appendingPathComponent("releases/\(first.id)"),
             token: token
         )
-        return Self.map(release: release, fallbackBarcode: barcode)
+        async let stats: DiscogsModels.MarketplaceStats? = optionalGet(
+            url: base.appendingPathComponent("marketplace/stats/\(first.id)"),
+            token: token
+        )
+        return try await Self.map(release: release, stats: stats, fallbackBarcode: barcode)
     }
 
     func release(id: Int64) async throws -> DiscogsLookup {
         let token = try token()
-        let release: DiscogsModels.Release = try await get(
+        async let release: DiscogsModels.Release = get(
             url: base.appendingPathComponent("releases/\(id)"),
             token: token
         )
-        return Self.map(release: release, fallbackBarcode: nil)
+        async let stats: DiscogsModels.MarketplaceStats? = optionalGet(
+            url: base.appendingPathComponent("marketplace/stats/\(id)"),
+            token: token
+        )
+        return try await Self.map(release: release, stats: stats, fallbackBarcode: nil)
+    }
+
+    /// Fetch only the marketplace stats for an existing release, e.g. to
+    /// refresh the estimated value on a record we already have locally.
+    func marketplaceStats(releaseID: Int64) async throws -> (cents: Int, currency: String)? {
+        let token = try token()
+        let stats: DiscogsModels.MarketplaceStats? = try await optionalGet(
+            url: base.appendingPathComponent("marketplace/stats/\(releaseID)"),
+            token: token
+        )
+        return Self.estimate(from: stats)
+    }
+
+    /// Like `get` but returns nil on 404 / network error so optional
+    /// endpoints (marketplace stats) don't fail the whole lookup.
+    private func optionalGet<T: Decodable>(url: URL, token: String) async throws -> T? {
+        do {
+            return try await get(url: url, token: token) as T
+        } catch LookupError.http(404) {
+            return nil
+        } catch {
+            Log.error(error, category: "discogs.optional")
+            return nil
+        }
     }
 
     private func get<T: Decodable>(url: URL, token: String) async throws -> T {
@@ -86,7 +118,11 @@ final class DiscogsClient: ObservableObject {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    private static func map(release: DiscogsModels.Release, fallbackBarcode: String?) -> DiscogsLookup {
+    private static func map(
+        release: DiscogsModels.Release,
+        stats: DiscogsModels.MarketplaceStats?,
+        fallbackBarcode: String?
+    ) -> DiscogsLookup {
         let cover = release.images?.first(where: { $0.type == "primary" })?.uri
             ?? release.images?.first?.uri
 
@@ -101,6 +137,8 @@ final class DiscogsClient: ObservableObject {
             .joined(separator: ", ")
             ?? "Unknown artist"
 
+        let estimate = estimate(from: stats)
+
         return DiscogsLookup(
             releaseID: release.id,
             title: release.title,
@@ -108,8 +146,15 @@ final class DiscogsClient: ObservableObject {
             year: release.year,
             colourway: colourway,
             coverArtURL: cover,
-            barcode: barcode
+            barcode: barcode,
+            estimatedPriceCents: estimate?.cents,
+            estimatedCurrency: estimate?.currency
         )
+    }
+
+    static func estimate(from stats: DiscogsModels.MarketplaceStats?) -> (cents: Int, currency: String)? {
+        guard let stats, let median = stats.median_price ?? stats.lowest_price else { return nil }
+        return (Int((median.value * 100).rounded()), median.currency)
     }
 
     private static func colourway(from formats: [DiscogsModels.Format]?) -> String? {

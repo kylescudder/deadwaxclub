@@ -59,4 +59,22 @@ struct DiscogsLookup: Equatable {
     let colourway: String?
     let coverArtURL: String?
     let barcode: String?
+    /// Median marketplace price reported by Discogs at the moment of lookup.
+    /// Stored on the record as an estimate; clearly labelled in the UI as
+    /// distinct from any user-recorded paid price.
+    let estimatedPriceCents: Int?
+    let estimatedCurrency: String?
+}
+
+extension DiscogsModels {
+    struct MarketplaceStats: Decodable {
+        struct Price: Decodable {
+            let value: Double
+            let currency: String
+        }
+        let lowest_price: Price?
+        let median_price: Price?
+        let highest_price: Price?
+        let num_for_sale: Int?
+    }
 }

@@ -114,6 +114,10 @@ struct RecordDetailView: View {
     private var priceCard: some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                priceSummaryRow
+
+                Divider()
+
                 HStack {
                     Text("Price history").font(.callout.weight(.semibold))
                     Spacer()
@@ -129,11 +133,98 @@ struct RecordDetailView: View {
         }
     }
 
+    /// Header row that draws a clear visual line between
+    ///   "you paid ${latest user-recorded price}"
+    /// and
+    ///   "Discogs estimate ${marketplace median}".
+    private var priceSummaryRow: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.lg) {
+            VStack(alignment: .leading, spacing: 2) {
+                Label {
+                    Text("You paid")
+                } icon: {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.Colors.accent)
+                }
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+
+                if let latest = services.prices.entries.max(by: { $0.scannedAt < $1.scannedAt }) {
+                    Text(latest.formattedPrice)
+                        .font(.title3.weight(.semibold))
+                } else {
+                    Text("—")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Label {
+                    Text("Discogs estimate")
+                } icon: {
+                    Image(systemName: "globe").foregroundStyle(Theme.Colors.textSecondary)
+                }
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.textSecondary)
+
+                if let cents = currentRecord.estimatedPriceCents,
+                   let currency = currentRecord.estimatedPriceCurrency {
+                    Text(formatCents(cents, currency: currency))
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.green)
+                    if let updated = currentRecord.estimatedPriceUpdatedAt {
+                        Text("Updated \(updated.formatted(.relative(presentation: .named)))")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.Colors.textTertiary)
+                    }
+                } else {
+                    Text("—")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func formatCents(_ cents: Int, currency: String) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = currency
+        return formatter.string(from: NSDecimalNumber(value: Double(cents) / 100.0)) ?? "\(cents)"
+    }
+
     private var actionRow: some View {
-        HStack(spacing: Theme.Spacing.md) {
+        VStack(spacing: Theme.Spacing.sm) {
             PrimaryButton(title: "Log price", systemImage: "tag") {
                 showLogPriceSheet = true
             }
+            if currentRecord.discogsReleaseID != nil {
+                SecondaryButton(title: "Refresh Discogs estimate", systemImage: "arrow.clockwise") {
+                    Task { await refreshEstimate() }
+                }
+            }
+        }
+    }
+
+    private func refreshEstimate() async {
+        guard let releaseID = currentRecord.discogsReleaseID else { return }
+        do {
+            if let estimate = try await services.discogs.marketplaceStats(releaseID: releaseID) {
+                await services.records.updateEstimate(
+                    recordID: currentRecord.id,
+                    cents: estimate.cents,
+                    currency: estimate.currency
+                )
+                currentRecord.estimatedPriceCents = estimate.cents
+                currentRecord.estimatedPriceCurrency = estimate.currency
+                currentRecord.estimatedPriceUpdatedAt = Date()
+                Haptics.success()
+            }
+        } catch {
+            Log.error(error, category: "records.refreshEstimate")
+            Haptics.error()
         }
     }
 
