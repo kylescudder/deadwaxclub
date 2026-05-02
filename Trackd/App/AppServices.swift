@@ -57,7 +57,9 @@ final class AppServices: ObservableObject {
             onboarding.current = nil
             return
         }
-        profile.startWatching(userID: userID.uuidString)
+        let id = userID.uuidString
+        profile.startWatching(userID: id)
+        lists.startWatching(userID: id)
         evaluateOnboarding()
     }
 

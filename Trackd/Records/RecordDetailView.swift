@@ -7,6 +7,7 @@ struct RecordDetailView: View {
     @State private var showLogPriceSheet = false
     @State private var showStatusMenu = false
     @State private var currentRecord: VinylRecord
+    @State private var showAddToListSheet = false
 
     init(record: VinylRecord) {
         self.record = record
@@ -57,6 +58,9 @@ struct RecordDetailView: View {
                             systemImage: currentRecord.status == .owned ? "heart" : "checkmark.circle"
                         )
                     }
+                    Button {
+                        showAddToListSheet = true
+                    } label: { Label("Add to list…", systemImage: "list.bullet.rectangle") }
                     Button(role: .destructive) {
                         Task { await services.records.softDelete(recordID: currentRecord.id) }
                     } label: { Label("Delete", systemImage: "trash") }
@@ -67,6 +71,9 @@ struct RecordDetailView: View {
         }
         .sheet(isPresented: $showLogPriceSheet) {
             LogPriceSheet(record: currentRecord)
+        }
+        .sheet(isPresented: $showAddToListSheet) {
+            AddRecordToListsSheet(record: currentRecord)
         }
         .task {
             services.prices.startWatching(recordID: currentRecord.id)

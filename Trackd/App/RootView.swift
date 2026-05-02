@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var services: AppServices
+    @State private var publicListToken: String?
 
     var body: some View {
         Group {
@@ -25,7 +26,31 @@ struct RootView: View {
         .onChange(of: services.profile.profile?.displayName) { _, _ in
             services.evaluateOnboarding()
         }
+        .onOpenURL { url in handle(url: url) }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL { handle(url: url) }
+        }
+        .sheet(item: Binding(
+            get: { publicListToken.map(PublicListPresentation.init) },
+            set: { publicListToken = $0?.token }
+        )) { presentation in
+            NavigationStack { PublicListView(token: presentation.token) }
+        }
         .animation(.easeInOut(duration: 0.2), value: services.auth.state)
+    }
+
+    private func handle(url: URL) {
+        // Public list share link: https://trackd.app/l/<token> or trackd://list/<token>
+        if url.host == "trackd.app", url.pathComponents.count >= 3, url.pathComponents[1] == "l" {
+            publicListToken = url.pathComponents[2]
+            return
+        }
+        if url.scheme == "trackd", url.host == "list", let token = url.pathComponents.last, !token.isEmpty {
+            publicListToken = token
+            return
+        }
+        // Otherwise pass to auth (OAuth callback).
+        Task { await services.auth.handle(callbackURL: url) }
     }
 
     @ViewBuilder
@@ -56,6 +81,11 @@ struct RootView: View {
             }
         }
     }
+}
+
+private struct PublicListPresentation: Identifiable {
+    let token: String
+    var id: String { token }
 }
 
 struct MainTabView: View {
