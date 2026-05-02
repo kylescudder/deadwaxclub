@@ -40,3 +40,9 @@ Config/Secrets.xcconfig
 # Web — local Supabase config (anon key is safe to commit, but encouraging
 # users to copy from .example.js keeps templates clean for forks).
 web/js/config.js
+
+# supabase CLI scratch state (project ref, version pins, branches)
+Supabase/.temp/
+Supabase/.branches/
+supabase/.temp/
+supabase/.branches/
