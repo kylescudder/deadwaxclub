@@ -38,10 +38,18 @@ Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl y
 
 ## First-time setup
 
+The fastest path is the bundled script:
+
+```sh
+./setup.sh
+```
+
+It checks for required tools, copies the secrets templates, applies Supabase migrations against your linked project, generates the Xcode project, and prints what's still left (anything Apple-Developer-related). The detailed steps below are what the script automates — useful as a reference if you want to do anything by hand.
+
 ### 1. Install tools
 
 ```sh
-brew install xcodegen
+brew install xcodegen supabase/tap/supabase
 ```
 
 ### 2. Configure secrets
