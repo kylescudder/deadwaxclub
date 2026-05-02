@@ -46,3 +46,6 @@ Supabase/.temp/
 Supabase/.branches/
 supabase/.temp/
 supabase/.branches/
+
+# Local Netlify folder
+.netlify
