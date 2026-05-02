@@ -1,7 +1,10 @@
 import SwiftUI
 
+/// Single form for both adding a new record and editing an existing one.
+/// Pass `existing` to edit; nil to add. Title and save semantics adapt.
 struct AddRecordView: View {
     let initialStatus: RecordStatus
+    let existing: VinylRecord?
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.dismiss) private var dismiss
@@ -16,9 +19,10 @@ struct AddRecordView: View {
     @State private var coverURL = ""
     @State private var isSaving = false
 
-    init(initialStatus: RecordStatus) {
+    init(initialStatus: RecordStatus, existing: VinylRecord? = nil) {
         self.initialStatus = initialStatus
-        self._status = State(initialValue: initialStatus)
+        self.existing = existing
+        self._status = State(initialValue: existing?.status ?? initialStatus)
     }
 
     var body: some View {
@@ -45,7 +49,7 @@ struct AddRecordView: View {
                 TextField("Optional", text: $notes, axis: .vertical).lineLimit(3...)
             }
         }
-        .navigationTitle("Add record")
+        .navigationTitle(existing == nil ? "Add record" : "Edit record")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -56,11 +60,23 @@ struct AddRecordView: View {
                     .disabled(!isValid || isSaving)
             }
         }
+        .onAppear { populate() }
     }
 
     private var isValid: Bool {
         !title.trimmingCharacters(in: .whitespaces).isEmpty
             && !artist.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private func populate() {
+        guard let existing else { return }
+        title = existing.title
+        artist = existing.artist
+        year = existing.year.map(String.init) ?? ""
+        colourway = existing.colourway ?? ""
+        barcode = existing.barcode ?? ""
+        notes = existing.notes ?? ""
+        coverURL = existing.coverArtSourceURL ?? ""
     }
 
     private func save() async {
@@ -70,7 +86,7 @@ struct AddRecordView: View {
 
         let now = Date()
         let record = VinylRecord(
-            id: UUID().uuidString.lowercased(),
+            id: existing?.id ?? UUID().uuidString.lowercased(),
             ownerID: ownerID,
             status: status,
             title: title.trimmingCharacters(in: .whitespaces),
@@ -78,14 +94,14 @@ struct AddRecordView: View {
             year: Int(year),
             colourway: colourway.isEmpty ? nil : colourway,
             coverArtSourceURL: coverURL.isEmpty ? nil : coverURL,
-            coverArtStoragePath: nil,
-            discogsReleaseID: nil,
+            coverArtStoragePath: existing?.coverArtStoragePath,
+            discogsReleaseID: existing?.discogsReleaseID,
             barcode: barcode.isEmpty ? nil : barcode,
             notes: notes.isEmpty ? nil : notes,
-            estimatedPriceCents: nil,
-            estimatedPriceCurrency: nil,
-            estimatedPriceUpdatedAt: nil,
-            createdAt: now,
+            estimatedPriceCents: existing?.estimatedPriceCents,
+            estimatedPriceCurrency: existing?.estimatedPriceCurrency,
+            estimatedPriceUpdatedAt: existing?.estimatedPriceUpdatedAt,
+            createdAt: existing?.createdAt ?? now,
             updatedAt: now,
             deletedAt: nil
         )

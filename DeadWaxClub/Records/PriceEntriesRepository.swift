@@ -57,4 +57,39 @@ final class PriceEntriesRepository: ObservableObject {
             Log.error(error, category: "prices.add")
         }
     }
+
+    func update(_ entry: PriceEntry) async {
+        do {
+            try await database.execute(
+                sql: """
+                update price_entries set
+                  price_cents = ?,
+                  currency = ?,
+                  shop_name = ?,
+                  scanned_at = ?
+                where id = ?
+                """,
+                parameters: [
+                    entry.priceCents,
+                    entry.currency,
+                    entry.shopName as Any,
+                    ISO8601DateFormatter.iso.string(from: entry.scannedAt),
+                    entry.id,
+                ]
+            )
+        } catch {
+            Log.error(error, category: "prices.update")
+        }
+    }
+
+    func delete(entryID: String) async {
+        do {
+            try await database.execute(
+                sql: "delete from price_entries where id = ?",
+                parameters: [entryID]
+            )
+        } catch {
+            Log.error(error, category: "prices.delete")
+        }
+    }
 }

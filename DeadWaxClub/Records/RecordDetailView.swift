@@ -8,6 +8,8 @@ struct RecordDetailView: View {
     @State private var showStatusMenu = false
     @State private var currentRecord: VinylRecord
     @State private var showAddToListSheet = false
+    @State private var showEditSheet = false
+    @State private var editingPriceEntry: PriceEntry?
 
     init(record: VinylRecord) {
         self.record = record
@@ -38,6 +40,11 @@ struct RecordDetailView: View {
                 priceCard
                     .padding(.horizontal, Theme.Spacing.lg)
 
+                if !services.prices.entries.isEmpty {
+                    priceLogCard
+                        .padding(.horizontal, Theme.Spacing.lg)
+                }
+
                 actionRow
                     .padding(.horizontal, Theme.Spacing.lg)
                     .padding(.bottom, Theme.Spacing.xxl)
@@ -50,6 +57,9 @@ struct RecordDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button {
+                        showEditSheet = true
+                    } label: { Label("Edit details", systemImage: "pencil") }
                     Button {
                         Task { await toggleStatus() }
                     } label: {
@@ -71,6 +81,14 @@ struct RecordDetailView: View {
         }
         .sheet(isPresented: $showLogPriceSheet) {
             LogPriceSheet(record: currentRecord)
+        }
+        .sheet(isPresented: $showEditSheet, onDismiss: refreshFromLocal) {
+            NavigationStack {
+                AddRecordView(initialStatus: currentRecord.status, existing: currentRecord)
+            }
+        }
+        .sheet(item: $editingPriceEntry) { entry in
+            LogPriceSheet(record: currentRecord, existing: entry)
         }
         .sheet(isPresented: $showAddToListSheet) {
             AddRecordToListsSheet(record: currentRecord)
@@ -200,6 +218,68 @@ struct RecordDetailView: View {
         formatter.numberStyle = .currency
         formatter.currencyCode = currency
         return formatter.string(from: NSDecimalNumber(value: Double(cents) / 100.0)) ?? "\(cents)"
+    }
+
+    private var priceLogCard: some View {
+        Card(padding: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Logged prices")
+                    .font(.callout.weight(.semibold))
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.top, Theme.Spacing.lg)
+                    .padding(.bottom, Theme.Spacing.sm)
+
+                ForEach(Array(sortedEntries.enumerated()), id: \.element.id) { idx, entry in
+                    Button {
+                        editingPriceEntry = entry
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.formattedPrice)
+                                    .font(.callout.weight(.semibold))
+                                    .foregroundStyle(Theme.Colors.textPrimary)
+                                HStack(spacing: 6) {
+                                    Text(entry.scannedAt.formatted(date: .abbreviated, time: .omitted))
+                                    if let shop = entry.shopName, !shop.isEmpty {
+                                        Text("·")
+                                        Text(shop)
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                            }
+                            Spacer()
+                            Image(systemName: "pencil")
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                                .font(.caption)
+                        }
+                        .padding(.horizontal, Theme.Spacing.lg)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    if idx < sortedEntries.count - 1 {
+                        Divider().padding(.leading, Theme.Spacing.lg)
+                    }
+                }
+                .padding(.bottom, Theme.Spacing.sm)
+            }
+        }
+    }
+
+    private var sortedEntries: [PriceEntry] {
+        services.prices.entries.sorted { $0.scannedAt > $1.scannedAt }
+    }
+
+    private func refreshFromLocal() {
+        Task { @MainActor in
+            // After Edit Details closes, the records repo's watch loop will
+            // already have published the latest row; just pull it from there.
+            if let latest = services.records.records.first(where: { $0.id == currentRecord.id }) {
+                currentRecord = latest
+            }
+        }
     }
 
     private var actionRow: some View {

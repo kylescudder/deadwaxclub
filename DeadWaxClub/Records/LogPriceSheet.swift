@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LogPriceSheet: View {
     let record: VinylRecord
+    let existing: PriceEntry?
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.dismiss) private var dismiss
@@ -11,6 +12,12 @@ struct LogPriceSheet: View {
     @State private var shopName: String = ""
     @State private var date: Date = Date()
     @State private var isSaving = false
+    @State private var showDeleteConfirm = false
+
+    init(record: VinylRecord, existing: PriceEntry? = nil) {
+        self.record = record
+        self.existing = existing
+    }
 
     var body: some View {
         NavigationStack {
@@ -32,8 +39,15 @@ struct LogPriceSheet: View {
                 Section("When") {
                     DatePicker("Date", selection: $date, displayedComponents: [.date])
                 }
+                if existing != nil {
+                    Section {
+                        Button("Delete this price", role: .destructive) {
+                            showDeleteConfirm = true
+                        }
+                    }
+                }
             }
-            .navigationTitle("Log price")
+            .navigationTitle(existing == nil ? "Log price" : "Edit price")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -44,6 +58,19 @@ struct LogPriceSheet: View {
                         .disabled(!isValid || isSaving)
                 }
             }
+            .confirmationDialog(
+                "Delete this price entry?",
+                isPresented: $showDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    Task { await deleteEntry() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Removes it from the chart and history. Cannot be undone.")
+            }
+            .onAppear { populate() }
         }
     }
 
@@ -58,23 +85,52 @@ struct LogPriceSheet: View {
         return cents >= 0 ? cents : nil
     }
 
+    private func populate() {
+        guard let existing else { return }
+        amount = String(format: "%.2f", Double(existing.priceCents) / 100)
+        currency = existing.currency
+        shopName = existing.shopName ?? ""
+        date = existing.scannedAt
+    }
+
     private func save() async {
         guard let cents = priceCents,
               let ownerID = services.auth.currentUserID?.uuidString else { return }
         isSaving = true
         defer { isSaving = false }
 
-        let entry = PriceEntry(
-            id: UUID().uuidString.lowercased(),
-            recordID: record.id,
-            ownerID: ownerID,
-            priceCents: cents,
-            currency: currency,
-            shopName: shopName.isEmpty ? nil : shopName,
-            scannedAt: date,
-            createdAt: Date()
-        )
-        await services.prices.add(entry)
+        if let existing {
+            let updated = PriceEntry(
+                id: existing.id,
+                recordID: existing.recordID,
+                ownerID: existing.ownerID,
+                priceCents: cents,
+                currency: currency,
+                shopName: shopName.isEmpty ? nil : shopName,
+                scannedAt: date,
+                createdAt: existing.createdAt
+            )
+            await services.prices.update(updated)
+        } else {
+            let entry = PriceEntry(
+                id: UUID().uuidString.lowercased(),
+                recordID: record.id,
+                ownerID: ownerID,
+                priceCents: cents,
+                currency: currency,
+                shopName: shopName.isEmpty ? nil : shopName,
+                scannedAt: date,
+                createdAt: Date()
+            )
+            await services.prices.add(entry)
+        }
+        Haptics.success()
+        dismiss()
+    }
+
+    private func deleteEntry() async {
+        guard let existing else { return }
+        await services.prices.delete(entryID: existing.id)
         Haptics.success()
         dismiss()
     }
