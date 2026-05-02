@@ -1,16 +1,23 @@
 # Trackd
 
-Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl you want. Offline-first, syncs to Postgres, scans barcodes in shops, plots price changes over time.
+Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl you want. Offline-first, syncs to Postgres, scans barcodes in shops, plots price changes over time, alerts you when a record on your wishlist drops to a new low, and lets you share lists with friends — privately, by link, or collaboratively.
 
 ## Features
 
-- Email + password and Google sign-in (Supabase Auth)
+- Email/password, Sign in with Apple, and Google sign-in (Supabase Auth)
 - Offline-first SQLite mirrored to Supabase Postgres via PowerSync
-- Owned / Wishlist tabs, manual entry, barcode scanning
-- Discogs lookup for cover art, artist, year, colourway
-- Price history per record with a Swift Charts line graph
-- Cover art cached on device **and** mirrored to Supabase Storage so other devices fetch from your bucket instead of Discogs
+- Owned / Wishlist tabs with sort + filter (year, colour way, has-price)
+- Manual entry, barcode scanning, and Discogs lookup for cover art / artist / colour way
+- Per-record price history with a Swift Charts line graph
+- Discogs marketplace estimated value, clearly distinguished from prices you actually paid
+- **Shareable lists** — private, public link, invite-only, or fully collaborative
+- **Push notifications** when any wishlist record (yours or one a list-mate added) hits a new all-time low price
+- **Stats** — total spent, collection value, breakdown by decade and colour way, top owned, lowest wishlist
+- Cover art cached on device **and** mirrored to Supabase Storage so cover art works fully offline and other devices fetch from your bucket instead of Discogs
+- **AppIntents + Spotlight** — find records from system search, "Hey Siri, log a price in Trackd"
+- **Onboarding sheets** for display name, Discogs token, and notification permission
 - Light / Dark / System appearance toggle
+- Account deletion (App Store 5.1.1(v) compliant)
 - Error reporting via Sentry (optional)
 
 ## Stack
@@ -18,12 +25,14 @@ Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl y
 | Concern        | Tool                                                              |
 | -------------- | ----------------------------------------------------------------- |
 | UI             | SwiftUI, iOS 17+                                                  |
-| Backend        | Supabase (Postgres + Auth + Storage)                              |
+| Backend        | Supabase (Postgres + Auth + Storage + Edge Functions)             |
 | Sync           | [PowerSync Swift SDK](https://github.com/powersync-ja/powersync-swift) |
-| Auth           | `supabase-swift`                                                  |
-| Metadata       | [Discogs API](https://www.discogs.com/developers)                 |
+| Auth           | `supabase-swift` (email, Sign in with Apple, Google)              |
+| Metadata       | [Discogs API](https://www.discogs.com/developers) (release + marketplace stats) |
 | Charts         | Swift Charts                                                      |
 | Barcode        | VisionKit `DataScannerViewController`                             |
+| Push           | APNs via Supabase Edge Function (Deno)                            |
+| Search         | CoreSpotlight + AppIntents                                        |
 | Error logging  | `sentry-cocoa`                                                    |
 | Project gen    | [XcodeGen](https://github.com/yonaskolb/XcodeGen)                 |
 
@@ -47,40 +56,79 @@ Fill in:
 - `POWERSYNC_URL` from the PowerSync dashboard once you've created an instance.
 - `SENTRY_DSN` from a Sentry project (optional — leave blank to disable).
 
-> xcconfig values that contain `//` must escape it as `/$()/` (already done in the example file).
-
 ### 3. Provision Supabase
 
 In the Supabase SQL editor, run in order:
 
-1. `Supabase/migrations/0001_init.sql` — tables, triggers, RLS policies.
-2. `Supabase/migrations/0002_storage_covers.sql` — public `covers` bucket + policies.
+1. `Supabase/migrations/0001_init.sql` — tables, triggers, RLS.
+2. `Supabase/migrations/0002_storage_covers.sql` — public `covers` bucket.
+3. `Supabase/migrations/0003_estimated_price.sql` — Discogs estimate columns.
+4. `Supabase/migrations/0004_lists.sql` — lists, list_items, list_members + share-link RPCs.
+5. `Supabase/migrations/0005_notifications.sql` — device tokens + new-low trigger.
+6. `Supabase/migrations/0006_account_delete.sql` — `delete_my_account()` RPC.
+7. `Supabase/migrations/0007_user_lookup.sql` — invite-by-email helper.
 
-Then in **Authentication → Providers**:
+In **Authentication → Providers**:
 - Enable **Email**.
-- Enable **Google**, paste a Google Cloud OAuth client ID + secret. In Google Cloud Console add the redirect URI Supabase shows you. Set the iOS callback to `trackd://auth-callback`.
+- Enable **Apple** (paste a Services ID + key).
+- Enable **Google** (Google Cloud OAuth client ID + secret).
+- Set redirect URI to `trackd://auth-callback`.
 
 ### 4. Provision PowerSync
 
-1. Create a free instance at <https://powersync.com>.
-2. Connect it to your Supabase project (it walks you through it).
-3. Apply the sync rules in `Supabase/powersync/sync_rules.yaml`.
+1. Create an instance at <https://powersync.com>.
+2. Connect it to your Supabase project.
+3. Apply `Supabase/powersync/sync_rules.yaml`.
 4. Copy the instance URL into `POWERSYNC_URL` in `Secrets.xcconfig`.
 
-### 5. Discogs token
+### 5. Push notifications (optional but recommended)
 
-In the running app, go to **Settings → Discogs API** and paste a personal access token from <https://www.discogs.com/settings/developers>. Stored in the keychain.
+For lowest-price alerts:
 
-### 6. Generate the Xcode project
+1. In the Apple Developer portal, create an APNs Auth Key (`.p8`).
+2. In the Supabase dashboard, go to **Edge Functions → Secrets** and set:
+   - `APNS_TEAM_ID` — your team ID
+   - `APNS_KEY_ID` — the key's ID
+   - `APNS_PRIVATE_KEY` — full contents of the `.p8` file (newlines preserved)
+   - `APNS_BUNDLE_ID` — `com.trackd.app` (or your own)
+3. Deploy the Edge Function:
+   ```sh
+   supabase functions deploy notify-price-change
+   ```
+4. In **Database → Webhooks**, create a webhook on `price_entries` `INSERT` events pointing at `https://<project>.supabase.co/functions/v1/notify-price-change`, with header `Authorization: Bearer <SUPABASE_ANON_KEY>`.
+
+The function only sends when `is_new_low` is true (set by a `BEFORE INSERT` trigger), so you won't get spammed.
+
+### 6. Universal Links for public list URLs (optional)
+
+To open `https://trackd.app/l/<token>` directly in the app:
+
+1. Host an `apple-app-site-association` JSON file at `https://trackd.app/.well-known/apple-app-site-association` mapping `applinks` to your bundle ID. Example:
+   ```json
+   { "applinks": { "details": [{ "appIDs": ["TEAMID.com.trackd.app"], "components": [{ "/" : "/l/*" }] }] } }
+   ```
+2. The `applinks:trackd.app` entry is already in `Trackd.entitlements`.
+
+Without this step, recipients without the app see nothing at the URL; recipients with the app installed will still get the deep link via `trackd://list/<token>` if you share that scheme directly.
+
+### 7. Discogs token
+
+In the running app: **Settings → Discogs API**, paste a personal token from <https://www.discogs.com/settings/developers>. Stored in the keychain. The onboarding sheet prompts for this on first launch.
+
+### 8. Generate the Xcode project
 
 ```sh
 xcodegen generate
 open Trackd.xcodeproj
 ```
 
-`Trackd.xcodeproj` is git-ignored — regenerate it from `project.yml` whenever dependencies or sources change.
+`Trackd.xcodeproj` is git-ignored — regenerate from `project.yml` whenever dependencies or sources change.
 
-### 7. Build
+In Xcode:
+- Set your Development Team under **Signing & Capabilities**.
+- Confirm the **Sign in with Apple**, **Push Notifications**, and **Associated Domains** capabilities are present (XcodeGen wires them via `Trackd.entitlements`).
+
+### 9. Build
 
 ```sh
 xcodebuild build \
@@ -89,44 +137,49 @@ xcodebuild build \
   -destination 'platform=iOS Simulator,name=iPhone 15'
 ```
 
-Or just hit ⌘R in Xcode.
+Or hit ⌘R in Xcode. Barcode scanning needs a real device.
 
 ## Repo layout
 
 ```
 Trackd/
-  App/         entry point, services container, secrets reader
-  Auth/        AuthClient + sign-in / sign-up / Google flow
-  Sync/        PowerSync schema, manager, status indicator
-  Records/     list, detail, add, log price, repos
-  Scanner/     VisionKit DataScanner wrapper, scan-result sheet
-  Discogs/     barcode search + release fetch
-  CoverArt/    on-device + Supabase Storage cache
-  Models/      VinylRecord, PriceEntry, Profile
-  Settings/    appearance, account, Discogs token
-  Components/  Theme, PrimaryButton, Card, EmptyState, LoadingView
-  Logging/     Sentry/OSLog wrapper, Keychain helper
-  Resources/   Assets.xcassets
+  App/             entry point, services container, secrets, AppDelegate
+  Auth/            AuthClient, sign-in views, Apple + Google flows
+  Sync/            PowerSync schema, manager, status indicator
+  Records/         list, detail, add, log price, sort, filter, repos
+  Scanner/         VisionKit DataScanner + permission handling
+  Discogs/         release + marketplace stats client
+  CoverArt/        on-device + Supabase Storage cache
+  Lists/           lists CRUD, share modes, public viewer
+  Stats/           aggregates + Swift Charts
+  Notifications/   APNs registration + token upload
+  Onboarding/      first-run sheets
+  Intents/         AppIntents, AppShortcuts, Spotlight indexing
+  Models/          VinylRecord, PriceEntry, Profile, VinylList
+  Settings/        appearance, account, Discogs token, push toggle
+  Components/      Theme, PrimaryButton, Card, EmptyState, Haptics
+  Logging/         Sentry/OSLog wrapper, Keychain helper
+  Resources/       Assets.xcassets
 
 Supabase/
-  migrations/  schema + storage policies
-  powersync/   sync rules
-
-Config/
-  Secrets.xcconfig.example  template (real file is gitignored)
+  migrations/      schema, RLS, triggers, RPCs
+  powersync/       sync rules
+  functions/
+    notify-price-change/  Edge Function: APNs fan-out on new lows
 ```
 
 ## Status
 
-This is a first-cut scaffold. Everything is wired and the architecture is in place, but the app has not yet been built against a real Mac/Xcode toolchain — expect a small round of compile-time fixes when you run `xcodegen generate && open Trackd.xcodeproj` and hit ⌘B for the first time. The most likely places to need a tweak:
+This is a comprehensive scaffold. The architecture is in place across all features, but the project has not yet been built against a real Mac/Xcode toolchain — expect a small round of compile-time fixes when you run `xcodegen generate && open Trackd.xcodeproj` and hit ⌘B for the first time. Areas where SDK API names move between minor versions and may need a tweak:
 
-- **PowerSync Swift SDK** is in active development and the API names move between minor versions. `Trackd/Sync/DatabaseSchema.swift`, `PowerSyncManager.swift`, `SupabaseConnector.swift` and the repos in `Trackd/Records/` use names matching the documented 1.x API; if your installed version diverges, adjust call sites accordingly.
-- **`supabase-swift` 2.x** OAuth helper names occasionally rename (`getOAuthSignInURL` vs `getOAuthURL` etc.). `Trackd/Auth/AuthClient.swift` is the only place that matters.
-- **DataScannerViewController** requires running on a real device for camera; the simulator can't scan barcodes.
+- **PowerSync Swift SDK** — `Trackd/Sync/*` and the repos use names matching the documented 1.x API.
+- **`supabase-swift` 2.x** — OAuth helpers and `signInWithIdToken` occasionally rename. `Trackd/Auth/AuthClient.swift` is the focal point.
+- **AppIntents** — the `DisplayRepresentation.Image(url:)` initializer and the parameter syntax have evolved across iOS 17.x; small adjustments may be needed.
 
 ## Development notes
 
-- `AppServices` constructs and owns all long-lived objects (`AuthClient`, `PowerSyncManager`, `DiscogsClient`, `CoverArtCache`, repositories). Views read them via `@EnvironmentObject`.
-- Soft delete only: `records.deleted_at` is set instead of removing rows so PowerSync can sync the tombstone reliably.
-- Cover art lookup order on display: local Caches file → Supabase Storage public URL → Discogs URL → SF Symbol placeholder. The first display of any record both writes the bytes to disk and uploads to Supabase Storage, so subsequent launches and other devices can render it without Discogs.
-- `Trackd.xcodeproj` is regenerated from `project.yml`. Don't commit it.
+- `AppServices` constructs and owns long-lived objects. Views read them via `@EnvironmentObject`.
+- All deletions are soft (`deleted_at`) so PowerSync propagates tombstones reliably.
+- Cover art lookup order on display: local Caches file → Supabase Storage public URL → Discogs URL → SF Symbol placeholder. First display of any record both writes the bytes to disk and uploads to Supabase Storage so subsequent launches and other devices render it without Discogs.
+- Sharing a list with `link_public` mode mints a 12-char token and a public URL. The unauthenticated `get_shared_list` and `get_shared_list_records` RPCs serve the data — no Trackd account required to view.
+- Trackd.xcodeproj is regenerated from `project.yml`. Don't commit it.
