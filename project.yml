@@ -55,6 +55,12 @@ targets:
               - deadwaxclub
             CFBundleURLName: com.deadwaxclub.auth
         ITSAppUsesNonExemptEncryption: false
+        UIBackgroundModes:
+          - remote-notification
+        SUPABASE_URL: $(SUPABASE_URL)
+        SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
+        POWERSYNC_URL: $(POWERSYNC_URL)
+        SENTRY_DSN: $(SENTRY_DSN)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.deadwaxclub.app
