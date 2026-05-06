@@ -5,27 +5,24 @@ import Supabase
 /// Bridges PowerSync's backend connector protocol to a Supabase project.
 /// - Fetches a fresh JWT for sync via the active Supabase session.
 /// - Writes any local mutations back to Postgres tables via PostgREST.
-final class SupabaseConnector: PowerSyncBackendConnector {
+final class SupabaseConnector: PowerSyncBackendConnectorProtocol, @unchecked Sendable {
     private let auth: AuthClient
 
     init(auth: AuthClient) {
         self.auth = auth
-        super.init()
     }
 
-    override func fetchCredentials() async throws -> PowerSyncCredentials? {
+    func fetchCredentials() async throws -> PowerSyncCredentials? {
         guard let token = await auth.currentAccessToken() else { return nil }
-        guard let userID = await auth.currentUserID?.uuidString else { return nil }
         return PowerSyncCredentials(
             endpoint: AppSecrets.powerSyncURL.absoluteString,
-            token: token,
-            userId: userID
+            token: token
         )
     }
 
-    override func uploadData(database: PowerSyncDatabaseProtocol) async throws {
+    func uploadData(database: PowerSyncDatabaseProtocol) async throws {
         guard let batch = try await database.getCrudBatch() else { return }
-        let client = await auth.supabase
+        let client = auth.supabase
 
         for entry in batch.crud {
             let table = client.from(entry.table)
