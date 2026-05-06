@@ -9,7 +9,7 @@ struct VinylRecordEntity: AppEntity, Identifiable {
         TypeDisplayRepresentation(name: "Vinyl record")
     }
 
-    static var defaultQuery = VinylRecordQuery()
+    static let defaultQuery = VinylRecordQuery()
 
     let id: String
     let title: String

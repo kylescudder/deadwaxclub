@@ -33,7 +33,7 @@ final class PushManager: NSObject, ObservableObject {
                 .requestAuthorization(options: [.alert, .sound, .badge])
             await refreshAuthorizationStatus()
             if granted {
-                await UIApplication.shared.registerForRemoteNotifications()
+                UIApplication.shared.registerForRemoteNotifications()
             }
             return granted
         } catch {
@@ -50,7 +50,7 @@ final class PushManager: NSObject, ObservableObject {
         guard authorizationStatus == .authorized
             || authorizationStatus == .provisional
             || authorizationStatus == .ephemeral else { return }
-        await UIApplication.shared.registerForRemoteNotifications()
+        UIApplication.shared.registerForRemoteNotifications()
     }
 
     /// Called from the AppDelegate after iOS hands us a device token.

@@ -2,8 +2,8 @@ import AppIntents
 import Foundation
 
 struct LogPriceIntent: AppIntent {
-    static var title: LocalizedStringResource = "Log a vinyl price"
-    static var description = IntentDescription(
+    static let title: LocalizedStringResource = "Log a vinyl price"
+    static let description = IntentDescription(
         "Record a price you saw for a vinyl record so you can track its history."
     )
 
@@ -45,8 +45,8 @@ struct LogPriceIntent: AppIntent {
 }
 
 struct OpenRecordIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open a vinyl record"
-    static var openAppWhenRun: Bool = true
+    static let title: LocalizedStringResource = "Open a vinyl record"
+    static let openAppWhenRun: Bool = true
 
     @Parameter(title: "Record")
     var record: VinylRecordEntity

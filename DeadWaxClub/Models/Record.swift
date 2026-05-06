@@ -72,12 +72,15 @@ func parseDate(_ value: String?) -> Date? {
 }
 
 extension ISO8601DateFormatter {
-    static let iso: ISO8601DateFormatter = {
+    // ISO8601DateFormatter is documented as thread-safe once configured,
+    // but Foundation hasn't marked it Sendable. Pin both formatters as
+    // immutable globals and tell the compiler we've reasoned about it.
+    nonisolated(unsafe) static let iso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         return f
     }()
-    static let isoFractional: ISO8601DateFormatter = {
+    nonisolated(unsafe) static let isoFractional: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f

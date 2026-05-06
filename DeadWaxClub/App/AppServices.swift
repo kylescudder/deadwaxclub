@@ -36,7 +36,7 @@ final class AppServices: ObservableObject {
         self.lists = ListsRepository(database: sync.database, auth: auth)
         self.onboarding = OnboardingCoordinator()
 
-        for child: ObservableObject in [auth, sync, discogs, records, prices, profile, lists, onboarding] {
+        for child: any ObservableObject in [auth, sync, discogs, records, prices, profile, lists, onboarding] {
             (child.objectWillChange as? ObservableObjectPublisher)?
                 .sink { [weak self] in self?.objectWillChange.send() }
                 .store(in: &cancellables)

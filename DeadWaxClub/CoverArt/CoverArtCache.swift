@@ -105,8 +105,8 @@ final class CoverArtCache: ObservableObject {
     private func uploadToSupabase(bytes: Data, path: String) async throws {
         let storage = auth.supabase.storage.from("covers")
         _ = try await storage.upload(
-            path: path,
-            file: bytes,
+            path,
+            data: bytes,
             options: .init(contentType: "image/jpeg", upsert: true)
         )
     }
