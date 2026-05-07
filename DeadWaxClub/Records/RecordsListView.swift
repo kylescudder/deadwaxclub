@@ -35,7 +35,6 @@ struct RecordsListView: View {
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) { SyncStatusView() }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Picker("Sort", selection: $sortRaw) {
@@ -122,7 +121,7 @@ struct RecordsListView: View {
     }
 
     private func reconfigure() {
-        guard let ownerID = services.auth.currentUserID?.uuidString else { return }
+        guard let ownerID = services.auth.currentUserID?.uuidString.lowercased() else { return }
         services.records.startWatching(status: status, ownerID: ownerID)
     }
 
