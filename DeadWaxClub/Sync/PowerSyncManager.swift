@@ -21,17 +21,12 @@ final class PowerSyncManager: ObservableObject {
 
     init(authClient: AuthClient) {
         self.auth = authClient
-        let dbPath = Self.databasePath()
+        // dbFilename is a filename, not a path — PowerSync manages the
+        // location itself under Application Support/databases.
         self.database = PowerSyncDatabase(
             schema: DatabaseSchema.schema,
-            dbFilename: dbPath
+            dbFilename: "deadwaxclub.sqlite"
         )
-    }
-
-    private static func databasePath() -> String {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("deadwaxclub.sqlite").path
     }
 
     func startObservingAuth() async {
@@ -48,8 +43,15 @@ final class PowerSyncManager: ObservableObject {
         switch state {
         case .signedIn:
             await connectIfNeeded()
-        case .signedOut, .unknown:
+        case .signedOut:
             await disconnect()
+        case .unknown:
+            // Transient state during auth bootstrap on every launch.
+            // disconnect() calls disconnectAndClear() which wipes the local
+            // SQLite *and* the pending upload queue — way too aggressive for
+            // what's just "we haven't read the keychain yet". Wait for an
+            // explicit signedOut.
+            break
         }
     }
 
@@ -69,13 +71,30 @@ final class PowerSyncManager: ObservableObject {
     }
 
     private func disconnect() async {
+        // Use the non-clearing disconnect so transient .signedOut states
+        // emitted during session refresh don't wipe the local DB and the
+        // CRUD upload queue. To wipe on actual sign-out, call wipe()
+        // explicitly from the sign-out path.
         do {
-            try await database.disconnectAndClear()
+            try await database.disconnect()
             connector = nil
             status = .idle
             Log.breadcrumb("powersync disconnected", category: "sync")
         } catch {
             Log.error(error, category: "sync.disconnect")
+        }
+    }
+
+    /// Tear down PowerSync's local SQLite + pending uploads. Call only when
+    /// the user has explicitly signed out via the Settings UI.
+    func wipe() async {
+        do {
+            try await database.disconnectAndClear()
+            connector = nil
+            status = .idle
+            Log.breadcrumb("powersync wiped", category: "sync")
+        } catch {
+            Log.error(error, category: "sync.wipe")
         }
     }
 }

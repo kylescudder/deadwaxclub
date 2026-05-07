@@ -45,7 +45,7 @@ final class ListsRepository: ObservableObject {
     }
 
     func create(name: String, description: String?, mode: ListShareMode) async -> VinylList? {
-        guard let ownerID = auth.currentUserID?.uuidString else { return nil }
+        guard let ownerID = auth.currentUserID?.uuidString.lowercased() else { return nil }
         let now = Date()
         let id = UUID().uuidString.lowercased()
         let token: String? = (mode == .linkPublic) ? Self.makeShareToken() : nil
@@ -66,27 +66,39 @@ final class ListsRepository: ObservableObject {
     }
 
     func upsert(_ list: VinylList) async {
+        let createdAt = ISO8601DateFormatter.iso.string(from: list.createdAt)
+        let updatedAt = ISO8601DateFormatter.iso.string(from: Date())
         do {
+            // PowerSync exposes tables as views — ON CONFLICT … DO UPDATE is
+            // not supported. Insert-or-ignore then update covers both cases.
             try await database.execute(
                 sql: """
-                insert into lists
+                insert or ignore into lists
                   (id, owner_id, name, description, share_mode, share_token,
                    cover_record_id, created_at, updated_at)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict(id) do update set
-                  name = excluded.name,
-                  description = excluded.description,
-                  share_mode = excluded.share_mode,
-                  share_token = excluded.share_token,
-                  cover_record_id = excluded.cover_record_id,
-                  updated_at = excluded.updated_at
                 """,
                 parameters: [
                     list.id, list.ownerID, list.name, list.description,
                     list.shareMode.rawValue, list.shareToken,
-                    list.coverRecordID,
-                    ISO8601DateFormatter.iso.string(from: list.createdAt),
-                    ISO8601DateFormatter.iso.string(from: Date()),
+                    list.coverRecordID, createdAt, updatedAt,
+                ]
+            )
+            try await database.execute(
+                sql: """
+                update lists set
+                  name = ?,
+                  description = ?,
+                  share_mode = ?,
+                  share_token = ?,
+                  cover_record_id = ?,
+                  updated_at = ?
+                where id = ?
+                """,
+                parameters: [
+                    list.name, list.description,
+                    list.shareMode.rawValue, list.shareToken,
+                    list.coverRecordID, updatedAt, list.id,
                 ]
             )
         } catch {
@@ -123,17 +135,23 @@ final class ListsRepository: ObservableObject {
     }
 
     func addRecord(_ recordID: String, to listID: String) async {
-        guard let userID = auth.currentUserID?.uuidString else { return }
+        guard let userID = auth.currentUserID?.uuidString.lowercased() else { return }
         let id = UUID().uuidString.lowercased()
         let now = ISO8601DateFormatter.iso.string(from: Date())
         do {
+            // ON CONFLICT … DO NOTHING is unsupported on PowerSync views.
+            // Use NOT EXISTS as the dedupe guard instead.
             try await database.execute(
                 sql: """
                 insert into list_items (id, list_id, record_id, added_by, position, created_at)
-                values (?, ?, ?, ?, coalesce((select max(position) + 1 from list_items where list_id = ?), 0), ?)
-                on conflict(list_id, record_id) do nothing
+                select ?, ?, ?, ?,
+                       coalesce((select max(position) + 1 from list_items where list_id = ?), 0),
+                       ?
+                where not exists (
+                    select 1 from list_items where list_id = ? and record_id = ?
+                )
                 """,
-                parameters: [id, listID, recordID, userID, listID, now]
+                parameters: [id, listID, recordID, userID, listID, now, listID, recordID]
             )
         } catch {
             Log.error(error, category: "lists.addRecord")

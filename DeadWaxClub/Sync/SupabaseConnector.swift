@@ -28,7 +28,13 @@ final class SupabaseConnector: PowerSyncBackendConnectorProtocol, @unchecked Sen
             let table = client.from(entry.table)
             switch entry.op {
             case .put:
-                let payload = entry.opData ?? [:]
+                // PowerSync keeps the row's primary key in `entry.id`, not
+                // inside `opData`. Merge it back into the payload before
+                // upserting — otherwise PostgREST sends an INSERT with a
+                // null id and Postgres rejects it (FK or RLS, depending on
+                // the table) with a misleading 42501.
+                var payload = entry.opData ?? [:]
+                payload["id"] = entry.id
                 try await table.upsert(payload).execute()
             case .patch:
                 guard let payload = entry.opData else { continue }

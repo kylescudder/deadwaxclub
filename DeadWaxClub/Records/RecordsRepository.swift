@@ -47,31 +47,21 @@ final class RecordsRepository: ObservableObject {
     }
 
     func upsert(_ record: VinylRecord) async {
+        let updatedAt = ISO8601DateFormatter.iso.string(from: Date())
+        let createdAt = ISO8601DateFormatter.iso.string(from: record.createdAt)
+        let estimatedAt = record.estimatedPriceUpdatedAt.map(ISO8601DateFormatter.iso.string(from:))
         do {
+            // PowerSync exposes tables as views — ON CONFLICT … DO UPDATE is
+            // not supported. Insert-or-ignore then update covers both cases.
             try await database.execute(
                 sql: """
-                insert into records
+                insert or ignore into records
                   (id, owner_id, status, title, artist, year, colourway,
                    cover_art_source_url, cover_art_storage_path,
                    discogs_release_id, barcode, notes,
                    estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
                    created_at, updated_at)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict(id) do update set
-                  status = excluded.status,
-                  title = excluded.title,
-                  artist = excluded.artist,
-                  year = excluded.year,
-                  colourway = excluded.colourway,
-                  cover_art_source_url = excluded.cover_art_source_url,
-                  cover_art_storage_path = excluded.cover_art_storage_path,
-                  discogs_release_id = excluded.discogs_release_id,
-                  barcode = excluded.barcode,
-                  notes = excluded.notes,
-                  estimated_price_cents = excluded.estimated_price_cents,
-                  estimated_price_currency = excluded.estimated_price_currency,
-                  estimated_price_updated_at = excluded.estimated_price_updated_at,
-                  updated_at = excluded.updated_at
                 """,
                 parameters: [
                     record.id,
@@ -88,9 +78,46 @@ final class RecordsRepository: ObservableObject {
                     record.notes,
                     record.estimatedPriceCents,
                     record.estimatedPriceCurrency,
-                    record.estimatedPriceUpdatedAt.map(ISO8601DateFormatter.iso.string(from:)),
-                    ISO8601DateFormatter.iso.string(from: record.createdAt),
-                    ISO8601DateFormatter.iso.string(from: Date()),
+                    estimatedAt,
+                    createdAt,
+                    updatedAt,
+                ]
+            )
+            try await database.execute(
+                sql: """
+                update records set
+                  status = ?,
+                  title = ?,
+                  artist = ?,
+                  year = ?,
+                  colourway = ?,
+                  cover_art_source_url = ?,
+                  cover_art_storage_path = ?,
+                  discogs_release_id = ?,
+                  barcode = ?,
+                  notes = ?,
+                  estimated_price_cents = ?,
+                  estimated_price_currency = ?,
+                  estimated_price_updated_at = ?,
+                  updated_at = ?
+                where id = ?
+                """,
+                parameters: [
+                    record.status.rawValue,
+                    record.title,
+                    record.artist,
+                    record.year,
+                    record.colourway,
+                    record.coverArtSourceURL,
+                    record.coverArtStoragePath,
+                    record.discogsReleaseID,
+                    record.barcode,
+                    record.notes,
+                    record.estimatedPriceCents,
+                    record.estimatedPriceCurrency,
+                    estimatedAt,
+                    updatedAt,
+                    record.id,
                 ]
             )
         } catch {
