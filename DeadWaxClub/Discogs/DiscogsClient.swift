@@ -67,6 +67,44 @@ final class DiscogsClient: ObservableObject {
         return try await Self.map(release: release, stats: stats, fallbackBarcode: barcode)
     }
 
+    /// Free-text search by title and/or artist for vinyl releases. Returns
+    /// up to 25 lightweight results suitable for a picker UI; fetch the full
+    /// `release(id:)` once the user picks one.
+    func search(title: String, artist: String) async throws -> [DiscogsSearchResult] {
+        let token = try token()
+        var components = URLComponents(url: base.appendingPathComponent("database/search"), resolvingAgainstBaseURL: false)!
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "type", value: "release"),
+            URLQueryItem(name: "format", value: "Vinyl"),
+            URLQueryItem(name: "per_page", value: "25"),
+        ]
+        let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
+        let trimmedArtist = artist.trimmingCharacters(in: .whitespaces)
+        if !trimmedTitle.isEmpty {
+            items.append(URLQueryItem(name: "release_title", value: trimmedTitle))
+        }
+        if !trimmedArtist.isEmpty {
+            items.append(URLQueryItem(name: "artist", value: trimmedArtist))
+        }
+        components.queryItems = items
+
+        let resp: DiscogsModels.SearchResponse = try await get(url: components.url!, token: token)
+        return resp.results.map { r in
+            DiscogsSearchResult(
+                id: r.id,
+                title: r.title ?? "Untitled",
+                year: r.year.flatMap(Int.init),
+                format: r.format?.joined(separator: ", "),
+                label: r.label?.first,
+                coverThumb: r.thumb ?? r.cover_image,
+                barcode: r.barcode?.first,
+                country: r.country,
+                catno: r.catno,
+                colourway: Self.colourway(from: r.formats)
+            )
+        }
+    }
+
     func release(id: Int64) async throws -> DiscogsLookup {
         let token = try token()
         async let release: DiscogsModels.Release = get(
@@ -107,7 +145,10 @@ final class DiscogsClient: ObservableObject {
     private func get<T: Decodable>(url: URL, token: String) async throws -> T {
         var req = URLRequest(url: url)
         req.setValue("Discogs token=\(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("DeadWaxClub/0.1 +https://github.com/kylescudder/deadwaxclub", forHTTPHeaderField: "User-Agent")
+        // Cloudflare's bot heuristics in front of api.discogs.com block UAs
+        // that look automated (specifically the "+<URL>" suffix Discogs's
+        // own docs suggest). Keep the UA simple to stay under that radar.
+        req.setValue("DeadWaxClub/0.1", forHTTPHeaderField: "User-Agent")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await session.data(for: req)

@@ -15,6 +15,9 @@ enum DiscogsModels {
         let barcode: [String]?
         let format: [String]?
         let label: [String]?
+        let country: String?
+        let catno: String?
+        let formats: [Format]?
     }
 
     struct Release: Decodable {
@@ -49,6 +52,19 @@ enum DiscogsModels {
         let type: String?       // e.g. "Barcode"
         let value: String?
     }
+}
+
+struct DiscogsSearchResult: Identifiable, Equatable {
+    let id: Int64
+    let title: String       // "Architects - Holy Hell"
+    let year: Int?
+    let format: String?     // "Vinyl, LP, Album, Reissue"
+    let label: String?
+    let coverThumb: String?
+    let barcode: String?
+    let country: String?    // e.g. "Europe", "UK", "US"
+    let catno: String?      // e.g. "7600-1"
+    let colourway: String?  // e.g. "Coke Bottle Clear" — pulled from formats[].text
 }
 
 struct DiscogsLookup: Equatable {

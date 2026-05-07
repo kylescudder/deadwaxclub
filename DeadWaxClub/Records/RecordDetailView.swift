@@ -10,6 +10,7 @@ struct RecordDetailView: View {
     @State private var showAddToListSheet = false
     @State private var showEditSheet = false
     @State private var editingPriceEntry: PriceEntry?
+    @State private var showDiscogsPicker = false
 
     init(record: VinylRecord) {
         self.record = record
@@ -92,6 +93,14 @@ struct RecordDetailView: View {
         }
         .sheet(isPresented: $showAddToListSheet) {
             AddRecordToListsSheet(record: currentRecord)
+        }
+        .sheet(isPresented: $showDiscogsPicker) {
+            DiscogsPickerView(
+                initialTitle: currentRecord.title,
+                initialArtist: currentRecord.artist
+            ) { lookup in
+                Task { await applyDiscogsLookup(lookup) }
+            }
         }
         .task {
             services.prices.startWatching(recordID: currentRecord.id)
@@ -291,8 +300,37 @@ struct RecordDetailView: View {
                 SecondaryButton(title: "Refresh Discogs estimate", systemImage: "arrow.clockwise") {
                     Task { await refreshEstimate() }
                 }
+            } else {
+                SecondaryButton(title: "Look up on Discogs", systemImage: "magnifyingglass") {
+                    showDiscogsPicker = true
+                }
             }
         }
+    }
+
+    /// Apply a release picked from the Discogs picker. Overwrites Discogs-
+    /// authored facts (title, artist, year, colourway, cover, release id,
+    /// estimate, barcode) but preserves notes, status and any logged paid
+    /// prices. Clears the cached storage path so the new cover gets re-cached.
+    private func applyDiscogsLookup(_ lookup: DiscogsLookup) async {
+        var updated = currentRecord
+        updated.title = lookup.title
+        updated.artist = lookup.artist
+        if let y = lookup.year { updated.year = y }
+        if let cw = lookup.colourway { updated.colourway = cw }
+        if let cover = lookup.coverArtURL { updated.coverArtSourceURL = cover }
+        if let bc = lookup.barcode { updated.barcode = bc }
+        updated.discogsReleaseID = lookup.releaseID
+        updated.coverArtStoragePath = nil
+        if let cents = lookup.estimatedPriceCents {
+            updated.estimatedPriceCents = cents
+            updated.estimatedPriceCurrency = lookup.estimatedCurrency
+            updated.estimatedPriceUpdatedAt = Date()
+        }
+        updated.updatedAt = Date()
+        await services.records.upsert(updated)
+        currentRecord = updated
+        Haptics.success()
     }
 
     private func refreshEstimate() async {

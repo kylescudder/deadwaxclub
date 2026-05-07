@@ -18,6 +18,11 @@ struct AddRecordView: View {
     @State private var status: RecordStatus
     @State private var coverURL = ""
     @State private var isSaving = false
+    @State private var attachedReleaseID: Int64?
+    @State private var attachedEstimateCents: Int?
+    @State private var attachedEstimateCurrency: String?
+    @State private var showDiscogsPicker = false
+    @State private var lookupError: String?
 
     init(initialStatus: RecordStatus, existing: VinylRecord? = nil) {
         self.initialStatus = initialStatus
@@ -39,6 +44,17 @@ struct AddRecordView: View {
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                Button {
+                    showDiscogsPicker = true
+                } label: {
+                    Label(
+                        attachedReleaseID == nil ? "Find on Discogs" : "Discogs release attached",
+                        systemImage: attachedReleaseID == nil ? "magnifyingglass" : "checkmark.circle.fill"
+                    )
+                }
+                if let lookupError {
+                    Text(lookupError).font(.footnote).foregroundStyle(.red)
+                }
             }
             Section {
                 Picker("Status", selection: $status) {
@@ -61,6 +77,11 @@ struct AddRecordView: View {
             }
         }
         .onAppear { populate() }
+        .sheet(isPresented: $showDiscogsPicker) {
+            DiscogsPickerView(initialTitle: title, initialArtist: artist) { lookup in
+                applyLookup(lookup)
+            }
+        }
     }
 
     private var isValid: Bool {
@@ -77,30 +98,80 @@ struct AddRecordView: View {
         barcode = existing.barcode ?? ""
         notes = existing.notes ?? ""
         coverURL = existing.coverArtSourceURL ?? ""
+        attachedReleaseID = existing.discogsReleaseID
+        attachedEstimateCents = existing.estimatedPriceCents
+        attachedEstimateCurrency = existing.estimatedPriceCurrency
+    }
+
+    /// Pulled from the picker. Overwrites the user's typed facts because
+    /// they explicitly chose this release; preserves notes/status.
+    private func applyLookup(_ lookup: DiscogsLookup) {
+        title = lookup.title
+        artist = lookup.artist
+        if let y = lookup.year { year = String(y) }
+        if let cw = lookup.colourway { colourway = cw }
+        if let cover = lookup.coverArtURL { coverURL = cover }
+        if let bc = lookup.barcode { barcode = bc }
+        attachedReleaseID = lookup.releaseID
+        attachedEstimateCents = lookup.estimatedPriceCents
+        attachedEstimateCurrency = lookup.estimatedCurrency
+        lookupError = nil
+        Haptics.success()
     }
 
     private func save() async {
-        guard let ownerID = services.auth.currentUserID?.uuidString else { return }
+        guard let ownerID = services.auth.currentUserID?.uuidString.lowercased() else { return }
         isSaving = true
         defer { isSaving = false }
 
+        // If the user typed a barcode and we don't already have a Discogs
+        // release attached, try the lookup automatically before saving.
+        let trimmedBarcode = barcode.trimmingCharacters(in: .whitespaces)
+        var enrichment: DiscogsLookup?
+        if !trimmedBarcode.isEmpty && attachedReleaseID == nil {
+            do {
+                enrichment = try await services.discogs.lookup(barcode: trimmedBarcode)
+            } catch DiscogsClient.LookupError.noResults {
+                // Save anyway — user can attach via the picker later.
+            } catch {
+                Log.error(error, category: "addrecord.barcodeLookup")
+            }
+        }
+
         let now = Date()
+        let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
+        let trimmedArtist = artist.trimmingCharacters(in: .whitespaces)
+
+        let resolvedTitle = trimmedTitle.isEmpty ? (enrichment?.title ?? "") : trimmedTitle
+        let resolvedArtist = trimmedArtist.isEmpty ? (enrichment?.artist ?? "") : trimmedArtist
+        let resolvedYear = Int(year) ?? enrichment?.year
+        let resolvedColourway = colourway.isEmpty ? enrichment?.colourway : colourway
+        let resolvedCoverURL = coverURL.isEmpty ? enrichment?.coverArtURL : coverURL
+        let resolvedBarcode = trimmedBarcode.isEmpty ? enrichment?.barcode : trimmedBarcode
+        let resolvedReleaseID = attachedReleaseID ?? enrichment?.releaseID ?? existing?.discogsReleaseID
+        let resolvedEstimateCents = attachedEstimateCents ?? enrichment?.estimatedPriceCents ?? existing?.estimatedPriceCents
+        let resolvedEstimateCurrency = attachedEstimateCurrency ?? enrichment?.estimatedCurrency ?? existing?.estimatedPriceCurrency
+        let resolvedEstimateUpdatedAt: Date? = {
+            if attachedEstimateCents != nil || enrichment?.estimatedPriceCents != nil { return now }
+            return existing?.estimatedPriceUpdatedAt
+        }()
+
         let record = VinylRecord(
             id: existing?.id ?? UUID().uuidString.lowercased(),
             ownerID: ownerID,
             status: status,
-            title: title.trimmingCharacters(in: .whitespaces),
-            artist: artist.trimmingCharacters(in: .whitespaces),
-            year: Int(year),
-            colourway: colourway.isEmpty ? nil : colourway,
-            coverArtSourceURL: coverURL.isEmpty ? nil : coverURL,
-            coverArtStoragePath: existing?.coverArtStoragePath,
-            discogsReleaseID: existing?.discogsReleaseID,
-            barcode: barcode.isEmpty ? nil : barcode,
+            title: resolvedTitle,
+            artist: resolvedArtist,
+            year: resolvedYear,
+            colourway: resolvedColourway,
+            coverArtSourceURL: resolvedCoverURL,
+            coverArtStoragePath: resolvedReleaseID == existing?.discogsReleaseID ? existing?.coverArtStoragePath : nil,
+            discogsReleaseID: resolvedReleaseID,
+            barcode: resolvedBarcode,
             notes: notes.isEmpty ? nil : notes,
-            estimatedPriceCents: existing?.estimatedPriceCents,
-            estimatedPriceCurrency: existing?.estimatedPriceCurrency,
-            estimatedPriceUpdatedAt: existing?.estimatedPriceUpdatedAt,
+            estimatedPriceCents: resolvedEstimateCents,
+            estimatedPriceCurrency: resolvedEstimateCurrency,
+            estimatedPriceUpdatedAt: resolvedEstimateUpdatedAt,
             createdAt: existing?.createdAt ?? now,
             updatedAt: now,
             deletedAt: nil
