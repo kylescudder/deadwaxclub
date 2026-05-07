@@ -3,8 +3,11 @@ import SwiftUI
 
 /// The set of one-time onboarding sheets a newly signed-in user might see,
 /// in display order. Empty array means everything's already done.
+///
+/// Display name is intentionally NOT an onboarding step — Apple/Google supply
+/// it on first sign-in via `raw_user_meta_data`, the email/password form asks
+/// for it inline, and worst case the user can set it from Settings later.
 enum OnboardingStep: Identifiable, Hashable {
-    case displayName
     case discogsToken
     case enableNotifications
 
@@ -15,26 +18,18 @@ enum OnboardingStep: Identifiable, Hashable {
 final class OnboardingCoordinator: ObservableObject {
     @AppStorage("onboarding.discogsTokenSeen") private var discogsTokenSeen: Bool = false
     @AppStorage("onboarding.notificationsSeen") private var notificationsSeen: Bool = false
-    /// Latches once we've ever seen a non-empty displayName for this user
-    /// on this device. Persisted across launches so subsequent cold starts
-    /// don't flash the sheet during the brief window between watcher
-    /// emission and PowerSync's first checkpoint apply. Cleared by sign-out.
-    @AppStorage("onboarding.displayNameSeen") private var displayNameSeen: Bool = false
 
     @Published var current: OnboardingStep?
 
     /// Decide what to show right now given current profile + token state.
     /// Called whenever the user signs in or completes a step.
-    /// `profileLoaded` is the gate that prevents flashing `.displayName`
-    /// before the local DB has had a chance to surface the row.
+    /// `profileLoaded` is the gate that prevents flashing a sheet before the
+    /// local DB has had a chance to surface the row.
     func reconcile(profileLoaded: Bool, profileDisplayName: String?, hasDiscogsToken: Bool, notificationsAuthorized: Bool) {
         guard profileLoaded else { return }
-        let trimmed = (profileDisplayName ?? "").trimmingCharacters(in: .whitespaces)
-        if !trimmed.isEmpty { displayNameSeen = true }
+        _ = profileDisplayName // kept in the signature for callers; no longer drives onboarding
 
-        if !displayNameSeen && trimmed.isEmpty {
-            current = .displayName
-        } else if !discogsTokenSeen && !hasDiscogsToken {
+        if !discogsTokenSeen && !hasDiscogsToken {
             current = .discogsToken
         } else if !notificationsSeen && !notificationsAuthorized {
             current = .enableNotifications
@@ -45,11 +40,9 @@ final class OnboardingCoordinator: ObservableObject {
 
     func markDiscogsTokenSeen() { discogsTokenSeen = true }
     func markNotificationsSeen() { notificationsSeen = true }
-    func markDisplayNameSeen() { displayNameSeen = true }
     /// Reset onboarding flags when the user signs out; they're per-account.
     func resetForSignOut() {
         discogsTokenSeen = false
         notificationsSeen = false
-        displayNameSeen = false
     }
 }

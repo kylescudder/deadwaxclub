@@ -59,10 +59,22 @@ enum IntentBridge {
                 NSLocalizedDescriptionKey: "Sign in to Deadwax Club to log prices."
             ])
         }
+        // PriceEntry inherits the parent record's Collection.
+        let collectionID: String? = try await services.sync.database.getOptional(
+            sql: "select collection_id from records where id = ? limit 1",
+            parameters: [recordID],
+            mapper: { try $0.getString(name: "collection_id") }
+        )
+        guard let collectionID else {
+            throw NSError(domain: "deadwaxclub.intents", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "Record not found."
+            ])
+        }
         let entry = PriceEntry(
             id: UUID().uuidString.lowercased(),
             recordID: recordID,
             ownerID: ownerID,
+            collectionID: collectionID,
             priceCents: Int((priceMajor * 100).rounded()),
             currency: currency,
             shopName: shop,

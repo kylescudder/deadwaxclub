@@ -5,10 +5,16 @@ import PowerSync
 struct StatsView: View {
     @EnvironmentObject private var services: AppServices
     @StateObject private var repo: StatsRepositoryHolder = StatsRepositoryHolder()
+    /// nil = aggregate across every Collection the user belongs to.
+    @State private var selectedCollectionID: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                if services.collections.collections.count > 1 {
+                    scopePicker
+                }
+
                 if let stats = repo.repo?.stats {
                     summaryCard(stats: stats)
                     valueCard(stats: stats)
@@ -48,11 +54,26 @@ struct StatsView: View {
             repo.attach(database: services.sync.database)
             await refresh()
         }
+        .task(id: selectedCollectionID) { await refresh() }
+    }
+
+    @ViewBuilder
+    private var scopePicker: some View {
+        Picker("Scope", selection: $selectedCollectionID) {
+            Text("All my Collections").tag(String?.none)
+            ForEach(services.collections.collections) { c in
+                Text(c.name).tag(Optional(c.id))
+            }
+        }
+        .pickerStyle(.menu)
     }
 
     private func refresh() async {
         guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return }
-        await repo.repo?.refresh(ownerID: userID)
+        let scope: StatsScope = selectedCollectionID
+            .map { .singleCollection(collectionID: $0) }
+            ?? .allMyCollections(userID: userID)
+        await repo.repo?.refresh(scope: scope)
     }
 
     private func summaryCard(stats: CollectionStats) -> some View {

@@ -13,26 +13,60 @@ config:
   edition: 3
 
 streams:
-  # --- owner-side data ---------------------------------------------------
+  # --- profile / device --------------------------------------------------
   user_profile:
     auto_subscribe: true
     query: select * from profiles where id = auth.user_id()
 
-  user_records:
-    auto_subscribe: true
-    query: select * from records where owner_id = auth.user_id()
-
-  user_prices:
-    auto_subscribe: true
-    query: select * from price_entries where owner_id = auth.user_id()
-
-  user_lists:
-    auto_subscribe: true
-    query: select * from lists where owner_id = auth.user_id()
-
   user_devices:
     auto_subscribe: true
     query: select * from device_tokens where user_id = auth.user_id()
+
+  user_notifications:
+    auto_subscribe: true
+    query: select * from notifications where user_id = auth.user_id()
+
+  # --- collections (replaces single-owner user_records / user_prices) ----
+  # A user belongs to one or more collections via collection_members. The
+  # Records tab shows the union; an attribution chip surfaces which
+  # collection a record came from once the user is in more than one.
+  member_collections:
+    auto_subscribe: true
+    query: |
+      select * from collections
+      where id in (select collection_id from collection_members where user_id = auth.user_id())
+
+  # collection_members has a composite PK (collection_id, user_id) — synthesise
+  # an `id` column so PowerSync can key rows locally.
+  member_collection_members:
+    auto_subscribe: true
+    query: |
+      select collection_id || ':' || user_id as id, collection_id, user_id, role, invited_by, joined_at
+      from collection_members
+      where collection_id in (select collection_id from collection_members where user_id = auth.user_id())
+
+  member_collection_pending_invites:
+    auto_subscribe: true
+    query: |
+      select * from collection_pending_invites
+      where collection_id in (select collection_id from collection_members where user_id = auth.user_id())
+
+  member_records:
+    auto_subscribe: true
+    query: |
+      select * from records
+      where collection_id in (select collection_id from collection_members where user_id = auth.user_id())
+
+  member_prices:
+    auto_subscribe: true
+    query: |
+      select * from price_entries
+      where collection_id in (select collection_id from collection_members where user_id = auth.user_id())
+
+  # --- lists (curated subsets — separate from collections) --------------
+  user_lists:
+    auto_subscribe: true
+    query: select * from lists where owner_id = auth.user_id()
 
   owned_list_items:
     auto_subscribe: true
@@ -40,9 +74,6 @@ streams:
       select * from list_items
       where list_id in (select id from lists where owner_id = auth.user_id())
 
-  # list_members has a composite PK (list_id, user_id) — synthesize an `id`
-  # column so PowerSync can key rows locally. Client never writes to this
-  # table through the CRUD queue (writes go via Supabase REST).
   owned_list_members:
     auto_subscribe: true
     query: |
@@ -56,7 +87,6 @@ streams:
       select * from pending_invites
       where list_id in (select id from lists where owner_id = auth.user_id())
 
-  # --- collaborative / shared lists -------------------------------------
   member_lists:
     auto_subscribe: true
     query: |
@@ -82,13 +112,9 @@ streams:
       select * from pending_invites
       where list_id in (select list_id from list_members where user_id = auth.user_id())
 
-  # NOTE: records + price_entries that live inside lists the user is a member
-  # of (but doesn't own) cannot be expressed here under edition 3 — only
-  # single-level subqueries are allowed, and "records on lists I'm a member
-  # of" requires nesting through list_items → list_members. To restore the
-  # offline collaborator view, denormalise server-side: a trigger that keeps
-  # a (record_id, viewer_user_id) table in sync, then a stream
-  #   select r.* from records r where id in
-  #     (select record_id from collaborator_records where viewer_id = auth.user_id())
-  # Until that exists, collaborators see list metadata + members offline but
-  # fetch record details via Supabase REST on demand.
+  # NOTE: records on lists the user is a member of (but doesn't own) still
+  # cannot be expressed here under edition 3 — that requires a 2-level join
+  # (list_members → list_items → records). Records that the user *owns* now
+  # always sync via member_records (1-level join through collection_members).
+  # The remaining gap is curated public/collaborative lists pulling in records
+  # that aren't in the viewer's collections — those still fetch via REST.

@@ -43,6 +43,14 @@ struct LowestEntry: Identifiable, Equatable {
     var currency: String
 }
 
+/// Stats are scoped to either every collection the user belongs to (default —
+/// the union shown in the Records tab) or one specific collection picked from
+/// the Stats screen.
+enum StatsScope: Equatable {
+    case allMyCollections(userID: String)
+    case singleCollection(collectionID: String)
+}
+
 @MainActor
 final class StatsRepository: ObservableObject {
     @Published private(set) var stats: CollectionStats?
@@ -54,17 +62,17 @@ final class StatsRepository: ObservableObject {
         self.database = database
     }
 
-    func refresh(ownerID: String) async {
+    func refresh(scope: StatsScope) async {
         isLoading = true
         defer { isLoading = false }
         do {
-            async let counts = countsByStatus(ownerID: ownerID)
-            async let totalSpent = totalSpentCents(ownerID: ownerID)
-            async let estimated = estimatedValueCents(ownerID: ownerID)
-            async let decades = decadeBuckets(ownerID: ownerID)
-            async let colourways = colourwayBuckets(ownerID: ownerID)
-            async let topPaid = topPaidEntries(ownerID: ownerID, limit: 5)
-            async let lowest = lowestSeenEntries(ownerID: ownerID, limit: 5)
+            async let counts = countsByStatus(scope: scope)
+            async let totalSpent = totalSpentCents(scope: scope)
+            async let estimated = estimatedValueCents(scope: scope)
+            async let decades = decadeBuckets(scope: scope)
+            async let colourways = colourwayBuckets(scope: scope)
+            async let topPaid = topPaidEntries(scope: scope, limit: 5)
+            async let lowest = lowestSeenEntries(scope: scope, limit: 5)
 
             let (c, ts, ev, d, cw, tp, lo) = try await (counts, totalSpent, estimated, decades, colourways, topPaid, lowest)
 
@@ -84,16 +92,32 @@ final class StatsRepository: ObservableObject {
         }
     }
 
-    private func countsByStatus(ownerID: String) async throws -> (owned: Int, wishlist: Int) {
+    /// Returns the SQL fragment + bound parameter for filtering records to
+    /// the active scope. Both branches resolve to a single `?` parameter so
+    /// callers can prepend it to the rest of their parameter list.
+    private func scopeClause(_ scope: StatsScope) -> (String, Any) {
+        switch scope {
+        case .allMyCollections(let userID):
+            return (
+                "collection_id in (select collection_id from collection_members where user_id = ?)",
+                userID
+            )
+        case .singleCollection(let collectionID):
+            return ("collection_id = ?", collectionID)
+        }
+    }
+
+    private func countsByStatus(scope: StatsScope) async throws -> (owned: Int, wishlist: Int) {
         struct Row { let status: String; let count: Int }
+        let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
             select status, count(*) as c
             from records
-            where owner_id = ? and deleted_at is null
+            where \(where_) and deleted_at is null
             group by status
             """,
-            parameters: [ownerID],
+            parameters: [param],
             mapper: { cursor -> Row? in
                 guard let status = try? cursor.getString(name: "status"),
                       let c = try? cursor.getInt(name: "c") else { return nil }
@@ -108,10 +132,9 @@ final class StatsRepository: ObservableObject {
         return (owned, wishlist)
     }
 
-    private func totalSpentCents(ownerID: String) async throws -> (cents: Int, currency: String?) {
-        // Sum the latest price for each owned record. PowerSync's SQLite is
-        // recent enough for a window-style subquery via correlated subselect.
+    private func totalSpentCents(scope: StatsScope) async throws -> (cents: Int, currency: String?) {
         struct Row { let total: Int; let currency: String? }
+        let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
             select sum(latest_price) as total, max(latest_currency) as cur
@@ -127,11 +150,11 @@ final class StatsRepository: ObservableObject {
                     order by pe.scanned_at desc limit 1
                 ) as latest_currency
                 from records r
-                where r.owner_id = ? and r.status = 'owned' and r.deleted_at is null
+                where r.\(where_) and r.status = 'owned' and r.deleted_at is null
             )
             where latest_price is not null
             """,
-            parameters: [ownerID],
+            parameters: [param],
             mapper: { cursor -> Row in
                 let total = (try? cursor.getIntOptional(name: "total")).flatMap { $0 } ?? 0
                 let currency = (try? cursor.getStringOptional(name: "cur")).flatMap { $0 }
@@ -142,30 +165,32 @@ final class StatsRepository: ObservableObject {
         return (row?.total ?? 0, row?.currency)
     }
 
-    private func estimatedValueCents(ownerID: String) async throws -> Int {
+    private func estimatedValueCents(scope: StatsScope) async throws -> Int {
+        let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
             select coalesce(sum(estimated_price_cents), 0) as total
             from records
-            where owner_id = ? and status = 'owned' and deleted_at is null
+            where \(where_) and status = 'owned' and deleted_at is null
               and estimated_price_cents is not null
             """,
-            parameters: [ownerID],
+            parameters: [param],
             mapper: { cursor in (try? cursor.getInt(name: "total")) ?? 0 }
         )
         return rows.first ?? 0
     }
 
-    private func decadeBuckets(ownerID: String) async throws -> [DecadeBucket] {
+    private func decadeBuckets(scope: StatsScope) async throws -> [DecadeBucket] {
+        let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
             select (year/10)*10 as decade_start, count(*) as c
             from records
-            where owner_id = ? and status = 'owned' and deleted_at is null and year is not null
+            where \(where_) and status = 'owned' and deleted_at is null and year is not null
             group by decade_start
             order by decade_start asc
             """,
-            parameters: [ownerID],
+            parameters: [param],
             mapper: { cursor -> DecadeBucket? in
                 guard let start = try? cursor.getInt(name: "decade_start"),
                       let count = try? cursor.getInt(name: "c") else { return nil }
@@ -175,18 +200,19 @@ final class StatsRepository: ObservableObject {
         return rows.compactMap { $0 }
     }
 
-    private func colourwayBuckets(ownerID: String) async throws -> [ColourwayBucket] {
+    private func colourwayBuckets(scope: StatsScope) async throws -> [ColourwayBucket] {
+        let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
             select colourway, count(*) as c
             from records
-            where owner_id = ? and status = 'owned' and deleted_at is null
+            where \(where_) and status = 'owned' and deleted_at is null
               and colourway is not null and colourway <> ''
             group by colourway
             order by c desc
             limit 8
             """,
-            parameters: [ownerID],
+            parameters: [param],
             mapper: { cursor -> ColourwayBucket? in
                 guard let cw = try? cursor.getString(name: "colourway"),
                       let count = try? cursor.getInt(name: "c") else { return nil }
@@ -196,17 +222,18 @@ final class StatsRepository: ObservableObject {
         return rows.compactMap { $0 }
     }
 
-    private func topPaidEntries(ownerID: String, limit: Int) async throws -> [PaidEntry] {
+    private func topPaidEntries(scope: StatsScope, limit: Int) async throws -> [PaidEntry] {
+        let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
             select r.id, r.title, r.artist, pe.price_cents, pe.currency
             from records r
             join price_entries pe on pe.record_id = r.id
-            where r.owner_id = ? and r.status = 'owned' and r.deleted_at is null
+            where r.\(where_) and r.status = 'owned' and r.deleted_at is null
             order by pe.price_cents desc
             limit ?
             """,
-            parameters: [ownerID, limit],
+            parameters: [param, limit],
             mapper: { cursor -> PaidEntry? in
                 guard let id = try? cursor.getString(name: "id"),
                       let title = try? cursor.getString(name: "title"),
@@ -219,18 +246,19 @@ final class StatsRepository: ObservableObject {
         return rows.compactMap { $0 }
     }
 
-    private func lowestSeenEntries(ownerID: String, limit: Int) async throws -> [LowestEntry] {
+    private func lowestSeenEntries(scope: StatsScope, limit: Int) async throws -> [LowestEntry] {
+        let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
             select r.id, r.title, r.artist, min(pe.price_cents) as low, max(pe.currency) as currency
             from records r
             join price_entries pe on pe.record_id = r.id
-            where r.owner_id = ? and r.status = 'wishlist' and r.deleted_at is null
+            where r.\(where_) and r.status = 'wishlist' and r.deleted_at is null
             group by r.id, r.title, r.artist
             order by low asc
             limit ?
             """,
-            parameters: [ownerID, limit],
+            parameters: [param, limit],
             mapper: { cursor -> LowestEntry? in
                 guard let id = try? cursor.getString(name: "id"),
                       let title = try? cursor.getString(name: "title"),

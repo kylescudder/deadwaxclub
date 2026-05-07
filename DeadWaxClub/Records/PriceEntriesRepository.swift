@@ -44,13 +44,14 @@ final class PriceEntriesRepository: ObservableObject {
             try await database.execute(
                 sql: """
                 insert into price_entries
-                  (id, record_id, owner_id, price_cents, currency, shop_name, scanned_at, created_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, record_id, owner_id, collection_id, price_cents, currency, shop_name, scanned_at, created_at)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 parameters: [
                     entry.id,
                     entry.recordID,
                     entry.ownerID,
+                    entry.collectionID,
                     entry.priceCents,
                     entry.currency,
                     entry.shopName,

@@ -34,6 +34,23 @@ struct SettingsView: View {
             }
 
             Section {
+                NavigationLink {
+                    ManageCollectionsView()
+                } label: {
+                    HStack {
+                        Label("Sharing", systemImage: "person.2.circle")
+                        Spacer()
+                        Text("\(services.collections.collections.count)")
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                    }
+                }
+            } header: {
+                Text("Collections")
+            } footer: {
+                Text("Share your owned/wishlist with people you trust. They see (and can add to) the same pool — no manual list-copying.")
+            }
+
+            Section {
                 NotificationSettingsRow()
             } header: {
                 Text("Notifications")
@@ -87,7 +104,7 @@ struct SettingsView: View {
         } message: {
             Text("Discogs token stored securely in the keychain.")
         }
-        .confirmationDialog("Sign out of Deadwax Club?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
+        .alert("Sign out of Deadwax Club?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {
                 Task {
                     await services.auth.signOut()
@@ -97,10 +114,9 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .confirmationDialog(
+        .alert(
             "Delete your Deadwax Club account?",
-            isPresented: $showDeleteConfirm,
-            titleVisibility: .visible
+            isPresented: $showDeleteConfirm
         ) {
             Button("Continue", role: .destructive) {
                 showFinalDeleteConfirm = true

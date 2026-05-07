@@ -58,10 +58,9 @@ struct LogPriceSheet: View {
                         .disabled(!isValid || isSaving)
                 }
             }
-            .confirmationDialog(
+            .alert(
                 "Delete this price entry?",
-                isPresented: $showDeleteConfirm,
-                titleVisibility: .visible
+                isPresented: $showDeleteConfirm
             ) {
                 Button("Delete", role: .destructive) {
                     Task { await deleteEntry() }
@@ -104,6 +103,7 @@ struct LogPriceSheet: View {
                 id: existing.id,
                 recordID: existing.recordID,
                 ownerID: existing.ownerID,
+                collectionID: existing.collectionID,
                 priceCents: cents,
                 currency: currency,
                 shopName: shopName.isEmpty ? nil : shopName,
@@ -116,6 +116,7 @@ struct LogPriceSheet: View {
                 id: UUID().uuidString.lowercased(),
                 recordID: record.id,
                 ownerID: ownerID,
+                collectionID: record.collectionID,
                 priceCents: cents,
                 currency: currency,
                 shopName: shopName.isEmpty ? nil : shopName,

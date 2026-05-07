@@ -23,6 +23,7 @@ struct AddRecordView: View {
     @State private var attachedEstimateCurrency: String?
     @State private var showDiscogsPicker = false
     @State private var lookupError: String?
+    @State private var selectedCollectionID: String?
 
     init(initialStatus: RecordStatus, existing: VinylRecord? = nil) {
         self.initialStatus = initialStatus
@@ -61,6 +62,19 @@ struct AddRecordView: View {
                     ForEach(RecordStatus.allCases) { Text($0.label).tag($0) }
                 }
             }
+            if writableCollections.count > 1 {
+                Section {
+                    Picker("Collection", selection: $selectedCollectionID) {
+                        ForEach(writableCollections) { c in
+                            Text(c.name).tag(Optional(c.id))
+                        }
+                    }
+                } header: {
+                    Text("Save to")
+                } footer: {
+                    Text("Records in your personal Collection are private; records in a shared Collection are visible to its members.")
+                }
+            }
             Section("Notes") {
                 TextField("Optional", text: $notes, axis: .vertical).lineLimit(3...)
             }
@@ -89,18 +103,32 @@ struct AddRecordView: View {
             && !artist.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    /// Collections the user can write to. Editing keeps the record's current
+    /// home; new records default to the user's primary Collection.
+    private var writableCollections: [VinylCollection] {
+        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return [] }
+        return services.collections.collections.filter { c in
+            let role = services.collections.role(in: c.id, userID: userID)
+            return role == .owner || role == .editor
+        }
+    }
+
     private func populate() {
-        guard let existing else { return }
-        title = existing.title
-        artist = existing.artist
-        year = existing.year.map(String.init) ?? ""
-        colourway = existing.colourway ?? ""
-        barcode = existing.barcode ?? ""
-        notes = existing.notes ?? ""
-        coverURL = existing.coverArtSourceURL ?? ""
-        attachedReleaseID = existing.discogsReleaseID
-        attachedEstimateCents = existing.estimatedPriceCents
-        attachedEstimateCurrency = existing.estimatedPriceCurrency
+        if let existing {
+            title = existing.title
+            artist = existing.artist
+            year = existing.year.map(String.init) ?? ""
+            colourway = existing.colourway ?? ""
+            barcode = existing.barcode ?? ""
+            notes = existing.notes ?? ""
+            coverURL = existing.coverArtSourceURL ?? ""
+            attachedReleaseID = existing.discogsReleaseID
+            attachedEstimateCents = existing.estimatedPriceCents
+            attachedEstimateCurrency = existing.estimatedPriceCurrency
+            selectedCollectionID = existing.collectionID
+        } else if selectedCollectionID == nil {
+            selectedCollectionID = services.profile.profile?.primaryCollectionID
+        }
     }
 
     /// Pulled from the picker. Overwrites the user's typed facts because
@@ -120,7 +148,12 @@ struct AddRecordView: View {
     }
 
     private func save() async {
-        guard let ownerID = services.auth.currentUserID?.uuidString.lowercased() else { return }
+        // Picker selection wins; otherwise stay in the existing record's
+        // Collection (when editing) or default to the user's primary.
+        let resolvedCollectionID: String? = selectedCollectionID
+            ?? existing?.collectionID
+            ?? services.profile.profile?.primaryCollectionID
+        guard let collectionID = resolvedCollectionID else { return }
         isSaving = true
         defer { isSaving = false }
 
@@ -158,7 +191,7 @@ struct AddRecordView: View {
 
         let record = VinylRecord(
             id: existing?.id ?? UUID().uuidString.lowercased(),
-            ownerID: ownerID,
+            collectionID: collectionID,
             status: status,
             title: resolvedTitle,
             artist: resolvedArtist,

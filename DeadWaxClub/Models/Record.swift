@@ -15,7 +15,7 @@ enum RecordStatus: String, CaseIterable, Codable, Identifiable {
 
 struct VinylRecord: Identifiable, Hashable {
     let id: String
-    var ownerID: String
+    var collectionID: String
     var status: RecordStatus
     var title: String
     var artist: String
@@ -41,7 +41,7 @@ extension VinylRecord {
             guard let status = RecordStatus(rawValue: statusRaw) else { return nil }
             return VinylRecord(
                 id: try cursor.getString(name: "id"),
-                ownerID: try cursor.getString(name: "owner_id"),
+                collectionID: try cursor.getString(name: "collection_id"),
                 status: status,
                 title: try cursor.getString(name: "title"),
                 artist: try cursor.getString(name: "artist"),

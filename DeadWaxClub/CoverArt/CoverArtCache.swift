@@ -70,7 +70,9 @@ final class CoverArtCache: ObservableObject {
 
         if needsRemote {
             do {
-                let path = "\(record.ownerID)/\(record.id).jpg"
+                // Path is keyed on collection_id so every member of a shared
+                // Collection fetches the same bytes (uploaded once per record).
+                let path = "\(record.collectionID)/\(record.id).jpg"
                 try await uploadToSupabase(bytes: bytes, path: path)
                 onStoragePathPersisted(path)
             } catch {

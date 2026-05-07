@@ -8,6 +8,7 @@ struct RecordsListView: View {
     @AppStorage("records.sort") private var sortRaw: String = RecordsSort.recentlyUpdated.rawValue
     @State private var filter: RecordsFilter = .none
     @State private var showFilterSheet = false
+    @State private var showNotificationInbox = false
 
     private var sort: RecordsSort {
         RecordsSort(rawValue: sortRaw) ?? .recentlyUpdated
@@ -35,6 +36,10 @@ struct RecordsListView: View {
         .navigationBarTitleDisplayMode(.large)
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
         .toolbar {
+            NotificationBellToolbarItem(
+                isPresented: $showNotificationInbox,
+                unreadCount: services.notifications.unreadCount
+            )
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Picker("Sort", selection: $sortRaw) {
@@ -61,6 +66,9 @@ struct RecordsListView: View {
         }
         .sheet(isPresented: $showFilterSheet) {
             RecordsFilterSheet(filter: $filter)
+        }
+        .sheet(isPresented: $showNotificationInbox) {
+            NotificationInboxView()
         }
         .task(id: status) { reconfigure() }
         .onAppear { reconfigure() }
@@ -121,8 +129,8 @@ struct RecordsListView: View {
     }
 
     private func reconfigure() {
-        guard let ownerID = services.auth.currentUserID?.uuidString.lowercased() else { return }
-        services.records.startWatching(status: status, ownerID: ownerID)
+        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return }
+        services.records.startWatching(status: status, userID: userID)
     }
 
     private func delete(at offsets: IndexSet) {

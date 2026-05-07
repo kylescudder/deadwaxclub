@@ -72,21 +72,41 @@ final class AuthClient: ObservableObject {
 
     // MARK: - Email / password
 
-    func signUp(email: String, password: String, displayName: String?) async {
+    enum SignUpResult: Equatable {
+        /// Supabase has email-confirmation off; we got a session and the user is signed in.
+        case signedIn
+        /// Confirmation email sent; we'll only get a session once the user clicks the link.
+        case needsEmailConfirmation(email: String)
+    }
+
+    func signUp(email: String, password: String, displayName: String?) async -> SignUpResult? {
         lastError = nil
         do {
-            _ = try await supabase.auth.signUp(email: email, password: password)
-            if let displayName, !displayName.isEmpty,
-               let userID = currentUserID?.uuidString.lowercased() {
-                _ = try? await supabase
-                    .from("profiles")
-                    .update(["display_name": displayName])
-                    .eq("id", value: userID)
-                    .execute()
+            // Hand the display name through `raw_user_meta_data` so the
+            // `handle_new_user` trigger picks it up at insert time — works
+            // regardless of whether email confirmation is on.
+            let metadata: [String: AnyJSON]?
+            if let displayName, !displayName.isEmpty {
+                metadata = ["display_name": .string(displayName)]
+            } else {
+                metadata = nil
             }
+            // `redirectTo` is where Supabase sends the user after the email
+            // confirmation link is verified — has to land on the app so
+            // `session(from:)` can extract the tokens and sign them in.
+            let response = try await supabase.auth.signUp(
+                email: email,
+                password: password,
+                data: metadata,
+                redirectTo: AppSecrets.authRedirectURL
+            )
+            return response.session != nil
+                ? .signedIn
+                : .needsEmailConfirmation(email: email)
         } catch {
             lastError = error.localizedDescription
             Log.error(error, category: "auth")
+            return nil
         }
     }
 
@@ -132,13 +152,16 @@ final class AuthClient: ObservableObject {
                 _ = try await supabase.auth.signInWithIdToken(
                     credentials: .init(provider: .apple, idToken: token, nonce: nonce)
                 )
+                // Apple only returns the name on the very first sign-in.
+                // We prefer the given name alone (matches the in-app casual
+                // handle convention; user can edit from Settings).
                 if let userID = currentUserID?.uuidString.lowercased(),
-                   let components = credential.fullName,
-                   let formatted = PersonNameComponentsFormatter().string(for: components),
-                   !formatted.isEmpty {
+                   let firstName = credential.fullName?.givenName?
+                       .trimmingCharacters(in: .whitespaces),
+                   !firstName.isEmpty {
                     _ = try? await supabase
                         .from("profiles")
-                        .update(["display_name": formatted])
+                        .update(["display_name": firstName])
                         .eq("id", value: userID)
                         .execute()
                 }
@@ -171,11 +194,18 @@ final class AuthClient: ObservableObject {
     }
 
     /// Handle a callback URL when iOS reopens the app on the deadwaxclub:// scheme
-    /// (e.g. for magic links or OAuth completion routed back to the app).
+    /// (e.g. for magic links, email confirmation, OAuth completion).
     func handle(callbackURL url: URL) async {
+        Log.breadcrumb("auth callback url: \(url.absoluteString)", category: "auth.callback")
         do {
             try await supabase.auth.session(from: url)
+            Log.breadcrumb("auth callback session established", category: "auth.callback")
         } catch {
+            // Common failure: URL is missing tokens because an email client
+            // (Gmail web, Outlook) wrapped the link in a tracker that stripped
+            // them. The PKCE `?code=...` form survives this; the implicit
+            // `#access_token=...` form doesn't.
+            lastError = "Couldn't finish signing in from this link. Try signing in directly with your email and password."
             Log.error(error, category: "auth.callback")
         }
     }

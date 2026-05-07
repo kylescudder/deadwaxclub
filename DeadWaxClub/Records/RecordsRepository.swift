@@ -15,20 +15,38 @@ final class RecordsRepository: ObservableObject {
 
     deinit { watchTask?.cancel() }
 
-    func startWatching(status: RecordStatus, ownerID: String) {
+    /// Watch records the user can see — the union across every Collection
+    /// they belong to (`collection_members.user_id = ?`). When `collectionID`
+    /// is set, narrow further to that single Collection.
+    func startWatching(status: RecordStatus, userID: String, collectionID: String? = nil) {
         watchTask?.cancel()
         isLoading = true
         watchTask = Task { [weak self, database] in
             guard let self else { return }
-            let sql = """
-                select * from records
-                where owner_id = ? and status = ? and deleted_at is null
-                order by updated_at desc
-            """
+            let sql: String
+            let params: [Any?]
+            if let collectionID {
+                sql = """
+                    select * from records
+                    where collection_id = ?
+                      and collection_id in (select collection_id from collection_members where user_id = ?)
+                      and status = ? and deleted_at is null
+                    order by updated_at desc
+                """
+                params = [collectionID, userID, status.rawValue]
+            } else {
+                sql = """
+                    select * from records
+                    where collection_id in (select collection_id from collection_members where user_id = ?)
+                      and status = ? and deleted_at is null
+                    order by updated_at desc
+                """
+                params = [userID, status.rawValue]
+            }
             do {
                 let stream = try database.watch(
                     sql: sql,
-                    parameters: [ownerID, status.rawValue],
+                    parameters: params,
                     mapper: { VinylRecord.from(cursor: $0) }
                 )
                 for try await rows in stream {
@@ -56,7 +74,7 @@ final class RecordsRepository: ObservableObject {
             try await database.execute(
                 sql: """
                 insert or ignore into records
-                  (id, owner_id, status, title, artist, year, colourway,
+                  (id, collection_id, status, title, artist, year, colourway,
                    cover_art_source_url, cover_art_storage_path,
                    discogs_release_id, barcode, notes,
                    estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
@@ -65,7 +83,7 @@ final class RecordsRepository: ObservableObject {
                 """,
                 parameters: [
                     record.id,
-                    record.ownerID,
+                    record.collectionID,
                     record.status.rawValue,
                     record.title,
                     record.artist,
@@ -86,6 +104,7 @@ final class RecordsRepository: ObservableObject {
             try await database.execute(
                 sql: """
                 update records set
+                  collection_id = ?,
                   status = ?,
                   title = ?,
                   artist = ?,
@@ -103,6 +122,7 @@ final class RecordsRepository: ObservableObject {
                 where id = ?
                 """,
                 parameters: [
+                    record.collectionID,
                     record.status.rawValue,
                     record.title,
                     record.artist,
@@ -168,21 +188,42 @@ final class RecordsRepository: ObservableObject {
         }
     }
 
-    func findByBarcode(_ barcode: String, ownerID: String) async -> VinylRecord? {
+    /// Look up an existing record by barcode across every Collection the user
+    /// can see — prevents the same release being added twice when one member
+    /// has it in a personal Collection and another scans it into a shared one.
+    func findByBarcode(_ barcode: String, userID: String) async -> VinylRecord? {
         do {
             let rows = try await database.getAll(
                 sql: """
                 select * from records
-                where owner_id = ? and barcode = ? and deleted_at is null
+                where collection_id in (select collection_id from collection_members where user_id = ?)
+                  and barcode = ? and deleted_at is null
                 limit 1
                 """,
-                parameters: [ownerID, barcode],
+                parameters: [userID, barcode],
                 mapper: { VinylRecord.from(cursor: $0) }
             )
             return rows.compactMap { $0 }.first
         } catch {
             Log.error(error, category: "records.findByBarcode")
             return nil
+        }
+    }
+
+    /// Move a record into a different Collection the user has write access to.
+    func moveToCollection(recordID: String, collectionID: String) async {
+        do {
+            let now = ISO8601DateFormatter.iso.string(from: Date())
+            try await database.execute(
+                sql: "update records set collection_id = ?, updated_at = ? where id = ?",
+                parameters: [collectionID, now, recordID]
+            )
+            try await database.execute(
+                sql: "update price_entries set collection_id = ? where record_id = ?",
+                parameters: [collectionID, recordID]
+            )
+        } catch {
+            Log.error(error, category: "records.moveToCollection")
         }
     }
 }

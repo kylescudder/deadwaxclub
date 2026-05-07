@@ -8,6 +8,7 @@ enum DatabaseSchema {
         name: "profiles",
         columns: [
             Column.text("display_name"),
+            Column.text("primary_collection_id"),
             Column.text("created_at"),
             Column.text("updated_at"),
         ]
@@ -16,7 +17,7 @@ enum DatabaseSchema {
     static let records = Table(
         name: "records",
         columns: [
-            Column.text("owner_id"),
+            Column.text("collection_id"),
             Column.text("status"),
             Column.text("title"),
             Column.text("artist"),
@@ -35,8 +36,8 @@ enum DatabaseSchema {
             Column.text("deleted_at"),
         ],
         indexes: [
-            Index(name: "records_owner_status",
-                  columns: [IndexedColumn.ascending("owner_id"), IndexedColumn.ascending("status")]),
+            Index(name: "records_collection_status",
+                  columns: [IndexedColumn.ascending("collection_id"), IndexedColumn.ascending("status")]),
             Index(name: "records_barcode",
                   columns: [IndexedColumn.ascending("barcode")]),
         ]
@@ -47,6 +48,7 @@ enum DatabaseSchema {
         columns: [
             Column.text("record_id"),
             Column.text("owner_id"),
+            Column.text("collection_id"),
             Column.integer("price_cents"),
             Column.text("currency"),
             Column.text("shop_name"),
@@ -59,6 +61,68 @@ enum DatabaseSchema {
             Index(name: "price_entries_record",
                   columns: [IndexedColumn.ascending("record_id"),
                             IndexedColumn.descending("scanned_at")]),
+        ]
+    )
+
+    static let collections = Table(
+        name: "collections",
+        columns: [
+            Column.text("name"),
+            Column.text("created_by"),
+            Column.text("created_at"),
+            Column.text("updated_at"),
+            Column.text("deleted_at"),
+        ]
+    )
+
+    static let collectionMembers = Table(
+        name: "collection_members",
+        columns: [
+            Column.text("collection_id"),
+            Column.text("user_id"),
+            Column.text("role"),
+            Column.text("invited_by"),
+            Column.text("joined_at"),
+        ],
+        indexes: [
+            Index(name: "collection_members_collection",
+                  columns: [IndexedColumn.ascending("collection_id")]),
+            Index(name: "collection_members_user",
+                  columns: [IndexedColumn.ascending("user_id")]),
+        ]
+    )
+
+    static let collectionPendingInvites = Table(
+        name: "collection_pending_invites",
+        columns: [
+            Column.text("collection_id"),
+            Column.text("email"),
+            Column.text("role"),
+            Column.text("invited_by"),
+            Column.text("created_at"),
+            Column.text("accepted_at"),
+        ],
+        indexes: [
+            Index(name: "collection_pending_invites_collection",
+                  columns: [IndexedColumn.ascending("collection_id")]),
+        ]
+    )
+
+    static let notifications = Table(
+        name: "notifications",
+        columns: [
+            Column.text("user_id"),
+            Column.text("kind"),
+            Column.text("title"),
+            Column.text("body"),
+            Column.text("payload"),
+            Column.text("read_at"),
+            Column.text("created_at"),
+        ],
+        indexes: [
+            Index(name: "notifications_user_created",
+                  columns: [IndexedColumn.ascending("user_id"),
+                            IndexedColumn.descending("created_at")]),
         ]
     )
 
@@ -135,6 +199,8 @@ enum DatabaseSchema {
 
     static let schema = Schema(tables: [
         profiles, records, priceEntries,
+        collections, collectionMembers, collectionPendingInvites,
+        notifications,
         lists, listItems, listMembers, pendingInvites,
         deviceTokens,
     ])

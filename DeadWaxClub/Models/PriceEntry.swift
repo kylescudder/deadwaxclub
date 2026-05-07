@@ -5,6 +5,7 @@ struct PriceEntry: Identifiable, Hashable {
     let id: String
     var recordID: String
     var ownerID: String
+    var collectionID: String
     var priceCents: Int
     var currency: String
     var shopName: String?
@@ -21,6 +22,7 @@ extension PriceEntry {
                 id: try cursor.getString(name: "id"),
                 recordID: try cursor.getString(name: "record_id"),
                 ownerID: try cursor.getString(name: "owner_id"),
+                collectionID: try cursor.getString(name: "collection_id"),
                 priceCents: try cursor.getInt(name: "price_cents"),
                 currency: try cursor.getString(name: "currency"),
                 shopName: try cursor.getStringOptional(name: "shop_name"),

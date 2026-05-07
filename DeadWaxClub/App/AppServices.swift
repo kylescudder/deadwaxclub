@@ -12,11 +12,18 @@ final class AppServices: ObservableObject {
     let prices: PriceEntriesRepository
     let profile: ProfileRepository
     let lists: ListsRepository
+    let collections: CollectionsRepository
+    let notifications: NotificationsRepository
     let onboarding: OnboardingCoordinator
 
     /// Set when iOS hands us a notification with a `record_id`; RootView
     /// observes and presents the record detail in a sheet.
     @Published var pendingDeepLinkRecord: VinylRecord?
+
+    /// Set when a notification or deep-link asks us to open a Collection
+    /// (e.g. tapping a `collection_invite` push). Settings/RootView present
+    /// ManageCollectionsView focused on this Collection.
+    @Published var pendingDeepLinkCollectionID: String?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -34,9 +41,11 @@ final class AppServices: ObservableObject {
         self.prices = PriceEntriesRepository(database: sync.database)
         self.profile = ProfileRepository(database: sync.database, auth: auth)
         self.lists = ListsRepository(database: sync.database, auth: auth)
+        self.collections = CollectionsRepository(database: sync.database, auth: auth)
+        self.notifications = NotificationsRepository(database: sync.database)
         self.onboarding = OnboardingCoordinator()
 
-        for child: any ObservableObject in [auth, sync, discogs, records, prices, profile, lists, onboarding] {
+        for child: any ObservableObject in [auth, sync, discogs, records, prices, profile, lists, collections, notifications, onboarding] {
             (child.objectWillChange as? ObservableObjectPublisher)?
                 .sink { [weak self] in self?.objectWillChange.send() }
                 .store(in: &cancellables)
@@ -49,6 +58,15 @@ final class AppServices: ObservableObject {
             .compactMap { $0.userInfo?["record_id"] as? String }
             .sink { [weak self] recordID in
                 Task { [weak self] in await self?.openRecordByID(recordID) }
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .openCollection)
+            .compactMap { $0.userInfo?["collection_id"] as? String }
+            .sink { [weak self] collectionID in
+                Task { @MainActor [weak self] in
+                    self?.pendingDeepLinkCollectionID = collectionID
+                }
             }
             .store(in: &cancellables)
 
@@ -66,11 +84,15 @@ final class AppServices: ObservableObject {
     private func applyAuth(state: AuthClient.State) {
         guard case let .signedIn(userID, _) = state else {
             onboarding.current = nil
+            collections.stopWatching()
+            notifications.stopWatching()
             return
         }
         let id = userID.uuidString.lowercased()
         profile.startWatching(userID: id)
         lists.startWatching(userID: id)
+        collections.startWatching(userID: id)
+        notifications.startWatching(userID: id)
         evaluateOnboarding()
         Task { await PushManager.shared.registerIfAuthorized() }
     }
@@ -102,4 +124,11 @@ final class AppServices: ObservableObject {
             )
         }
     }
+}
+
+extension Notification.Name {
+    /// Posted when a push notification with kind=collection_invite is tapped,
+    /// or when a deep link routes to a specific Collection. UserInfo contains
+    /// `collection_id`.
+    static let openCollection = Notification.Name("dwc.openCollection")
 }

@@ -72,6 +72,17 @@ struct RecordDetailView: View {
                     Button {
                         showAddToListSheet = true
                     } label: { Label("Add to list…", systemImage: "list.bullet.rectangle") }
+                    if writableMoveTargets.count > 0 {
+                        Menu {
+                            ForEach(writableMoveTargets) { target in
+                                Button(target.name) {
+                                    Task { await move(to: target.id) }
+                                }
+                            }
+                        } label: {
+                            Label("Move to Collection…", systemImage: "rectangle.stack")
+                        }
+                    }
                     Button(role: .destructive) {
                         Task { await services.records.softDelete(recordID: currentRecord.id) }
                     } label: { Label("Delete", systemImage: "trash") }
@@ -117,6 +128,10 @@ struct RecordDetailView: View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 detailRow("Status", currentRecord.status.label)
+                if services.collections.collections.count > 1,
+                   let homeName = collectionName(currentRecord.collectionID) {
+                    detailRow("Collection", homeName)
+                }
                 if let year = currentRecord.year {
                     detailRow("Year", String(year))
                 }
@@ -134,6 +149,10 @@ struct RecordDetailView: View {
                 }
             }
         }
+    }
+
+    private func collectionName(_ id: String) -> String? {
+        services.collections.collections.first(where: { $0.id == id })?.name
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {
@@ -359,6 +378,23 @@ struct RecordDetailView: View {
         updated.updatedAt = Date()
         currentRecord = updated
         await services.records.upsert(updated)
+    }
+
+    /// Collections the user can write to other than the record's current home.
+    /// Owner/editor membership only — viewer-only Collections aren't write targets.
+    private var writableMoveTargets: [VinylCollection] {
+        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return [] }
+        return services.collections.collections.filter { c in
+            c.id != currentRecord.collectionID
+                && (services.collections.role(in: c.id, userID: userID) == .owner
+                    || services.collections.role(in: c.id, userID: userID) == .editor)
+        }
+    }
+
+    private func move(to collectionID: String) async {
+        await services.records.moveToCollection(recordID: currentRecord.id, collectionID: collectionID)
+        currentRecord.collectionID = collectionID
+        Haptics.success()
     }
 }
 

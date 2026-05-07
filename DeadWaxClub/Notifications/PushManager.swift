@@ -107,8 +107,21 @@ extension PushManager: UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        let recordID = response.notification.request.content.userInfo["record_id"] as? String
-        if let recordID {
+        let userInfo = response.notification.request.content.userInfo
+        let kind = userInfo["kind"] as? String
+
+        // Newer pushes from notify-inbox carry an explicit `kind` discriminator.
+        // Legacy pushes (record_id only) fall through as price_alert.
+        if kind == "collection_invite", let collectionID = userInfo["collection_id"] as? String {
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: .openCollection, object: nil, userInfo: ["collection_id": collectionID]
+                )
+            }
+            return
+        }
+
+        if let recordID = userInfo["record_id"] as? String {
             await MainActor.run {
                 NotificationCenter.default.post(
                     name: .openRecord, object: nil, userInfo: ["record_id": recordID]

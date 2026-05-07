@@ -54,10 +54,19 @@ struct RootView: View {
         )) { record in
             NavigationStack { RecordDetailView(record: record) }
         }
+        .sheet(item: Binding(
+            get: { services.pendingDeepLinkCollectionID.map(CollectionDeepLinkPresentation.init) },
+            set: { services.pendingDeepLinkCollectionID = $0?.id }
+        )) { _ in
+            // ManageCollectionsView reads pendingDeepLinkCollectionID from
+            // services and auto-navigates to the matching Collection.
+            NavigationStack { ManageCollectionsView() }
+        }
         .animation(.easeInOut(duration: 0.2), value: services.auth.state)
     }
 
     private func handle(url: URL) {
+        Log.breadcrumb("incoming url: \(url.absoluteString)", category: "deeplink")
         // Public list share link: https://deadwaxclub.app/l/<token> or deadwaxclub://list/<token>
         if url.host == "deadwaxclub.app", url.pathComponents.count >= 3, url.pathComponents[1] == "l" {
             publicListToken = url.pathComponents[2]
@@ -67,21 +76,13 @@ struct RootView: View {
             publicListToken = token
             return
         }
-        // Otherwise pass to auth (OAuth callback).
+        // Otherwise pass to auth (OAuth callback / email confirmation).
         Task { await services.auth.handle(callbackURL: url) }
     }
 
     @ViewBuilder
     private func onboardingSheet(for step: OnboardingStep) -> some View {
         switch step {
-        case .displayName:
-            DisplayNameOnboardingView { name in
-                services.onboarding.markDisplayNameSeen()
-                Task {
-                    await services.profile.updateDisplayName(name)
-                    services.evaluateOnboarding()
-                }
-            }
         case .discogsToken:
             DiscogsTokenOnboardingView(
                 onDone: {
@@ -105,6 +106,10 @@ struct RootView: View {
 private struct PublicListPresentation: Identifiable {
     let token: String
     var id: String { token }
+}
+
+private struct CollectionDeepLinkPresentation: Identifiable {
+    let id: String
 }
 
 struct MainTabView: View {
