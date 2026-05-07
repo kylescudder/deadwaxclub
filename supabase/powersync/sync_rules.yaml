@@ -1,45 +1,94 @@
 # PowerSync sync rules for DeadWaxClub.
-# Apply via the PowerSync dashboard or `powersync sync-rules apply`.
+# Apply via the PowerSync dashboard's Sync Streams editor.
+#
+# Uses edition 3 (the current stable "Sync Streams" model). Notes:
+#   - One `query:` per stream (no separate parameters/data sections).
+#   - `auth.user_id()` instead of `request.user_id()`.
+#   - Single-level subqueries (`where x in (select … from t where …)`) are
+#     allowed; nested subqueries are NOT.
+#   - `auto_subscribe: true` keeps the stream syncing without the client
+#     calling SyncStream.subscribe explicitly.
 
-bucket_definitions:
+config:
+  edition: 3
+
+streams:
+  # --- owner-side data ---------------------------------------------------
   user_profile:
-    parameters: select request.user_id() as user_id
-    data:
-      - select * from profiles where id = bucket.user_id
+    auto_subscribe: true
+    query: select * from profiles where id = auth.user_id()
 
   user_records:
-    parameters: select request.user_id() as user_id
-    data:
-      - select * from records where owner_id = bucket.user_id
+    auto_subscribe: true
+    query: select * from records where owner_id = auth.user_id()
 
   user_prices:
-    parameters: select request.user_id() as user_id
-    data:
-      - select * from price_entries where owner_id = bucket.user_id
+    auto_subscribe: true
+    query: select * from price_entries where owner_id = auth.user_id()
 
-  # Lists owned by the user.
   user_lists:
-    parameters: select request.user_id() as user_id
-    data:
-      - select * from lists where owner_id = bucket.user_id
-      - select * from list_items where list_id in (select id from lists where owner_id = bucket.user_id)
-      - select * from list_members where list_id in (select id from lists where owner_id = bucket.user_id)
-      - select * from pending_invites where list_id in (select id from lists where owner_id = bucket.user_id)
-
-  # Lists the user is a member of (not the owner). Records on those lists
-  # are pulled too, so collaborators can render them offline.
-  member_lists:
-    parameters: |
-      select request.user_id() as user_id, list_id from list_members where user_id = request.user_id()
-    data:
-      - select * from lists where id = bucket.list_id
-      - select * from list_items where list_id = bucket.list_id
-      - select * from list_members where list_id = bucket.list_id
-      # Also pull the actual record rows referenced by the list.
-      - select r.* from records r join list_items li on li.record_id = r.id where li.list_id = bucket.list_id
-      - select pe.* from price_entries pe join list_items li on li.record_id = pe.record_id where li.list_id = bucket.list_id
+    auto_subscribe: true
+    query: select * from lists where owner_id = auth.user_id()
 
   user_devices:
-    parameters: select request.user_id() as user_id
-    data:
-      - select * from device_tokens where user_id = bucket.user_id
+    auto_subscribe: true
+    query: select * from device_tokens where user_id = auth.user_id()
+
+  owned_list_items:
+    auto_subscribe: true
+    query: |
+      select * from list_items
+      where list_id in (select id from lists where owner_id = auth.user_id())
+
+  # list_members has a composite PK (list_id, user_id) — synthesize an `id`
+  # column so PowerSync can key rows locally. Client never writes to this
+  # table through the CRUD queue (writes go via Supabase REST).
+  owned_list_members:
+    auto_subscribe: true
+    query: |
+      select list_id || ':' || user_id as id, list_id, user_id, role, invited_by, joined_at
+      from list_members
+      where list_id in (select id from lists where owner_id = auth.user_id())
+
+  owned_pending_invites:
+    auto_subscribe: true
+    query: |
+      select * from pending_invites
+      where list_id in (select id from lists where owner_id = auth.user_id())
+
+  # --- collaborative / shared lists -------------------------------------
+  member_lists:
+    auto_subscribe: true
+    query: |
+      select * from lists
+      where id in (select list_id from list_members where user_id = auth.user_id())
+
+  member_list_items:
+    auto_subscribe: true
+    query: |
+      select * from list_items
+      where list_id in (select list_id from list_members where user_id = auth.user_id())
+
+  member_list_members:
+    auto_subscribe: true
+    query: |
+      select list_id || ':' || user_id as id, list_id, user_id, role, invited_by, joined_at
+      from list_members
+      where list_id in (select list_id from list_members where user_id = auth.user_id())
+
+  member_pending_invites:
+    auto_subscribe: true
+    query: |
+      select * from pending_invites
+      where list_id in (select list_id from list_members where user_id = auth.user_id())
+
+  # NOTE: records + price_entries that live inside lists the user is a member
+  # of (but doesn't own) cannot be expressed here under edition 3 — only
+  # single-level subqueries are allowed, and "records on lists I'm a member
+  # of" requires nesting through list_items → list_members. To restore the
+  # offline collaborator view, denormalise server-side: a trigger that keeps
+  # a (record_id, viewer_user_id) table in sync, then a stream
+  #   select r.* from records r where id in
+  #     (select record_id from collaborator_records where viewer_id = auth.user_id())
+  # Until that exists, collaborators see list metadata + members offline but
+  # fetch record details via Supabase REST on demand.
