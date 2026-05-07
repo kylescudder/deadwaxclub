@@ -51,7 +51,7 @@ struct StatsView: View {
     }
 
     private func refresh() async {
-        guard let userID = services.auth.currentUserID?.uuidString else { return }
+        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return }
         await repo.repo?.refresh(ownerID: userID)
     }
 

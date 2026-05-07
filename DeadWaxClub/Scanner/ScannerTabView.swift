@@ -51,7 +51,7 @@ struct ScannerTabView: View {
         isLooking = true
         defer { isLooking = false }
 
-        if let ownerID = services.auth.currentUserID?.uuidString,
+        if let ownerID = services.auth.currentUserID?.uuidString.lowercased(),
            let local = await services.records.findByBarcode(barcode, ownerID: ownerID) {
             existing = local
         }

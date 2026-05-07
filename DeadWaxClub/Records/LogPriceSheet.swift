@@ -95,7 +95,7 @@ struct LogPriceSheet: View {
 
     private func save() async {
         guard let cents = priceCents,
-              let ownerID = services.auth.currentUserID?.uuidString else { return }
+              let ownerID = services.auth.currentUserID?.uuidString.lowercased() else { return }
         isSaving = true
         defer { isSaving = false }
 

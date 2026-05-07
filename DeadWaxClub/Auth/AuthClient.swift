@@ -77,7 +77,7 @@ final class AuthClient: ObservableObject {
         do {
             _ = try await supabase.auth.signUp(email: email, password: password)
             if let displayName, !displayName.isEmpty,
-               let userID = currentUserID?.uuidString {
+               let userID = currentUserID?.uuidString.lowercased() {
                 _ = try? await supabase
                     .from("profiles")
                     .update(["display_name": displayName])
@@ -132,7 +132,7 @@ final class AuthClient: ObservableObject {
                 _ = try await supabase.auth.signInWithIdToken(
                     credentials: .init(provider: .apple, idToken: token, nonce: nonce)
                 )
-                if let userID = currentUserID?.uuidString,
+                if let userID = currentUserID?.uuidString.lowercased(),
                    let components = credential.fullName,
                    let formatted = PersonNameComponentsFormatter().string(for: components),
                    !formatted.isEmpty {

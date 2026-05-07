@@ -92,7 +92,7 @@ struct ScanResultSheet: View {
     }
 
     private func save() async {
-        guard let ownerID = services.auth.currentUserID?.uuidString else { return }
+        guard let ownerID = services.auth.currentUserID?.uuidString.lowercased() else { return }
         isSaving = true
         defer { isSaving = false }
 

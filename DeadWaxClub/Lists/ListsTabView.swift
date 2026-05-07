@@ -41,7 +41,7 @@ struct ListsTabView: View {
             NavigationStack { CreateListView() }
         }
         .onAppear {
-            if let userID = services.auth.currentUserID?.uuidString {
+            if let userID = services.auth.currentUserID?.uuidString.lowercased() {
                 services.lists.startWatching(userID: userID)
             }
         }
