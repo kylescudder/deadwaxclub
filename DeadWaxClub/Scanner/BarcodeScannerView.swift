@@ -117,7 +117,7 @@ private struct PermissionPromptView: View {
         EmptyState(
             systemImage: "camera.viewfinder",
             title: "Allow camera access",
-            message: "Dead Wax Club uses the camera to scan vinyl barcodes when you're shopping.",
+            message: "Deadwax Club uses the camera to scan vinyl barcodes when you're shopping.",
             actionTitle: "Continue",
             action: onTap
         )
@@ -133,7 +133,7 @@ private struct CameraDeniedView: View {
             VStack(spacing: Theme.Spacing.sm) {
                 Text("Camera access is off")
                     .font(.title3.weight(.semibold))
-                Text("Dead Wax Club needs camera access to scan vinyl barcodes. Enable it in iOS Settings.")
+                Text("Deadwax Club needs camera access to scan vinyl barcodes. Enable it in iOS Settings.")
                     .font(.callout)
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .multilineTextAlignment(.center)

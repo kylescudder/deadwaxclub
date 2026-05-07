@@ -78,7 +78,7 @@ struct SettingsView: View {
 
             Section("About") {
                 LabeledContent("Version", value: appVersion)
-                Link("View Dead Wax Club on GitHub", destination: URL(string: "https://github.com/kylescudder/deadwaxclub")!)
+                Link("View Deadwax Club on GitHub", destination: URL(string: "https://github.com/kylescudder/deadwaxclub")!)
             }
         }
         .navigationTitle("Settings")
@@ -87,7 +87,7 @@ struct SettingsView: View {
         } message: {
             Text("Discogs token stored securely in the keychain.")
         }
-        .confirmationDialog("Sign out of Dead Wax Club?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
+        .confirmationDialog("Sign out of Deadwax Club?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) {
                 Task {
                     await services.auth.signOut()
@@ -98,7 +98,7 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog(
-            "Delete your Dead Wax Club account?",
+            "Delete your Deadwax Club account?",
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {

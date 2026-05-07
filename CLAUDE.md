@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Dead Wax Club — native iOS 17+ SwiftUI app for tracking owned/wishlist vinyl, plus a small static web viewer for public list links and a Supabase backend (Postgres + Auth + Storage + Edge Functions). Offline-first via PowerSync.
+Deadwax Club — native iOS 17+ SwiftUI app for tracking owned/wishlist vinyl, plus a small static web viewer for public list links and a Supabase backend (Postgres + Auth + Storage + Edge Functions). Offline-first via PowerSync.
 
 ## Common commands
 

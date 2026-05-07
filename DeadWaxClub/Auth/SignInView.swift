@@ -14,7 +14,7 @@ struct SignInView: View {
                     Image(systemName: "opticaldisc.fill")
                         .font(.system(size: 64))
                         .foregroundStyle(Theme.Colors.accent)
-                    Text("Dead Wax Club")
+                    Text("Deadwax Club")
                         .font(.largeTitle.weight(.bold))
                     Text("Track the vinyl you own and the vinyl you want.")
                         .font(.callout)

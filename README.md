@@ -1,4 +1,4 @@
-# Dead Wax Club
+# Deadwax Club
 
 Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl you want. Offline-first, syncs to Postgres, scans barcodes in shops, plots price changes over time, alerts you when a record on your wishlist drops to a new low, and lets you share lists with friends — privately, by link, or collaboratively.
 
@@ -14,7 +14,7 @@ Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl y
 - **Push notifications** when any wishlist record (yours or one a list-mate added) hits a new all-time low price
 - **Stats** — total spent, collection value, breakdown by decade and colour way, top owned, lowest wishlist
 - Cover art cached on device **and** mirrored to Supabase Storage so cover art works fully offline and other devices fetch from your bucket instead of Discogs
-- **AppIntents + Spotlight** — find records from system search, "Hey Siri, log a price in Dead Wax Club"
+- **AppIntents + Spotlight** — find records from system search, "Hey Siri, log a price in Deadwax Club"
 - **Onboarding sheets** for display name, Discogs token, and notification permission
 - Light / Dark / System appearance toggle
 - Account deletion (App Store 5.1.1(v) compliant)
@@ -120,7 +120,7 @@ cp web/js/config.example.js web/js/config.js
 npx netlify deploy --dir=web --prod
 ```
 
-Edit `web/.well-known/apple-app-site-association` and replace `TEAMID.com.deadwaxclub.app` with your real Apple Team ID + bundle. The `applinks:deadwaxclub.app` entry is already in `DeadWaxClub.entitlements`. After this is live, tapping any `https://deadwaxclub.app/l/<token>` link from another iOS app launches Dead Wax Club directly; if the app isn't installed, the recipient sees the web list.
+Edit `web/.well-known/apple-app-site-association` and replace `TEAMID.com.deadwaxclub.app` with your real Apple Team ID + bundle. The `applinks:deadwaxclub.app` entry is already in `DeadWaxClub.entitlements`. After this is live, tapping any `https://deadwaxclub.app/l/<token>` link from another iOS app launches Deadwax Club directly; if the app isn't installed, the recipient sees the web list.
 
 See `web/README.md` for full deployment notes.
 
@@ -205,5 +205,5 @@ This is a comprehensive scaffold. The architecture is in place across all featur
 - `AppServices` constructs and owns long-lived objects. Views read them via `@EnvironmentObject`.
 - All deletions are soft (`deleted_at`) so PowerSync propagates tombstones reliably.
 - Cover art lookup order on display: local Caches file → Supabase Storage public URL → Discogs URL → SF Symbol placeholder. First display of any record both writes the bytes to disk and uploads to Supabase Storage so subsequent launches and other devices render it without Discogs.
-- Sharing a list with `link_public` mode mints a 12-char token and a public URL. The unauthenticated `get_shared_list` and `get_shared_list_records` RPCs serve the data — no Dead Wax Club account required to view.
+- Sharing a list with `link_public` mode mints a 12-char token and a public URL. The unauthenticated `get_shared_list` and `get_shared_list_records` RPCs serve the data — no Deadwax Club account required to view.
 - DeadWaxClub.xcodeproj is regenerated from `project.yml`. Don't commit it.

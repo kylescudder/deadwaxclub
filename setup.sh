@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dead Wax Club — first-run setup
+# Deadwax Club — first-run setup
 #
 # Walks through everything that doesn't require Apple Developer:
 #   1. Required CLI tools (xcodegen, supabase CLI, optional netlify CLI)

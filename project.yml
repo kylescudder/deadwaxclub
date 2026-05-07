@@ -41,15 +41,15 @@ targets:
     info:
       path: DeadWaxClub/Info.plist
       properties:
-        CFBundleDisplayName: Dead Wax Club
+        CFBundleDisplayName: Deadwax Club
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen:
           UIColorName: ""
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-        NSCameraUsageDescription: Dead Wax Club uses the camera to scan vinyl barcodes in shops.
-        NSPhotoLibraryAddUsageDescription: Dead Wax Club saves cover art for your records.
+        NSCameraUsageDescription: Deadwax Club uses the camera to scan vinyl barcodes in shops.
+        NSPhotoLibraryAddUsageDescription: Deadwax Club saves cover art for your records.
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - deadwaxclub

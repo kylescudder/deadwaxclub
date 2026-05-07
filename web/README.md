@@ -1,4 +1,4 @@
-# Dead Wax Club web
+# Deadwax Club web
 
 A small static site that renders public-link share lists (`https://deadwaxclub.app/l/<token>`) and serves as a landing page. Pure HTML / CSS / vanilla JS — no build step, no framework.
 

@@ -1,5 +1,5 @@
 -- Pending invites: lets a list owner invite someone by email even if they
--- don't have a Dead Wax Club account yet. On signup, handle_new_user resolves
+-- don't have a Deadwax Club account yet. On signup, handle_new_user resolves
 -- any pending invites matching the new user's email into list_members rows.
 
 create table if not exists public.pending_invites (
