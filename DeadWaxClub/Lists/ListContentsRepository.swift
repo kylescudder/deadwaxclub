@@ -24,26 +24,62 @@ final class ListContentsRepository: ObservableObject {
         invitesTask?.cancel()
     }
 
+    /// One-shot fetch for a set of record ids. Used by the list watcher to
+    /// resolve list_items rows into full record rows without relying on a
+    /// JOIN watch (which doesn't always re-fire when only one side changes).
+    private func fetchRecords(ids: [String]) async -> [VinylRecord] {
+        guard !ids.isEmpty else { return [] }
+        let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
+        let sql = "select * from records where id in (\(placeholders)) and deleted_at is null"
+        do {
+            let rows = try await database.getAll(
+                sql: sql,
+                parameters: ids,
+                mapper: { VinylRecord.from(cursor: $0) }
+            )
+            return rows.compactMap { $0 }
+        } catch {
+            Log.error(error, category: "list.contents.fetchRecords")
+            return []
+        }
+    }
+
     func startWatching(listID: String) {
         recordsTask?.cancel()
         recordsTask = Task { [weak self, database] in
             guard let self else { return }
-            let sql = """
-            select r.*, li.position
-            from list_items li
-            join records r on r.id = li.record_id
-            where li.list_id = ? and r.deleted_at is null
-            order by li.position asc, li.created_at asc
+            // PowerSync's watch invalidation can miss when only the
+            // secondary table of a JOIN changes, so watch list_items by
+            // itself and resolve records via a one-shot lookup.
+            let itemsSQL = """
+            select record_id, position, created_at
+            from list_items
+            where list_id = ?
+            order by position asc, created_at asc
             """
             do {
                 let stream = try database.watch(
-                    sql: sql,
+                    sql: itemsSQL,
                     parameters: [listID],
-                    mapper: { VinylRecord.from(cursor: $0) }
+                    mapper: { (cursor: SqlCursor) -> (id: String, position: Int)? in
+                        do {
+                            return (
+                                id: try cursor.getString(name: "record_id"),
+                                position: try cursor.getInt(name: "position")
+                            )
+                        } catch {
+                            return nil
+                        }
+                    }
                 )
                 for try await rows in stream {
-                    let mapped = rows.compactMap { $0 }
-                    await MainActor.run { self.records = mapped }
+                    let items = rows.compactMap { $0 }
+                    let ids = items.map { $0.id }
+                    let resolved = await self.fetchRecords(ids: ids)
+                    let ordered = items.compactMap { item in
+                        resolved.first(where: { $0.id == item.id })
+                    }
+                    await MainActor.run { self.records = ordered }
                 }
             } catch {
                 Log.error(error, category: "list.contents")

@@ -1,5 +1,6 @@
 import SwiftUI
 import PowerSync
+import Combine
 
 struct ListDetailView: View {
     let list: VinylList
@@ -88,11 +89,19 @@ struct ListDetailView: View {
 @MainActor
 final class ListContentsHolder: ObservableObject {
     @Published var repo: ListContentsRepository?
+    private var innerCancellable: AnyCancellable?
 
     func attach(database: PowerSyncDatabaseProtocol, listID: String) {
         if repo == nil {
             let r = ListContentsRepository(database: database)
             r.startWatching(listID: listID)
+            // SwiftUI only observes our own @Published `repo` slot; nested
+            // ObservableObjects don't propagate. Re-publish the inner repo's
+            // changes so the view re-renders when records / members /
+            // pendingInvites update.
+            innerCancellable = r.objectWillChange.sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
             repo = r
         }
     }

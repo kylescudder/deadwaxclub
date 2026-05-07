@@ -136,22 +136,32 @@ final class ListsRepository: ObservableObject {
 
     func addRecord(_ recordID: String, to listID: String) async {
         guard let userID = auth.currentUserID?.uuidString.lowercased() else { return }
-        let id = UUID().uuidString.lowercased()
-        let now = ISO8601DateFormatter.iso.string(from: Date())
         do {
-            // ON CONFLICT … DO NOTHING is unsupported on PowerSync views.
-            // Use NOT EXISTS as the dedupe guard instead.
+            // PowerSync's INSTEAD-OF triggers expect plain `INSERT … VALUES`.
+            // `INSERT … SELECT … WHERE NOT EXISTS` and `ON CONFLICT … DO
+            // NOTHING` both silently no-op on the views, so do the dedupe
+            // and the position lookup as separate read queries first.
+            let alreadyOnList: Bool? = try await database.getOptional(
+                sql: "select 1 from list_items where list_id = ? and record_id = ? limit 1",
+                parameters: [listID, recordID],
+                mapper: { _ in true }
+            )
+            if alreadyOnList == true { return }
+
+            let nextPosition: Int = try await database.getOptional(
+                sql: "select coalesce(max(position) + 1, 0) as next_pos from list_items where list_id = ?",
+                parameters: [listID],
+                mapper: { try $0.getInt(name: "next_pos") }
+            ) ?? 0
+
+            let id = UUID().uuidString.lowercased()
+            let now = ISO8601DateFormatter.iso.string(from: Date())
             try await database.execute(
                 sql: """
                 insert into list_items (id, list_id, record_id, added_by, position, created_at)
-                select ?, ?, ?, ?,
-                       coalesce((select max(position) + 1 from list_items where list_id = ?), 0),
-                       ?
-                where not exists (
-                    select 1 from list_items where list_id = ? and record_id = ?
-                )
+                values (?, ?, ?, ?, ?, ?)
                 """,
-                parameters: [id, listID, recordID, userID, listID, now, listID, recordID]
+                parameters: [id, listID, recordID, userID, nextPosition, now]
             )
         } catch {
             Log.error(error, category: "lists.addRecord")
