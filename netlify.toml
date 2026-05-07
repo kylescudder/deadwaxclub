@@ -1,5 +1,10 @@
 [build]
   publish = "web"
+  # web/js/config.js is git-ignored so secrets never live in the repo.
+  # The script writes it from Netlify env vars at deploy time. Configure
+  # SUPABASE_URL and SUPABASE_ANON_KEY under
+  # Site settings → Environment variables.
+  command = "./web/build-config.sh"
 
 # Universal Links: Apple fetches /.well-known/apple-app-site-association and
 # requires Content-Type: application/json with no extension. Netlify can't
