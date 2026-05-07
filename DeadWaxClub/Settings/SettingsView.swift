@@ -28,7 +28,9 @@ struct SettingsView: View {
                             .foregroundStyle(Theme.Colors.textSecondary)
                     }
                 }
-                NavigationLink("Edit display name") { EditDisplayNameView() }
+                NavigationLink("Edit display name") {
+                    EditDisplayNameView(initial: services.profile.profile?.displayName ?? "")
+                }
             }
 
             Section {
@@ -87,7 +89,11 @@ struct SettingsView: View {
         }
         .confirmationDialog("Sign out of Dead Wax Club?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) {
-                Task { await services.auth.signOut() }
+                Task {
+                    await services.auth.signOut()
+                    await services.sync.wipe()
+                    services.onboarding.resetForSignOut()
+                }
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -172,8 +178,14 @@ private struct NotificationSettingsRow: View {
 private struct EditDisplayNameView: View {
     @EnvironmentObject private var services: AppServices
     @Environment(\.dismiss) private var dismiss
-    @State private var name: String = ""
+    @State private var name: String
+    @State private var didSeed = false
     @State private var isSaving = false
+
+    init(initial: String) {
+        self._name = State(initialValue: initial)
+        self._didSeed = State(initialValue: !initial.isEmpty)
+    }
 
     var body: some View {
         Form {
@@ -196,6 +208,15 @@ private struct EditDisplayNameView: View {
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
             }
         }
-        .onAppear { name = services.profile.profile?.displayName ?? "" }
+        // Seed the field from the profile the first time a non-empty value
+        // is available — covers the race where NavigationLink built this
+        // view before the profile watcher had emitted, or where the parent
+        // Settings view rendered while profile was still nil.
+        .task(id: services.profile.profile?.displayName) {
+            if !didSeed, let value = services.profile.profile?.displayName, !value.isEmpty {
+                name = value
+                didSeed = true
+            }
+        }
     }
 }

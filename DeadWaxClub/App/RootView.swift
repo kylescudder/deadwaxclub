@@ -26,6 +26,9 @@ struct RootView: View {
         .onChange(of: services.profile.profile?.displayName) { _, _ in
             services.evaluateOnboarding()
         }
+        .onChange(of: services.profile.hasLoadedFromLocal) { _, _ in
+            services.evaluateOnboarding()
+        }
         .onOpenURL { url in handle(url: url) }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
             if let url = activity.webpageURL { handle(url: url) }
@@ -73,6 +76,7 @@ struct RootView: View {
         switch step {
         case .displayName:
             DisplayNameOnboardingView { name in
+                services.onboarding.markDisplayNameSeen()
                 Task {
                     await services.profile.updateDisplayName(name)
                     services.evaluateOnboarding()

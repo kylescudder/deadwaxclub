@@ -68,7 +68,7 @@ final class AppServices: ObservableObject {
             onboarding.current = nil
             return
         }
-        let id = userID.uuidString
+        let id = userID.uuidString.lowercased()
         profile.startWatching(userID: id)
         lists.startWatching(userID: id)
         evaluateOnboarding()
@@ -95,6 +95,7 @@ final class AppServices: ObservableObject {
         Task { @MainActor in
             await PushManager.shared.refreshAuthorizationStatus()
             onboarding.reconcile(
+                profileLoaded: profile.hasLoadedFromLocal,
                 profileDisplayName: profile.profile?.displayName,
                 hasDiscogsToken: discogs.hasToken,
                 notificationsAuthorized: PushManager.shared.authorizationStatus == .authorized
