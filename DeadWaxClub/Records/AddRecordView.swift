@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 /// Single form for both adding a new record and editing an existing one.
 /// Pass `existing` to edit; nil to add. Title and save semantics adapt.
@@ -21,9 +22,19 @@ struct AddRecordView: View {
     @State private var attachedReleaseID: Int64?
     @State private var attachedEstimateCents: Int?
     @State private var attachedEstimateCurrency: String?
+    /// Captured from the Discogs picker so we can persist every image (not just
+    /// the primary cover) into record_images on save.
+    @State private var attachedImageURLs: [String] = []
     @State private var showDiscogsPicker = false
     @State private var lookupError: String?
     @State private var selectedCollectionID: String?
+    /// Photos selected from the library / camera before save. Each entry is
+    /// the raw JPEG bytes — we don't have a record id yet, so the upload is
+    /// deferred to `save()` once the record exists.
+    @State private var pendingPhotos: [Data] = []
+    @State private var photoPickerSelection: PhotosPickerItem?
+    @State private var showCameraPicker = false
+    @State private var photoError: String?
 
     init(initialStatus: RecordStatus, existing: VinylRecord? = nil) {
         self.initialStatus = initialStatus
@@ -75,6 +86,16 @@ struct AddRecordView: View {
                     Text("Records in your personal Collection are private; records in a shared Collection are visible to its members.")
                 }
             }
+            Section {
+                photosRow
+                if let photoError {
+                    Text(photoError).font(.footnote).foregroundStyle(.red)
+                }
+            } header: {
+                Text("Your photos")
+            } footer: {
+                Text("Optional. Added in addition to anything Discogs provides; uploaded after the record is saved.")
+            }
             Section("Notes") {
                 TextField("Optional", text: $notes, axis: .vertical).lineLimit(3...)
             }
@@ -95,6 +116,84 @@ struct AddRecordView: View {
             DiscogsPickerView(initialTitle: title, initialArtist: artist) { lookup in
                 applyLookup(lookup)
             }
+        }
+        .sheet(isPresented: $showCameraPicker) {
+            CameraPicker { image in
+                if let data = image.jpegData(compressionQuality: 0.85) {
+                    pendingPhotos.append(data)
+                    Haptics.success()
+                } else {
+                    photoError = "Couldn't read the image."
+                }
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: photoPickerSelection) { _, newItem in
+            guard let newItem else { return }
+            Task { await loadPickedPhoto(newItem) }
+        }
+    }
+
+    @ViewBuilder
+    private var photosRow: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    ForEach(Array(pendingPhotos.enumerated()), id: \.offset) { idx, data in
+                        if let ui = UIImage(data: data) {
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: ui)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 56, height: 56)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                Button {
+                                    pendingPhotos.remove(at: idx)
+                                    Haptics.tap()
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, .black.opacity(0.6))
+                                        .font(.caption)
+                                }
+                                .offset(x: 4, y: -4)
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer()
+            Menu {
+                PhotosPicker(selection: $photoPickerSelection,
+                             matching: .images,
+                             photoLibrary: .shared()) {
+                    Label("Choose from library", systemImage: "photo.on.rectangle")
+                }
+                Button {
+                    showCameraPicker = true
+                } label: {
+                    Label("Take a photo", systemImage: "camera")
+                }
+            } label: {
+                Label("Add", systemImage: "plus")
+                    .labelStyle(.iconOnly)
+                    .font(.title3)
+                    .padding(8)
+                    .background(Circle().fill(Theme.Colors.surfaceElevated))
+            }
+        }
+    }
+
+    private func loadPickedPhoto(_ item: PhotosPickerItem) async {
+        defer { photoPickerSelection = nil }
+        do {
+            if let data = try await item.loadTransferable(type: Data.self) {
+                await MainActor.run { pendingPhotos.append(data) }
+                Haptics.success()
+            }
+        } catch {
+            photoError = error.localizedDescription
+            Log.error(error, category: "addrecord.loadPickedPhoto")
         }
     }
 
@@ -143,6 +242,7 @@ struct AddRecordView: View {
         attachedReleaseID = lookup.releaseID
         attachedEstimateCents = lookup.estimatedPriceCents
         attachedEstimateCurrency = lookup.estimatedCurrency
+        attachedImageURLs = lookup.imageURLs
         lookupError = nil
         Haptics.success()
     }
@@ -210,6 +310,47 @@ struct AddRecordView: View {
             deletedAt: nil
         )
         await services.records.upsert(record)
+        // Persist all Discogs images for the carousel. Priority:
+        // 1. Captured array from the Discogs picker (covers all images)
+        // 2. Barcode-driven enrichment fetched at save time
+        // 3. The typed cover URL alone, as a final fallback.
+        let imageSources: [String] = !attachedImageURLs.isEmpty
+            ? attachedImageURLs
+            : (enrichment?.imageURLs.isEmpty == false
+                ? enrichment!.imageURLs
+                : [resolvedCoverURL].compactMap { $0 })
+        if !imageSources.isEmpty {
+            await services.ingestDiscogsImages(
+                recordID: record.id,
+                collectionID: record.collectionID,
+                sourceURLs: imageSources
+            )
+        }
+        // Upload any photos the user picked / shot in this form. They append
+        // to whatever Discogs already supplied (so position 0 stays the cover).
+        if !pendingPhotos.isEmpty,
+           let userID = services.auth.currentUserID?.uuidString.lowercased() {
+            for data in pendingPhotos {
+                let imageID = UUID().uuidString.lowercased()
+                do {
+                    let path = try await services.coverArt.uploadUserImage(
+                        bytes: data,
+                        collectionID: record.collectionID,
+                        recordID: record.id,
+                        imageID: imageID
+                    )
+                    await services.recordImages.insertUserUpload(
+                        recordID: record.id,
+                        collectionID: record.collectionID,
+                        storagePath: path,
+                        uploadedBy: userID,
+                        imageID: imageID
+                    )
+                } catch {
+                    Log.error(error, category: "addrecord.uploadUserImage")
+                }
+            }
+        }
         Haptics.success()
         dismiss()
     }

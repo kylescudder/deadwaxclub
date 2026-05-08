@@ -74,6 +74,10 @@ struct DiscogsLookup: Equatable {
     let year: Int?
     let colourway: String?
     let coverArtURL: String?
+    /// All images in the Discogs release, primary first, secondaries after,
+    /// in the order Discogs returned them. Includes `coverArtURL` as the first
+    /// element when present.
+    let imageURLs: [String]
     let barcode: String?
     /// Median marketplace price reported by Discogs at the moment of lookup.
     /// Stored on the record as an estimate; clearly labelled in the UI as

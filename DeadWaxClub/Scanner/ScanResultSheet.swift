@@ -123,6 +123,13 @@ struct ScanResultSheet: View {
             deletedAt: nil
         )
         await services.records.upsert(record)
+        if !lookup.imageURLs.isEmpty {
+            await services.ingestDiscogsImages(
+                recordID: recordID,
+                collectionID: collectionID,
+                sourceURLs: lookup.imageURLs
+            )
+        }
 
         if let cents = priceCents {
             let entry = PriceEntry(

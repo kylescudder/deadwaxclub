@@ -108,6 +108,25 @@ enum DatabaseSchema {
         ]
     )
 
+    static let recordImages = Table(
+        name: "record_images",
+        columns: [
+            Column.text("record_id"),
+            Column.text("collection_id"),
+            Column.text("kind"),
+            Column.integer("position"),
+            Column.text("source_url"),
+            Column.text("storage_path"),
+            Column.text("uploaded_by"),
+            Column.text("created_at"),
+        ],
+        indexes: [
+            Index(name: "record_images_record",
+                  columns: [IndexedColumn.ascending("record_id"),
+                            IndexedColumn.ascending("position")]),
+        ]
+    )
+
     static let notifications = Table(
         name: "notifications",
         columns: [
@@ -198,7 +217,7 @@ enum DatabaseSchema {
     )
 
     static let schema = Schema(tables: [
-        profiles, records, priceEntries,
+        profiles, records, priceEntries, recordImages,
         collections, collectionMembers, collectionPendingInvites,
         notifications,
         lists, listItems, listMembers, pendingInvites,

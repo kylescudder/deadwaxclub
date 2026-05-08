@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct RecordDetailView: View {
     let record: VinylRecord
@@ -11,6 +12,9 @@ struct RecordDetailView: View {
     @State private var showEditSheet = false
     @State private var editingPriceEntry: PriceEntry?
     @State private var showDiscogsPicker = false
+    @State private var showCameraPicker = false
+    @State private var photoPickerSelection: PhotosPickerItem?
+    @State private var imageUploadError: String?
 
     init(record: VinylRecord) {
         self.record = record
@@ -20,11 +24,15 @@ struct RecordDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                CoverArtImage(record: currentRecord)
-                    .aspectRatio(1, contentMode: .fit)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
-                    .padding(.horizontal, Theme.Spacing.lg)
+                ZStack(alignment: .topTrailing) {
+                    RecordImageCarousel(record: currentRecord)
+                        .aspectRatio(1, contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+                    addImageMenu
+                        .padding(Theme.Spacing.sm)
+                }
+                .padding(.horizontal, Theme.Spacing.lg)
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                     Text(currentRecord.title)
@@ -113,14 +121,105 @@ struct RecordDetailView: View {
                 Task { await applyDiscogsLookup(lookup) }
             }
         }
+        .sheet(isPresented: $showCameraPicker) {
+            CameraPicker { image in
+                Task { await uploadUIImage(image) }
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: photoPickerSelection) { _, newItem in
+            guard let newItem else { return }
+            Task { await handlePhotoLibrarySelection(newItem) }
+        }
+        .alert("Couldn't upload image", isPresented: Binding(
+            get: { imageUploadError != nil },
+            set: { if !$0 { imageUploadError = nil } }
+        ), presenting: imageUploadError) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { Text($0) }
         .task {
             services.prices.startWatching(recordID: currentRecord.id)
+            services.recordImages.startWatching(recordID: currentRecord.id)
             await services.coverArt.cacheIfNeeded(record: currentRecord) { newPath in
                 Task { @MainActor in
                     self.currentRecord.coverArtStoragePath = newPath
                     await services.records.updateStoragePath(recordID: currentRecord.id, storagePath: newPath)
                 }
             }
+            // Backfill: mirror any record_images rows that still have a
+            // source_url but no storage_path (e.g. inserted on a build
+            // before eager-mirroring landed, or from a previous failed run).
+            await services.mirrorPendingImages(forRecord: currentRecord.id)
+        }
+    }
+
+    /// Floating menu over the carousel: pick from library, take a photo, or
+    /// remove the currently-shown user-uploaded image.
+    @ViewBuilder
+    private var addImageMenu: some View {
+        Menu {
+            PhotosPicker(selection: $photoPickerSelection,
+                         matching: .images,
+                         photoLibrary: .shared()) {
+                Label("Choose from library", systemImage: "photo.on.rectangle")
+            }
+            Button {
+                showCameraPicker = true
+            } label: {
+                Label("Take a photo", systemImage: "camera")
+            }
+        } label: {
+            Image(systemName: "plus.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, Theme.Colors.accent)
+                .background(Circle().fill(.thinMaterial))
+        }
+    }
+
+    private func handlePhotoLibrarySelection(_ item: PhotosPickerItem) async {
+        defer { photoPickerSelection = nil }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else { return }
+            await uploadImageBytes(data)
+        } catch {
+            imageUploadError = error.localizedDescription
+            Log.error(error, category: "records.uploadFromLibrary")
+        }
+    }
+
+    private func uploadUIImage(_ image: UIImage) async {
+        // 0.85 keeps the file under ~500KB for typical phone photos and is
+        // visually indistinguishable from full quality on a record cover.
+        guard let data = image.jpegData(compressionQuality: 0.85) else {
+            imageUploadError = "Couldn't read the image."
+            return
+        }
+        await uploadImageBytes(data)
+    }
+
+    private func uploadImageBytes(_ data: Data) async {
+        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return }
+        let imageID = UUID().uuidString.lowercased()
+        do {
+            let path = try await services.coverArt.uploadUserImage(
+                bytes: data,
+                collectionID: currentRecord.collectionID,
+                recordID: currentRecord.id,
+                imageID: imageID
+            )
+            await services.recordImages.insertUserUpload(
+                recordID: currentRecord.id,
+                collectionID: currentRecord.collectionID,
+                storagePath: path,
+                uploadedBy: userID,
+                imageID: imageID
+            )
+            Haptics.success()
+        } catch {
+            imageUploadError = error.localizedDescription
+            Log.error(error, category: "records.uploadUserImage")
+            Haptics.error()
         }
     }
 
@@ -348,6 +447,11 @@ struct RecordDetailView: View {
         }
         updated.updatedAt = Date()
         await services.records.upsert(updated)
+        await services.ingestDiscogsImages(
+            recordID: updated.id,
+            collectionID: updated.collectionID,
+            sourceURLs: lookup.imageURLs
+        )
         currentRecord = updated
         Haptics.success()
     }

@@ -164,8 +164,23 @@ final class DiscogsClient: ObservableObject {
         stats: DiscogsModels.MarketplaceStats?,
         fallbackBarcode: String?
     ) -> DiscogsLookup {
-        let cover = release.images?.first(where: { $0.type == "primary" })?.uri
+        // Order: primary first, secondaries after in Discogs's own order.
+        // Falls back to whatever's first if no image is explicitly tagged.
+        let primaryURI = release.images?.first(where: { $0.type == "primary" })?.uri
             ?? release.images?.first?.uri
+        let allURIs: [String] = {
+            guard let images = release.images else { return [] }
+            var out: [String] = []
+            if let primary = images.first(where: { $0.type == "primary" }) {
+                out.append(primary.uri)
+                out.append(contentsOf: images.filter { $0.type != "primary" }.map(\.uri))
+            } else {
+                out.append(contentsOf: images.map(\.uri))
+            }
+            // Dedupe while preserving order.
+            var seen: Set<String> = []
+            return out.filter { seen.insert($0).inserted }
+        }()
 
         let barcode = release.identifiers?
             .first(where: { ($0.type ?? "").lowercased() == "barcode" })?.value
@@ -186,7 +201,8 @@ final class DiscogsClient: ObservableObject {
             artist: artist.isEmpty ? "Unknown artist" : artist,
             year: release.year,
             colourway: colourway,
-            coverArtURL: cover,
+            coverArtURL: primaryURI,
+            imageURLs: allURIs,
             barcode: barcode,
             estimatedPriceCents: estimate?.cents,
             estimatedCurrency: estimate?.currency

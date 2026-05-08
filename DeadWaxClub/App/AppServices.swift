@@ -10,6 +10,7 @@ final class AppServices: ObservableObject {
     let coverArt: CoverArtCache
     let records: RecordsRepository
     let prices: PriceEntriesRepository
+    let recordImages: RecordImagesRepository
     let profile: ProfileRepository
     let lists: ListsRepository
     let collections: CollectionsRepository
@@ -39,13 +40,14 @@ final class AppServices: ObservableObject {
         self.coverArt = coverArt
         self.records = RecordsRepository(database: sync.database)
         self.prices = PriceEntriesRepository(database: sync.database)
+        self.recordImages = RecordImagesRepository(database: sync.database)
         self.profile = ProfileRepository(database: sync.database, auth: auth)
         self.lists = ListsRepository(database: sync.database, auth: auth)
         self.collections = CollectionsRepository(database: sync.database, auth: auth)
         self.notifications = NotificationsRepository(database: sync.database)
         self.onboarding = OnboardingCoordinator()
 
-        for child: any ObservableObject in [auth, sync, discogs, records, prices, profile, lists, collections, notifications, onboarding] {
+        for child: any ObservableObject in [auth, sync, discogs, records, prices, recordImages, profile, lists, collections, notifications, onboarding] {
             (child.objectWillChange as? ObservableObjectPublisher)?
                 .sink { [weak self] in self?.objectWillChange.send() }
                 .store(in: &cancellables)
@@ -122,6 +124,61 @@ final class AppServices: ObservableObject {
                 hasDiscogsToken: discogs.hasToken,
                 notificationsAuthorized: PushManager.shared.authorizationStatus == .authorized
             )
+        }
+    }
+
+    /// Persist every Discogs image URL for a record into `record_images`,
+    /// then eagerly mirror the bytes into Supabase Storage. Idempotent — if a
+    /// row already exists for a given source_url, it's left alone; rows that
+    /// already have a storage_path are skipped during mirroring.
+    ///
+    /// Use this from save sites instead of calling
+    /// `recordImages.bulkInsertFromDiscogs` directly so the bytes land in
+    /// Storage immediately rather than waiting for the user to swipe to that
+    /// carousel slide (which may never happen).
+    func ingestDiscogsImages(recordID: String, collectionID: String, sourceURLs: [String]) async {
+        guard !sourceURLs.isEmpty else { return }
+        await recordImages.bulkInsertFromDiscogs(
+            recordID: recordID,
+            collectionID: collectionID,
+            sourceURLs: sourceURLs
+        )
+        await mirrorPendingImages(forRecord: recordID)
+    }
+
+    /// Mirror every record_images row for this record that has a source_url
+    /// but no storage_path yet. Safe to call repeatedly. Detail screens call
+    /// this on appear to catch any rows that weren't mirrored at save time.
+    func mirrorPendingImages(forRecord recordID: String) async {
+        let rows: [RecordImage]
+        do {
+            let raw: [RecordImage?] = try await sync.database.getAll(
+                sql: """
+                select * from record_images
+                where record_id = ?
+                  and kind = 'discogs'
+                  and source_url is not null
+                  and (storage_path is null or storage_path = '')
+                order by position asc
+                """,
+                parameters: [recordID],
+                mapper: { RecordImage.from(cursor: $0) }
+            )
+            rows = raw.compactMap { $0 }
+        } catch {
+            Log.error(error, category: "appServices.mirrorPending")
+            return
+        }
+
+        for image in rows {
+            await coverArt.mirrorIfNeeded(image: image) { [weak self] newPath in
+                Task { @MainActor [weak self] in
+                    await self?.recordImages.updateStoragePath(
+                        imageID: image.id,
+                        storagePath: newPath
+                    )
+                }
+            }
         }
     }
 }

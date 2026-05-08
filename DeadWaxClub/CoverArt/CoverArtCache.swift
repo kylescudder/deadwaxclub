@@ -129,4 +129,74 @@ final class CoverArtCache: ObservableObject {
         let file = Self.localFile(for: recordID)
         try? fileManager.removeItem(at: file)
     }
+
+    // MARK: - Carousel / record_images
+
+    /// Best display URL for a non-primary carousel image. Storage-only — no
+    /// local file caching (only the primary cover gets that for offline).
+    /// Returns nil only when neither a storage_path nor source_url is set.
+    nonisolated func displayURL(for image: RecordImage) -> URL? {
+        if let path = image.storagePath {
+            return Self.publicStorageURL(path: path)
+        }
+        return image.sourceURL.flatMap(URL.init(string:))
+    }
+
+    /// If the image has a source_url but no storage_path, fetch the bytes
+    /// from upstream and mirror into Supabase Storage. Reports the new path
+    /// so the caller can persist it on the record_images row (PowerSync
+    /// replicates and other devices fetch from Storage instead of the
+    /// upstream / Discogs CDN).
+    func mirrorIfNeeded(
+        image: RecordImage,
+        onStoragePathPersisted: @escaping (String) -> Void
+    ) async {
+        guard image.storagePath == nil, let source = image.sourceURL else { return }
+        guard !inFlight.contains(image.id) else { return }
+        inFlight.insert(image.id)
+        defer { inFlight.remove(image.id) }
+
+        guard let bytes = await fetchBytes(fromURL: source) else { return }
+        do {
+            let path = recordImagePath(image: image)
+            try await uploadToSupabase(bytes: bytes, path: path)
+            onStoragePathPersisted(path)
+        } catch {
+            Log.error(error, category: "coverart.mirror")
+        }
+    }
+
+    /// Upload user-supplied image bytes (from photo picker / camera) for a
+    /// new RecordImage row. Returns the storage path the caller should write
+    /// onto the row.
+    func uploadUserImage(
+        bytes: Data,
+        collectionID: String,
+        recordID: String,
+        imageID: String
+    ) async throws -> String {
+        let path = "\(collectionID)/\(recordID)/\(imageID).jpg"
+        try await uploadToSupabase(bytes: bytes, path: path)
+        return path
+    }
+
+    private func recordImagePath(image: RecordImage) -> String {
+        "\(image.collectionID)/\(image.recordID)/\(image.id).jpg"
+    }
+
+    private func fetchBytes(fromURL urlString: String) async -> Data? {
+        guard let url = URL(string: urlString) else { return nil }
+        do {
+            var request = URLRequest(url: url)
+            request.setValue("DeadWaxClub/0.1", forHTTPHeaderField: "User-Agent")
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                return nil
+            }
+            return data
+        } catch {
+            Log.error(error, category: "coverart.download")
+            return nil
+        }
+    }
 }

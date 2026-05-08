@@ -48,7 +48,7 @@ targets:
           UIColorName: ""
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
-        NSCameraUsageDescription: Deadwax Club uses the camera to scan vinyl barcodes in shops.
+        NSCameraUsageDescription: Deadwax Club uses the camera to scan vinyl barcodes and to photograph your records for the cover-art carousel.
         NSPhotoLibraryAddUsageDescription: Deadwax Club saves cover art for your records.
         CFBundleURLTypes:
           - CFBundleURLSchemes:
