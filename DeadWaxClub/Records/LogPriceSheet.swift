@@ -8,7 +8,7 @@ struct LogPriceSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var amount: String = ""
-    @State private var currency: String = Locale.current.currency?.identifier ?? "GBP"
+    @State private var currency: String = Preferences.currency
     @State private var shopName: String = ""
     @State private var date: Date = Date()
     @State private var isSaving = false

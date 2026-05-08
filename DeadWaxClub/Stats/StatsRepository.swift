@@ -135,24 +135,23 @@ final class StatsRepository: ObservableObject {
     private func totalSpentCents(scope: StatsScope) async throws -> (cents: Int, currency: String?) {
         struct Row { let total: Int; let currency: String? }
         let (where_, param) = scopeClause(scope)
+        // Single window-function pass instead of two correlated subqueries
+        // per record. Picks the most recent price_entry per record, joins the
+        // owned-records filter, sums.
         let rows = try await database.getAll(
             sql: """
-            select sum(latest_price) as total, max(latest_currency) as cur
+            select sum(latest.price_cents) as total, max(latest.currency) as cur
             from (
-                select (
-                    select pe.price_cents from price_entries pe
-                    where pe.record_id = r.id
-                    order by pe.scanned_at desc limit 1
-                ) as latest_price,
-                (
-                    select pe.currency from price_entries pe
-                    where pe.record_id = r.id
-                    order by pe.scanned_at desc limit 1
-                ) as latest_currency
-                from records r
+                select pe.record_id, pe.price_cents, pe.currency,
+                       row_number() over (
+                           partition by pe.record_id
+                           order by pe.scanned_at desc
+                       ) as rn
+                from price_entries pe
+                join records r on r.id = pe.record_id
                 where r.\(where_) and r.status = 'owned' and r.deleted_at is null
-            )
-            where latest_price is not null
+            ) latest
+            where latest.rn = 1
             """,
             parameters: [param],
             mapper: { cursor -> Row in

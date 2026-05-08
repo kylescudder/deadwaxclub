@@ -56,7 +56,14 @@ struct ListDetailView: View {
             List {
                 Section {
                     ForEach(repo.records) { record in
-                        NavigationLink(value: record) {
+                        // Inline destination instead of value-based — the
+                        // Records tab also registers
+                        // `.navigationDestination(for: VinylRecord.self)` and
+                        // SwiftUI's TabView leaks the conflict into this
+                        // stack, causing taps to push the wrong destination.
+                        NavigationLink {
+                            RecordDetailView(record: record)
+                        } label: {
                             RecordRowView(record: record)
                         }
                         .listRowBackground(Theme.Colors.surface)
@@ -81,7 +88,6 @@ struct ListDetailView: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .navigationDestination(for: VinylRecord.self) { RecordDetailView(record: $0) }
         }
     }
 }

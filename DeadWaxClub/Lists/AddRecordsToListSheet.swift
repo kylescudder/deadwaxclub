@@ -63,7 +63,7 @@ struct AddRecordsToListSheet: View {
                 }
             }
             .sheet(isPresented: $showFilterSheet) {
-                RecordsFilterSheet(filter: $filter)
+                RecordsFilterSheet(filter: $filter, showStatusFilter: true)
             }
             .task { await loadAll() }
         }

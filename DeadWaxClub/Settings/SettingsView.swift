@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var services: AppServices
     @AppStorage("appearance") private var appearance: Appearance = .system
+    @AppStorage(Preferences.currencyKey) private var currency: String = Preferences.localeCurrency
     @State private var discogsToken: String = ""
     @State private var savedDiscogsBanner = false
     @State private var showSignOutConfirm = false
@@ -17,6 +18,19 @@ struct SettingsView: View {
                 Picker("Theme", selection: $appearance) {
                     ForEach(Appearance.allCases) { Text($0.label).tag($0) }
                 }
+            }
+
+            Section {
+                Picker("Currency", selection: $currency) {
+                    ForEach(Preferences.pickableCurrencies, id: \.self) { code in
+                        Text(Preferences.displayName(for: code)).tag(code)
+                    }
+                }
+                .pickerStyle(.navigationLink)
+            } header: {
+                Text("Currency")
+            } footer: {
+                Text("Default for new prices you log. Existing entries keep whatever currency they were saved in. Discogs estimates display in the currency set on your Discogs account (discogs.com → Settings → My Buyer Settings) — change it there if estimates show up in the wrong currency.")
             }
 
             Section("Profile") {

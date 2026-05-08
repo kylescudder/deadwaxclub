@@ -10,7 +10,7 @@ struct ScanResultSheet: View {
 
     @State private var status: RecordStatus = .wishlist
     @State private var amount: String = ""
-    @State private var currency: String = Locale.current.currency?.identifier ?? "GBP"
+    @State private var currency: String = Preferences.currency
     @State private var shopName: String = ""
     @State private var isSaving = false
 

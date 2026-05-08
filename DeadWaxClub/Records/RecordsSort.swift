@@ -31,12 +31,18 @@ struct RecordsFilter: Equatable {
     var colourwayContains: String?
     var hasPriceOnly: Bool
     var hasNoPriceOnly: Bool
+    /// Empty set means "any status". Populated set narrows to those statuses.
+    /// Only surfaces in the UI on filter sheets that opt-in (currently the
+    /// add-to-list picker); the Records tab already filters by status via
+    /// its segmented control at the watcher level.
+    var statuses: Set<RecordStatus>
 
     static let none = RecordsFilter(
         yearRange: nil,
         colourwayContains: nil,
         hasPriceOnly: false,
-        hasNoPriceOnly: false
+        hasNoPriceOnly: false,
+        statuses: []
     )
 
     var isActive: Bool {
@@ -44,6 +50,7 @@ struct RecordsFilter: Equatable {
             || (colourwayContains?.isEmpty == false)
             || hasPriceOnly
             || hasNoPriceOnly
+            || !statuses.isEmpty
     }
 }
 
@@ -72,6 +79,7 @@ extension Array where Element == VinylRecord {
     func filtered(by f: RecordsFilter) -> [VinylRecord] {
         guard f.isActive else { return self }
         return filter { record in
+            if !f.statuses.isEmpty && !f.statuses.contains(record.status) { return false }
             if let range = f.yearRange {
                 guard let year = record.year, range.contains(year) else { return false }
             }

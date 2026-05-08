@@ -9,6 +9,11 @@ struct RecordsFilterChipsBar: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Theme.Spacing.xs) {
+                if filter.statuses == [.owned] {
+                    chip("Owned only") { filter.statuses = [] }
+                } else if filter.statuses == [.wishlist] {
+                    chip("Wishlist only") { filter.statuses = [] }
+                }
                 if let range = filter.yearRange {
                     chip(yearChipLabel(for: range)) {
                         filter.yearRange = nil
