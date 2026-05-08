@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct CreateListView: View {
+    /// Called after the list has been created, before the sheet dismisses,
+    /// so the parent can navigate the user straight into the new list.
+    var onCreated: ((VinylList) -> Void)? = nil
+
     @EnvironmentObject private var services: AppServices
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
@@ -57,12 +61,15 @@ struct CreateListView: View {
     private func create() async {
         isSaving = true
         defer { isSaving = false }
-        _ = await services.lists.create(
+        let created = await services.lists.create(
             name: name.trimmingCharacters(in: .whitespaces),
             description: description.isEmpty ? nil : description,
             mode: mode
         )
         Haptics.success()
+        if let created {
+            onCreated?(created)
+        }
         dismiss()
     }
 }

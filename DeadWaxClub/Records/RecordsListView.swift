@@ -24,7 +24,7 @@ struct RecordsListView: View {
             .padding(.vertical, Theme.Spacing.sm)
 
             if filter.isActive {
-                FilterChipsBar(filter: $filter)
+                RecordsFilterChipsBar(filter: $filter)
                     .padding(.horizontal, Theme.Spacing.lg)
                     .padding(.bottom, Theme.Spacing.sm)
             }
@@ -139,39 +139,3 @@ struct RecordsListView: View {
     }
 }
 
-private struct FilterChipsBar: View {
-    @Binding var filter: RecordsFilter
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Theme.Spacing.xs) {
-                if let range = filter.yearRange {
-                    chip("Year \(range.lowerBound)–\(range.upperBound == .max ? "now" : "\(range.upperBound)")") {
-                        filter.yearRange = nil
-                    }
-                }
-                if let cw = filter.colourwayContains, !cw.isEmpty {
-                    chip("Colour: \(cw)") { filter.colourwayContains = nil }
-                }
-                if filter.hasPriceOnly {
-                    chip("With est. value") { filter.hasPriceOnly = false }
-                }
-                if filter.hasNoPriceOnly {
-                    chip("Missing price") { filter.hasNoPriceOnly = false }
-                }
-            }
-        }
-    }
-
-    private func chip(_ text: String, onClose: @escaping () -> Void) -> some View {
-        HStack(spacing: 4) {
-            Text(text).font(.caption)
-            Button(action: onClose) { Image(systemName: "xmark.circle.fill") }
-                .foregroundStyle(Theme.Colors.textTertiary)
-        }
-        .padding(.horizontal, Theme.Spacing.sm)
-        .padding(.vertical, Theme.Spacing.xs)
-        .background(Theme.Colors.surface)
-        .clipShape(Capsule())
-    }
-}

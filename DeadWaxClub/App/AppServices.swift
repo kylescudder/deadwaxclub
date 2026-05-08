@@ -83,7 +83,7 @@ final class AppServices: ObservableObject {
 
     private func applyAuth(state: AuthClient.State) {
         guard case let .signedIn(userID, _) = state else {
-            onboarding.current = nil
+            onboarding.resetForSignOut()
             collections.stopWatching()
             notifications.stopWatching()
             return

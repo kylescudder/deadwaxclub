@@ -1,17 +1,89 @@
 import SwiftUI
 
-/// Picker that shows the user's records (owned + wishlist) and lets them
-/// multi-select to add to a list.
+/// Picker that shows every record across all the user's Collections (both
+/// owned and wishlist) and lets them multi-select to add to a list. Sort and
+/// filter mirror the Records tab — same `RecordsSort`, same `RecordsFilter`,
+/// and they share the persisted `records.sort` AppStorage key so the user's
+/// preferred order applies in both places.
 struct AddRecordsToListSheet: View {
     let listID: String
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.dismiss) private var dismiss
+    @State private var allRecords: [VinylRecord] = []
     @State private var selected: Set<String> = []
     @State private var search = ""
+    @AppStorage("records.sort") private var sortRaw: String = RecordsSort.recentlyUpdated.rawValue
+    @State private var filter: RecordsFilter = .none
+    @State private var showFilterSheet = false
+
+    private var sort: RecordsSort {
+        RecordsSort(rawValue: sortRaw) ?? .recentlyUpdated
+    }
 
     var body: some View {
         NavigationStack {
+            VStack(spacing: 0) {
+                if filter.isActive {
+                    RecordsFilterChipsBar(filter: $filter)
+                        .padding(.horizontal, Theme.Spacing.lg)
+                        .padding(.vertical, Theme.Spacing.sm)
+                }
+                content
+            }
+            .background(Theme.Colors.background)
+            .searchable(text: $search)
+            .navigationTitle("Add records")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Sort", selection: $sortRaw) {
+                            ForEach(RecordsSort.allCases) { sort in
+                                Text(sort.label).tag(sort.rawValue)
+                            }
+                        }
+                        Divider()
+                        Button {
+                            showFilterSheet = true
+                        } label: {
+                            Label("Filter\(filter.isActive ? " (active)" : "")",
+                                  systemImage: "line.3.horizontal.decrease.circle")
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down.circle")
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add (\(selected.count))") { Task { await save() } }
+                        .disabled(selected.isEmpty)
+                }
+            }
+            .sheet(isPresented: $showFilterSheet) {
+                RecordsFilterSheet(filter: $filter)
+            }
+            .task { await loadAll() }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if allRecords.isEmpty {
+            EmptyState(
+                systemImage: "opticaldisc",
+                title: "No records to add yet",
+                message: "Add records to your Collection (owned or wishlist) and they'll show up here for adding to a list."
+            )
+        } else if filtered.isEmpty {
+            EmptyState(
+                systemImage: "magnifyingglass",
+                title: "No matches",
+                message: "Try a different search term or clear your filters."
+            )
+        } else {
             List {
                 ForEach(filtered) { record in
                     Button {
@@ -31,27 +103,37 @@ struct AddRecordsToListSheet: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .searchable(text: $search)
-            .navigationTitle("Add records")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add (\(selected.count))") { Task { await save() } }
-                        .disabled(selected.isEmpty)
-                }
-            }
         }
     }
 
     private var filtered: [VinylRecord] {
-        let records = services.records.records
-        guard !search.isEmpty else { return records }
-        let q = search.lowercased()
-        return records.filter {
-            $0.title.lowercased().contains(q) || $0.artist.lowercased().contains(q)
+        var rows = allRecords.filtered(by: filter).sorted(by: sort)
+        if !search.isEmpty {
+            let q = search.lowercased()
+            rows = rows.filter {
+                $0.title.lowercased().contains(q)
+                    || $0.artist.lowercased().contains(q)
+                    || ($0.colourway?.lowercased().contains(q) ?? false)
+            }
+        }
+        return rows
+    }
+
+    private func loadAll() async {
+        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return }
+        do {
+            let rows = try await services.sync.database.getAll(
+                sql: """
+                select * from records
+                where collection_id in (select collection_id from collection_members where user_id = ?)
+                  and deleted_at is null
+                """,
+                parameters: [userID],
+                mapper: { VinylRecord.from(cursor: $0) }
+            )
+            allRecords = rows.compactMap { $0 }
+        } catch {
+            Log.error(error, category: "lists.addRecords.loadAll")
         }
     }
 

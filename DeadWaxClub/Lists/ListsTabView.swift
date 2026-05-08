@@ -3,6 +3,9 @@ import SwiftUI
 struct ListsTabView: View {
     @EnvironmentObject private var services: AppServices
     @State private var showCreate = false
+    /// Set by CreateListView's onCreated callback to push the user straight
+    /// into the new list rather than dropping them back at the lists list.
+    @State private var navTarget: VinylList?
 
     var body: some View {
         Group {
@@ -16,7 +19,9 @@ struct ListsTabView: View {
             } else {
                 List {
                     ForEach(services.lists.lists) { list in
-                        NavigationLink(value: list) {
+                        NavigationLink {
+                            ListDetailView(list: list)
+                        } label: {
                             ListRowView(list: list)
                         }
                         .listRowBackground(Theme.Colors.surface)
@@ -25,9 +30,6 @@ struct ListsTabView: View {
                 }
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
-                .navigationDestination(for: VinylList.self) { list in
-                    ListDetailView(list: list)
-                }
             }
         }
         .background(Theme.Colors.background)
@@ -38,7 +40,18 @@ struct ListsTabView: View {
             }
         }
         .sheet(isPresented: $showCreate) {
-            NavigationStack { CreateListView() }
+            NavigationStack {
+                CreateListView { created in
+                    navTarget = created
+                }
+            }
+        }
+        // Programmatic push for the post-create flow. Inline NavigationLink
+        // above handles taps; declaring both an inline destination and a
+        // `navigationDestination(for: VinylList.self)` makes SwiftUI warn
+        // and silently picks one of them.
+        .navigationDestination(item: $navTarget) { list in
+            ListDetailView(list: list)
         }
         .onAppear {
             if let userID = services.auth.currentUserID?.uuidString.lowercased() {

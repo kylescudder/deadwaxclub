@@ -13,12 +13,27 @@ struct RootView: View {
                 NavigationStack { SignInView() }
             case .signedIn:
                 MainTabView()
-                    .sheet(item: Binding(
-                        get: { services.onboarding.current },
+                    .sheet(isPresented: Binding(
+                        get: { services.onboarding.isOnboarding },
                         set: { _ in }
-                    )) { step in
-                        onboardingSheet(for: step)
-                            .presentationDetents([.large])
+                    )) {
+                        OnboardingSheet(
+                            initialSteps: services.onboarding.pendingSteps,
+                            onCompleteDiscogsToken: {
+                                services.onboarding.markDiscogsTokenSeen()
+                                services.evaluateOnboarding()
+                            },
+                            onSkipDiscogsToken: {
+                                services.onboarding.markDiscogsTokenSeen()
+                                services.evaluateOnboarding()
+                            },
+                            onCompleteNotifications: {
+                                services.onboarding.markNotificationsSeen()
+                                services.evaluateOnboarding()
+                            }
+                        )
+                        .presentationDetents([.large])
+                        .interactiveDismissDisabled()
                     }
             }
         }
@@ -80,27 +95,6 @@ struct RootView: View {
         Task { await services.auth.handle(callbackURL: url) }
     }
 
-    @ViewBuilder
-    private func onboardingSheet(for step: OnboardingStep) -> some View {
-        switch step {
-        case .discogsToken:
-            DiscogsTokenOnboardingView(
-                onDone: {
-                    services.onboarding.markDiscogsTokenSeen()
-                    services.evaluateOnboarding()
-                },
-                onSkip: {
-                    services.onboarding.markDiscogsTokenSeen()
-                    services.evaluateOnboarding()
-                }
-            )
-        case .enableNotifications:
-            EnableNotificationsView {
-                services.onboarding.markNotificationsSeen()
-                services.evaluateOnboarding()
-            }
-        }
-    }
 }
 
 private struct PublicListPresentation: Identifiable {
