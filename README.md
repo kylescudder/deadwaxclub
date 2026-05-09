@@ -66,18 +66,13 @@ Fill in:
 
 ### 3. Provision Supabase
 
-In the Supabase SQL editor, run in order:
+With the project linked, apply every migration in `Supabase/migrations/` in one go:
 
-1. `supabase/migrations/0001_init.sql` — tables, triggers, RLS.
-2. `supabase/migrations/0002_storage_covers.sql` — public `covers` bucket.
-3. `supabase/migrations/0003_estimated_price.sql` — Discogs estimate columns.
-4. `supabase/migrations/0004_lists.sql` — lists, list_items, list_members + share-link RPCs.
-5. `supabase/migrations/0005_notifications.sql` — device tokens + new-low trigger.
-6. `supabase/migrations/0006_account_delete.sql` — `delete_my_account()` RPC.
-7. `supabase/migrations/0007_user_lookup.sql` — invite-by-email helper.
-8. `supabase/migrations/0008_pending_invites.sql` — pending list invites by email.
+```sh
+supabase db push
+```
 
-Or, with the project linked, just `supabase db push` from the repo root.
+(Or paste each `Supabase/migrations/*.sql` file into the Supabase SQL editor in numeric order if you'd rather run them by hand.)
 
 In **Authentication → Providers**:
 - Enable **Email**.
