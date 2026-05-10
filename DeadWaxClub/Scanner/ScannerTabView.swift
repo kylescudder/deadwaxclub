@@ -8,26 +8,40 @@ struct ScannerTabView: View {
     @State private var isLooking = false
     @State private var lookupError: String?
     @State private var showResultSheet = false
+    @State private var hasToken = false
+    @State private var showTokenSheet = false
+    // Auto-prompt the token sheet only the first time per app launch so
+    // returning to the Scan tab after skipping doesn't re-trap the user.
+    @State private var didAutoPromptToken = false
 
     var body: some View {
         ZStack {
-            BarcodeScannerHost { barcode in
-                Task { await handle(barcode: barcode) }
-            }
-            .ignoresSafeArea()
-
-            VStack {
-                Spacer()
-                if isLooking {
-                    HStack(spacing: Theme.Spacing.sm) {
-                        ProgressView().tint(.white)
-                        Text("Looking up…").foregroundStyle(.white)
-                    }
-                    .padding()
-                    .background(.black.opacity(0.6))
-                    .clipShape(Capsule())
-                    .padding(.bottom, Theme.Spacing.xxl)
+            if hasToken {
+                BarcodeScannerHost { barcode in
+                    Task { await handle(barcode: barcode) }
                 }
+                .ignoresSafeArea()
+
+                VStack {
+                    Spacer()
+                    if isLooking {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            ProgressView().tint(.white)
+                            Text("Looking up…").foregroundStyle(.white)
+                        }
+                        .padding()
+                        .background(.black.opacity(0.6))
+                        .clipShape(Capsule())
+                        .padding(.bottom, Theme.Spacing.xxl)
+                    }
+                }
+            } else {
+                EmptyState(
+                    systemImage: "barcode.viewfinder",
+                    title: "Scan needs a Discogs token",
+                    message: "Barcode lookup can’t be used without a personal Discogs token. Add one to scan records.",
+                    actionTitle: "Add Discogs token"
+                ) { showTokenSheet = true }
             }
         }
         .navigationTitle("Scan")
@@ -41,6 +55,26 @@ struct ScannerTabView: View {
         .sheet(isPresented: $showResultSheet, onDismiss: reset) {
             if let lookup, let barcode = scannedBarcode {
                 ScanResultSheet(lookup: lookup, barcode: barcode, existing: existing)
+            }
+        }
+        .sheet(isPresented: $showTokenSheet) {
+            NavigationStack {
+                DiscogsTokenOnboardingView(
+                    onDone: {
+                        hasToken = services.discogs.hasToken
+                        showTokenSheet = false
+                    },
+                    onSkip: {
+                        showTokenSheet = false
+                    }
+                )
+            }
+        }
+        .onAppear {
+            hasToken = services.discogs.hasToken
+            if !hasToken && !didAutoPromptToken {
+                didAutoPromptToken = true
+                showTokenSheet = true
             }
         }
     }
