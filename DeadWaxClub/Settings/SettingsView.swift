@@ -195,7 +195,7 @@ private struct NotificationSettingsRow: View {
                 Label("Disabled in iOS Settings", systemImage: "xmark.seal")
                     .foregroundStyle(.red)
                 Button("Open Settings") {
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
                         openURL(url)
                     }
                 }
