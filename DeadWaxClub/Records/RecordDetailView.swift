@@ -324,7 +324,7 @@ struct RecordDetailView: View {
 
                 if let cents = currentRecord.estimatedPriceCents,
                    let currency = currentRecord.estimatedPriceCurrency {
-                    Text(formatCents(cents, currency: currency))
+                    Text(CurrencyFormatter.formatCents(cents, code: currency))
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.green)
                     if let updated = currentRecord.estimatedPriceUpdatedAt {
@@ -340,13 +340,6 @@ struct RecordDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    private func formatCents(_ cents: Int, currency: String) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = currency
-        return formatter.string(from: NSDecimalNumber(value: Double(cents) / 100.0)) ?? "\(cents)"
     }
 
     private var priceLogCard: some View {
@@ -505,9 +498,6 @@ struct RecordDetailView: View {
 
 extension PriceEntry {
     var formattedPrice: String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = currency
-        return formatter.string(from: priceMajor as NSDecimalNumber) ?? "\(priceMajor) \(currency)"
+        CurrencyFormatter.formatMajor(priceMajor, code: currency)
     }
 }
