@@ -96,7 +96,7 @@ struct LogPriceSheet: View {
 
     private func save() async {
         guard let cents = priceCents,
-              let ownerID = services.auth.currentUserID?.uuidString.lowercased() else { return }
+              let ownerID = services.auth.currentUserID?.lowerUUID else { return }
         isSaving = true
         defer { isSaving = false }
 
@@ -115,7 +115,7 @@ struct LogPriceSheet: View {
             await services.prices.update(updated)
         } else {
             let entry = PriceEntry(
-                id: UUID().uuidString.lowercased(),
+                id: UUID().lowerUUID,
                 recordID: record.id,
                 ownerID: ownerID,
                 collectionID: record.collectionID,

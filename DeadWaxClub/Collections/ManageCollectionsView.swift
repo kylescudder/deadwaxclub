@@ -123,7 +123,7 @@ private struct CollectionDetailView: View {
     }
 
     private var currentUserID: String? {
-        services.auth.currentUserID?.uuidString.lowercased()
+        services.auth.currentUserID?.lowerUUID
     }
 
     private var currentRole: CollectionMemberRole? {

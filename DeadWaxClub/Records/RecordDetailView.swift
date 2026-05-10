@@ -203,8 +203,8 @@ struct RecordDetailView: View {
     }
 
     private func uploadImageBytes(_ data: Data) async {
-        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return }
-        let imageID = UUID().uuidString.lowercased()
+        guard let userID = services.auth.currentUserID?.lowerUUID else { return }
+        let imageID = UUID().lowerUUID
         do {
             let path = try await services.coverArt.uploadUserImage(
                 bytes: data,
@@ -491,7 +491,7 @@ struct RecordDetailView: View {
     /// Collections the user can write to other than the record's current home.
     /// Owner/editor membership only — viewer-only Collections aren't write targets.
     private var writableMoveTargets: [VinylCollection] {
-        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return [] }
+        guard let userID = services.auth.currentUserID?.lowerUUID else { return [] }
         return services.collections.collections.filter { c in
             c.id != currentRecord.collectionID
                 && (services.collections.role(in: c.id, userID: userID) == .owner

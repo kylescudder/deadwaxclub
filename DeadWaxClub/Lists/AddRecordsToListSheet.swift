@@ -124,7 +124,7 @@ struct AddRecordsToListSheet: View {
     }
 
     private func loadAll() async {
-        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return }
+        guard let userID = services.auth.currentUserID?.lowerUUID else { return }
         do {
             let rows = try await services.sync.database.getAll(
                 sql: """

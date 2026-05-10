@@ -55,8 +55,8 @@ final class PriceEntriesRepository: ObservableObject {
                     entry.priceCents,
                     entry.currency,
                     entry.shopName,
-                    ISO8601DateFormatter.iso.string(from: entry.scannedAt),
-                    ISO8601DateFormatter.iso.string(from: entry.createdAt),
+                    entry.scannedAt.iso8601,
+                    entry.createdAt.iso8601,
                 ]
             )
         } catch {
@@ -79,7 +79,7 @@ final class PriceEntriesRepository: ObservableObject {
                     entry.priceCents,
                     entry.currency,
                     entry.shopName,
-                    ISO8601DateFormatter.iso.string(from: entry.scannedAt),
+                    entry.scannedAt.iso8601,
                     entry.id,
                 ]
             )

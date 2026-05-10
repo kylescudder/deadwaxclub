@@ -94,7 +94,7 @@ struct ScanResultSheet: View {
     }
 
     private func save() async {
-        guard let ownerID = services.auth.currentUserID?.uuidString.lowercased() else { return }
+        guard let ownerID = services.auth.currentUserID?.lowerUUID else { return }
         // Existing record stays in its Collection; a fresh scan lands in the user's primary.
         let resolvedCollectionID: String? = existing?.collectionID
             ?? services.profile.profile?.primaryCollectionID
@@ -103,7 +103,7 @@ struct ScanResultSheet: View {
         defer { isSaving = false }
 
         let now = Date()
-        let recordID = existing?.id ?? UUID().uuidString.lowercased()
+        let recordID = existing?.id ?? UUID().lowerUUID
         let record = VinylRecord(
             id: recordID,
             collectionID: collectionID,
@@ -135,7 +135,7 @@ struct ScanResultSheet: View {
 
         if let cents = priceCents {
             let entry = PriceEntry(
-                id: UUID().uuidString.lowercased(),
+                id: UUID().lowerUUID,
                 recordID: recordID,
                 ownerID: ownerID,
                 collectionID: collectionID,

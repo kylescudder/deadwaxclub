@@ -63,9 +63,9 @@ final class RecordImagesRepository: ObservableObject {
             )) ?? 0
 
             var pos = nextPositionStart
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             for url in sourceURLs where !existingSet.contains(url) {
-                let id = UUID().uuidString.lowercased()
+                let id = UUID().lowerUUID
                 try await database.execute(
                     sql: """
                     insert into record_images
@@ -92,8 +92,8 @@ final class RecordImagesRepository: ObservableObject {
         imageID: String? = nil
     ) async -> String? {
         do {
-            let id = imageID ?? UUID().uuidString.lowercased()
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let id = imageID ?? UUID().lowerUUID
+            let now = Date().iso8601
             let nextPos: Int = (try? await database.getOptional(
                 sql: "select coalesce(max(position) + 1, 0) as next from record_images where record_id = ?",
                 parameters: [recordID],
