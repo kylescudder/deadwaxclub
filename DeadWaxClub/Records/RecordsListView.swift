@@ -9,6 +9,7 @@ struct RecordsListView: View {
     @State private var filter: RecordsFilter = .none
     @State private var showFilterSheet = false
     @State private var showNotificationInbox = false
+    @State private var refreshCount = 0
 
     private var sort: RecordsSort {
         RecordsSort(rawValue: sortRaw) ?? .recentlyUpdated
@@ -105,10 +106,11 @@ struct RecordsListView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .refreshable {
-                Haptics.tap()
+                refreshCount += 1
                 reconfigure()
                 try? await Task.sleep(nanoseconds: 400_000_000)
             }
+            .sensoryFeedback(.impact(weight: .light), trigger: refreshCount)
             .navigationDestination(for: VinylRecord.self) { record in
                 RecordDetailView(record: record)
             }

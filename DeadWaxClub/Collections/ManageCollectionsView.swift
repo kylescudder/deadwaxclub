@@ -5,6 +5,8 @@ struct ManageCollectionsView: View {
     @State private var newCollectionName: String = ""
     @State private var isCreating = false
     @State private var navTarget: VinylCollection?
+    @State private var successCount = 0
+    @State private var errorCount = 0
 
     var body: some View {
         Form {
@@ -55,6 +57,8 @@ struct ManageCollectionsView: View {
             navTarget = target
             services.pendingDeepLinkCollectionID = nil
         }
+        .sensoryFeedback(.success, trigger: successCount)
+        .sensoryFeedback(.error, trigger: errorCount)
     }
 
     private func row(for collection: VinylCollection) -> some View {
@@ -89,9 +93,9 @@ struct ManageCollectionsView: View {
         if let created = await services.collections.create(name: name) {
             newCollectionName = ""
             navTarget = created
-            Haptics.success()
+            successCount += 1
         } else {
-            Haptics.error()
+            errorCount += 1
         }
     }
 }
@@ -111,6 +115,8 @@ private struct CollectionDetailView: View {
     @State private var showLeaveConfirm = false
     @State private var showDeleteConfirm = false
     @State private var showMoveConfirm = false
+    @State private var successCount = 0
+    @State private var errorCount = 0
 
     private var isPrimary: Bool {
         services.profile.profile?.primaryCollectionID == collection.id
@@ -229,7 +235,7 @@ private struct CollectionDetailView: View {
                     Button {
                         Task {
                             await services.collections.setPrimary(collectionID: collection.id)
-                            Haptics.success()
+                            successCount += 1
                         }
                     } label: {
                         Label("Set as primary", systemImage: "star")
@@ -291,13 +297,15 @@ private struct CollectionDetailView: View {
         } message: {
             Text("Every record currently in your primary Collection moves into \(collection.name). Other members will see them straight away.")
         }
+        .sensoryFeedback(.success, trigger: successCount)
+        .sensoryFeedback(.error, trigger: errorCount)
     }
 
     private func renameIfChanged() async {
         let trimmed = editingName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != collection.name, isOwner else { return }
         await services.collections.rename(collectionID: collection.id, name: trimmed)
-        Haptics.success()
+        successCount += 1
     }
 
     private func invite() async {
@@ -317,16 +325,16 @@ private struct CollectionDetailView: View {
             case .pending: inviteBanner = "Invitation saved. They'll join when they sign up with \(email)."
             }
             inviteEmail = ""
-            Haptics.success()
+            successCount += 1
         } catch {
             inviteError = error.localizedDescription
-            Haptics.error()
+            errorCount += 1
         }
     }
 
     private func moveAllFromPrimary() async {
         guard let primary = services.profile.profile?.primaryCollectionID else { return }
         await services.collections.moveAllRecords(from: primary, to: collection.id)
-        Haptics.success()
+        successCount += 1
     }
 }

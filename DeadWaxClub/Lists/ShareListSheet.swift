@@ -11,6 +11,9 @@ struct ShareListSheet: View {
     @State private var inviteError: String?
     @State private var inviteBanner: String?
     @State private var isInviting = false
+    @State private var selectionCount = 0
+    @State private var inviteSuccessCount = 0
+    @State private var inviteErrorCount = 0
     @StateObject private var contents: ListContentsHolder = ListContentsHolder()
 
     init(list: VinylList) {
@@ -27,7 +30,7 @@ struct ShareListSheet: View {
                             Task {
                                 mode = option
                                 await services.lists.updateShareMode(listID: list.id, mode: option)
-                                Haptics.selection()
+                                selectionCount += 1
                             }
                         } label: {
                             HStack {
@@ -153,6 +156,9 @@ struct ShareListSheet: View {
             .onAppear {
                 contents.attach(database: services.sync.database, listID: list.id)
             }
+            .sensoryFeedback(.selection, trigger: selectionCount)
+            .sensoryFeedback(.success, trigger: inviteSuccessCount)
+            .sensoryFeedback(.error, trigger: inviteErrorCount)
         }
     }
 
@@ -174,10 +180,10 @@ struct ShareListSheet: View {
             case .pending: inviteBanner = "Invitation saved. They'll join automatically when they sign up with \(email)."
             }
             inviteEmail = ""
-            Haptics.success()
+            inviteSuccessCount += 1
         } catch {
             inviteError = error.localizedDescription
-            Haptics.error()
+            inviteErrorCount += 1
         }
     }
 

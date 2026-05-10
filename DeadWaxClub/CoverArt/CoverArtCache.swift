@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 
 /// Two-tier cover art cache:
 /// 1. Local file at `<Caches>/covers/<recordID>.jpg` — read first, available fully offline.

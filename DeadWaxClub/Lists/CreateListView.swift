@@ -11,6 +11,8 @@ struct CreateListView: View {
     @State private var description = ""
     @State private var mode: ListShareMode = .private
     @State private var isSaving = false
+    @State private var selectionCount = 0
+    @State private var saveCount = 0
 
     var body: some View {
         Form {
@@ -23,7 +25,7 @@ struct CreateListView: View {
                 ForEach(ListShareMode.allCases) { option in
                     Button {
                         mode = option
-                        Haptics.selection()
+                        selectionCount += 1
                     } label: {
                         HStack {
                             Image(systemName: option.systemImage)
@@ -47,6 +49,8 @@ struct CreateListView: View {
         }
         .navigationTitle("New list")
         .navigationBarTitleDisplayMode(.inline)
+        .sensoryFeedback(.selection, trigger: selectionCount)
+        .sensoryFeedback(.success, trigger: saveCount)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
@@ -66,7 +70,7 @@ struct CreateListView: View {
             description: description.isEmpty ? nil : description,
             mode: mode
         )
-        Haptics.success()
+        saveCount += 1
         if let created {
             onCreated?(created)
         }

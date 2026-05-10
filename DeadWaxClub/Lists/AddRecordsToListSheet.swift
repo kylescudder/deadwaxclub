@@ -16,6 +16,8 @@ struct AddRecordsToListSheet: View {
     @AppStorage("records.sort") private var sortRaw: String = RecordsSort.recentlyUpdated.rawValue
     @State private var filter: RecordsFilter = .none
     @State private var showFilterSheet = false
+    @State private var selectionCount = 0
+    @State private var saveCount = 0
 
     private var sort: RecordsSort {
         RecordsSort(rawValue: sortRaw) ?? .recentlyUpdated
@@ -65,6 +67,8 @@ struct AddRecordsToListSheet: View {
             .sheet(isPresented: $showFilterSheet) {
                 RecordsFilterSheet(filter: $filter, showStatusFilter: true)
             }
+            .sensoryFeedback(.selection, trigger: selectionCount)
+            .sensoryFeedback(.success, trigger: saveCount)
             .task { await loadAll() }
         }
     }
@@ -89,7 +93,7 @@ struct AddRecordsToListSheet: View {
                     Button {
                         if selected.contains(record.id) { selected.remove(record.id) }
                         else { selected.insert(record.id) }
-                        Haptics.selection()
+                        selectionCount += 1
                     } label: {
                         HStack {
                             RecordRowView(record: record)
@@ -141,7 +145,7 @@ struct AddRecordsToListSheet: View {
         for id in selected {
             await services.lists.addRecord(id, to: listID)
         }
-        Haptics.success()
+        saveCount += 1
         dismiss()
     }
 }

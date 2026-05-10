@@ -8,6 +8,8 @@ struct AddRecordToListsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selected: Set<String> = []
     @State private var isSaving = false
+    @State private var selectionCount = 0
+    @State private var saveCount = 0
 
     var body: some View {
         NavigationStack {
@@ -23,7 +25,7 @@ struct AddRecordToListsSheet: View {
                         Button {
                             if selected.contains(list.id) { selected.remove(list.id) }
                             else { selected.insert(list.id) }
-                            Haptics.selection()
+                            selectionCount += 1
                         } label: {
                             HStack {
                                 Image(systemName: list.shareMode.systemImage)
@@ -51,6 +53,8 @@ struct AddRecordToListsSheet: View {
                         .disabled(selected.isEmpty || isSaving)
                 }
             }
+            .sensoryFeedback(.selection, trigger: selectionCount)
+            .sensoryFeedback(.success, trigger: saveCount)
         }
     }
 
@@ -60,7 +64,7 @@ struct AddRecordToListsSheet: View {
         for listID in selected {
             await services.lists.addRecord(record.id, to: listID)
         }
-        Haptics.success()
+        saveCount += 1
         dismiss()
     }
 }

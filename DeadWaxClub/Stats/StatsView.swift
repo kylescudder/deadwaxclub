@@ -7,6 +7,7 @@ struct StatsView: View {
     @StateObject private var repo: StatsRepositoryHolder = StatsRepositoryHolder()
     /// nil = aggregate across every Collection the user belongs to.
     @State private var selectedCollectionID: String?
+    @State private var refreshCount = 0
 
     var body: some View {
         ScrollView {
@@ -47,9 +48,10 @@ struct StatsView: View {
         .navigationTitle("Stats")
         .navigationBarTitleDisplayMode(.large)
         .refreshable {
-            Haptics.tap()
+            refreshCount += 1
             await refresh()
         }
+        .sensoryFeedback(.impact(weight: .light), trigger: refreshCount)
         .task {
             repo.attach(database: services.sync.database)
             await refresh()

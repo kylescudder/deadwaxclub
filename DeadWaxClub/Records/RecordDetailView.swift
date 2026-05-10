@@ -15,6 +15,8 @@ struct RecordDetailView: View {
     @State private var showCameraPicker = false
     @State private var photoPickerSelection: PhotosPickerItem?
     @State private var imageUploadError: String?
+    @State private var successCount = 0
+    @State private var errorCount = 0
 
     init(record: VinylRecord) {
         self.record = record
@@ -137,6 +139,8 @@ struct RecordDetailView: View {
         ), presenting: imageUploadError) { _ in
             Button("OK", role: .cancel) {}
         } message: { Text($0) }
+        .sensoryFeedback(.success, trigger: successCount)
+        .sensoryFeedback(.error, trigger: errorCount)
         .task {
             services.prices.startWatching(recordID: currentRecord.id)
             services.recordImages.startWatching(recordID: currentRecord.id)
@@ -215,11 +219,11 @@ struct RecordDetailView: View {
                 uploadedBy: userID,
                 imageID: imageID
             )
-            Haptics.success()
+            successCount += 1
         } catch {
             imageUploadError = error.localizedDescription
             Log.error(error, category: "records.uploadUserImage")
-            Haptics.error()
+            errorCount += 1
         }
     }
 
@@ -453,7 +457,7 @@ struct RecordDetailView: View {
             sourceURLs: lookup.imageURLs
         )
         currentRecord = updated
-        Haptics.success()
+        successCount += 1
     }
 
     private func refreshEstimate() async {
@@ -468,11 +472,11 @@ struct RecordDetailView: View {
                 currentRecord.estimatedPriceCents = estimate.cents
                 currentRecord.estimatedPriceCurrency = estimate.currency
                 currentRecord.estimatedPriceUpdatedAt = Date()
-                Haptics.success()
+                successCount += 1
             }
         } catch {
             Log.error(error, category: "records.refreshEstimate")
-            Haptics.error()
+            errorCount += 1
         }
     }
 
@@ -498,7 +502,7 @@ struct RecordDetailView: View {
     private func move(to collectionID: String) async {
         await services.records.moveToCollection(recordID: currentRecord.id, collectionID: collectionID)
         currentRecord.collectionID = collectionID
-        Haptics.success()
+        successCount += 1
     }
 }
 

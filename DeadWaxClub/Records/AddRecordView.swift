@@ -35,6 +35,8 @@ struct AddRecordView: View {
     @State private var photoPickerSelection: PhotosPickerItem?
     @State private var showCameraPicker = false
     @State private var photoError: String?
+    @State private var successCount = 0
+    @State private var removePhotoCount = 0
 
     init(initialStatus: RecordStatus, existing: VinylRecord? = nil) {
         self.initialStatus = initialStatus
@@ -112,6 +114,8 @@ struct AddRecordView: View {
             }
         }
         .onAppear { populate() }
+        .sensoryFeedback(.success, trigger: successCount)
+        .sensoryFeedback(.impact(weight: .light), trigger: removePhotoCount)
         .sheet(isPresented: $showDiscogsPicker) {
             DiscogsPickerView(initialTitle: title, initialArtist: artist) { lookup in
                 applyLookup(lookup)
@@ -121,7 +125,7 @@ struct AddRecordView: View {
             CameraPicker { image in
                 if let data = image.jpegData(compressionQuality: 0.85) {
                     pendingPhotos.append(data)
-                    Haptics.success()
+                    successCount += 1
                 } else {
                     photoError = "Couldn't read the image."
                 }
@@ -149,7 +153,7 @@ struct AddRecordView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                 Button {
                                     pendingPhotos.remove(at: idx)
-                                    Haptics.tap()
+                                    removePhotoCount += 1
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .symbolRenderingMode(.palette)
@@ -188,8 +192,10 @@ struct AddRecordView: View {
         defer { photoPickerSelection = nil }
         do {
             if let data = try await item.loadTransferable(type: Data.self) {
-                await MainActor.run { pendingPhotos.append(data) }
-                Haptics.success()
+                await MainActor.run {
+                    pendingPhotos.append(data)
+                    successCount += 1
+                }
             }
         } catch {
             photoError = error.localizedDescription
@@ -244,7 +250,7 @@ struct AddRecordView: View {
         attachedEstimateCurrency = lookup.estimatedCurrency
         attachedImageURLs = lookup.imageURLs
         lookupError = nil
-        Haptics.success()
+        successCount += 1
     }
 
     private func save() async {
@@ -351,7 +357,7 @@ struct AddRecordView: View {
                 }
             }
         }
-        Haptics.success()
+        successCount += 1
         dismiss()
     }
 }
