@@ -15,6 +15,7 @@ struct RecordsFilterSheet: View {
     @State private var hasPriceOnly = false
     @State private var hasNoPriceOnly = false
     @State private var statusSelection: StatusSelection = .any
+    @State private var applyCount = 0
 
     private enum StatusSelection: String, CaseIterable, Identifiable {
         case any, owned, wishlist
@@ -123,6 +124,7 @@ struct RecordsFilterSheet: View {
             }
         }
         .onAppear { load() }
+        .sensoryFeedback(.impact(weight: .light), trigger: applyCount)
     }
 
     /// Newest year first (vinyl users care about recent reissues more often
@@ -161,6 +163,6 @@ struct RecordsFilterSheet: View {
             hasNoPriceOnly: hasNoPriceOnly,
             statuses: statusSelection.statuses
         )
-        Haptics.tap()
+        applyCount += 1
     }
 }

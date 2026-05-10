@@ -1,6 +1,5 @@
 import CoreSpotlight
 import Foundation
-import UIKit
 
 /// Pushes record metadata into CoreSpotlight so users can find their records
 /// from Spotlight, Lock Screen search, and Siri Knowledge.

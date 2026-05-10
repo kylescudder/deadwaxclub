@@ -49,7 +49,6 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
             for item in added {
                 if case let .barcode(barcode) = item, let payload = barcode.payloadStringValue {
                     didScan = true
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     dataScanner.stopScanning()
                     onScan(payload)
                     return
@@ -65,6 +64,7 @@ struct BarcodeScannerHost: View {
     let onScan: (String) -> Void
 
     @State private var cameraStatus: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
+    @State private var scanCount = 0
 
     var body: some View {
         Group {
@@ -81,7 +81,10 @@ struct BarcodeScannerHost: View {
             } else {
                 switch cameraStatus {
                 case .authorized:
-                    BarcodeScannerView(onScan: onScan)
+                    BarcodeScannerView { payload in
+                        scanCount += 1
+                        onScan(payload)
+                    }
                         .ignoresSafeArea()
                 case .notDetermined:
                     PermissionPromptView {
@@ -100,6 +103,7 @@ struct BarcodeScannerHost: View {
         .onAppear {
             cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
         }
+        .sensoryFeedback(.impact(weight: .medium), trigger: scanCount)
     }
 }
 

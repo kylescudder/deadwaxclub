@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var showFinalDeleteConfirm = false
     @State private var deleteError: String?
     @State private var isDeleting = false
+    @State private var successCount = 0
+    @State private var errorCount = 0
 
     var body: some View {
         Form {
@@ -156,6 +158,8 @@ struct SettingsView: View {
         ), presenting: deleteError) { _ in
             Button("OK", role: .cancel) {}
         } message: { Text($0) }
+        .sensoryFeedback(.success, trigger: successCount)
+        .sensoryFeedback(.error, trigger: errorCount)
     }
 
     private var appVersion: String {
@@ -169,10 +173,10 @@ struct SettingsView: View {
         defer { isDeleting = false }
         do {
             try await services.auth.deleteAccount()
-            Haptics.success()
+            successCount += 1
         } catch {
             deleteError = error.localizedDescription
-            Haptics.error()
+            errorCount += 1
         }
     }
 }
@@ -211,6 +215,7 @@ private struct EditDisplayNameView: View {
     @State private var name: String
     @State private var didSeed = false
     @State private var isSaving = false
+    @State private var saveCount = 0
 
     init(initial: String) {
         self._name = State(initialValue: initial)
@@ -231,13 +236,14 @@ private struct EditDisplayNameView: View {
                         isSaving = true
                         await services.profile.updateDisplayName(name.trimmingCharacters(in: .whitespaces))
                         isSaving = false
-                        Haptics.success()
+                        saveCount += 1
                         dismiss()
                     }
                 }
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
             }
         }
+        .sensoryFeedback(.success, trigger: saveCount)
         // Seed the field from the profile the first time a non-empty value
         // is available — covers the race where NavigationLink built this
         // view before the profile watcher had emitted, or where the parent

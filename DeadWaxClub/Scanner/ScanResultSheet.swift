@@ -13,6 +13,7 @@ struct ScanResultSheet: View {
     @State private var currency: String = Preferences.currency
     @State private var shopName: String = ""
     @State private var isSaving = false
+    @State private var saveCount = 0
 
     var body: some View {
         NavigationStack {
@@ -88,6 +89,7 @@ struct ScanResultSheet: View {
                     Button("Save") { Task { await save() } }.disabled(isSaving)
                 }
             }
+            .sensoryFeedback(.success, trigger: saveCount)
         }
     }
 
@@ -145,7 +147,7 @@ struct ScanResultSheet: View {
             )
             await services.prices.add(entry)
         }
-        Haptics.success()
+        saveCount += 1
         dismiss()
     }
 

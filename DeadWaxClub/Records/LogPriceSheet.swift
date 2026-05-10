@@ -13,6 +13,7 @@ struct LogPriceSheet: View {
     @State private var date: Date = Date()
     @State private var isSaving = false
     @State private var showDeleteConfirm = false
+    @State private var successCount = 0
 
     init(record: VinylRecord, existing: PriceEntry? = nil) {
         self.record = record
@@ -70,6 +71,7 @@ struct LogPriceSheet: View {
                 Text("Removes it from the chart and history. Cannot be undone.")
             }
             .onAppear { populate() }
+            .sensoryFeedback(.success, trigger: successCount)
         }
     }
 
@@ -125,14 +127,14 @@ struct LogPriceSheet: View {
             )
             await services.prices.add(entry)
         }
-        Haptics.success()
+        successCount += 1
         dismiss()
     }
 
     private func deleteEntry() async {
         guard let existing else { return }
         await services.prices.delete(entryID: existing.id)
-        Haptics.success()
+        successCount += 1
         dismiss()
     }
 
