@@ -28,8 +28,7 @@ struct PublicListView: View {
                         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                             if let owner = info.owner_display_name {
                                 Text("Shared by \(owner)")
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .captionSecondary()
                             }
                             if let desc = info.description, !desc.isEmpty {
                                 Text(desc)
@@ -115,7 +114,7 @@ private struct PublicRecordRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.title).font(.callout.weight(.semibold)).lineLimit(1)
-                Text(record.artist).font(.footnote).foregroundStyle(Theme.Colors.textSecondary).lineLimit(1)
+                Text(record.artist).footnoteSecondary().lineLimit(1)
                 if let cw = record.colourway {
                     Text(cw).font(.caption2).foregroundStyle(Theme.Colors.textTertiary).lineLimit(1)
                 }

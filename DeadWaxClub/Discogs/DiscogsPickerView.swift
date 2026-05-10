@@ -100,8 +100,7 @@ struct DiscogsPickerView: View {
                                 .clipShape(Capsule())
                         }
                         Text(metadataLine(for: result))
-                            .font(.caption)
-                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .captionSecondary()
                             .lineLimit(1)
                         if let format = result.format {
                             Text(format)

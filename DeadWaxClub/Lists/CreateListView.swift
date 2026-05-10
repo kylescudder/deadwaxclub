@@ -34,8 +34,7 @@ struct CreateListView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(option.label).foregroundStyle(Theme.Colors.textPrimary)
                                 Text(option.detail)
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .captionSecondary()
                             }
                             Spacer()
                             if mode == option {

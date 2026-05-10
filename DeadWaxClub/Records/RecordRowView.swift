@@ -14,8 +14,7 @@ struct RecordRowView: View {
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
                 Text(record.artist)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .footnoteSecondary()
                     .lineLimit(1)
                 if let cw = record.colourway {
                     Text(cw)

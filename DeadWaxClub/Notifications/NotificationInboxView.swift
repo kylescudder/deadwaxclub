@@ -59,7 +59,7 @@ struct NotificationInboxView: View {
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.title).font(.callout.weight(row.isRead ? .regular : .semibold))
-                Text(row.body).font(.footnote).foregroundStyle(Theme.Colors.textSecondary)
+                Text(row.body).footnoteSecondary()
                 Text(row.createdAt, style: .relative)
                     .font(.caption2)
                     .foregroundStyle(Theme.Colors.textTertiary)

@@ -10,8 +10,7 @@ struct PriceChartView: View {
                 RoundedRectangle(cornerRadius: Theme.Radius.md)
                     .fill(Theme.Colors.surfaceElevated)
                 Text("No prices logged yet")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .footnoteSecondary()
             }
         } else {
             Chart(entries) { entry in

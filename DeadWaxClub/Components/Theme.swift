@@ -30,3 +30,17 @@ enum Theme {
         static let lg: CGFloat = 16
     }
 }
+
+extension View {
+    /// `.font(.caption)` + `Theme.Colors.textSecondary`. Use everywhere a small
+    /// dimmed annotation appears so the pairing stays consistent across screens.
+    func captionSecondary() -> some View {
+        font(.caption).foregroundStyle(Theme.Colors.textSecondary)
+    }
+
+    /// `.font(.footnote)` + `Theme.Colors.textSecondary`. Same deal as
+    /// `captionSecondary` but one font step larger.
+    func footnoteSecondary() -> some View {
+        font(.footnote).foregroundStyle(Theme.Colors.textSecondary)
+    }
+}

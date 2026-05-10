@@ -78,8 +78,7 @@ private struct ListRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(list.name).font(.callout.weight(.semibold))
                 Text(list.shareMode.label)
-                    .font(.caption)
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .captionSecondary()
             }
             Spacer()
         }
