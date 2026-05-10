@@ -54,7 +54,7 @@ enum IntentBridge {
 
     @MainActor
     static func logPrice(recordID: String, priceMajor: Double, currency: String, shop: String?) async throws {
-        guard let services, let ownerID = services.auth.currentUserID?.uuidString.lowercased() else {
+        guard let services, let ownerID = services.auth.currentUserID?.lowerUUID else {
             throw NSError(domain: "deadwaxclub.intents", code: 401, userInfo: [
                 NSLocalizedDescriptionKey: "Sign in to Deadwax Club to log prices."
             ])
@@ -71,7 +71,7 @@ enum IntentBridge {
             ])
         }
         let entry = PriceEntry(
-            id: UUID().uuidString.lowercased(),
+            id: UUID().lowerUUID,
             recordID: recordID,
             ownerID: ownerID,
             collectionID: collectionID,

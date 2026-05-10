@@ -55,7 +55,7 @@ final class NotificationsRepository: ObservableObject {
 
     func markRead(_ notificationID: String) async {
         do {
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             try await database.execute(
                 sql: "update notifications set read_at = ? where id = ? and read_at is null",
                 parameters: [now, notificationID]
@@ -67,7 +67,7 @@ final class NotificationsRepository: ObservableObject {
 
     func markAllRead(userID: String) async {
         do {
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             try await database.execute(
                 sql: "update notifications set read_at = ? where user_id = ? and read_at is null",
                 parameters: [now, userID]

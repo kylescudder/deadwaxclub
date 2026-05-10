@@ -45,8 +45,8 @@ final class ProfileRepository: ObservableObject {
     }
 
     func updateDisplayName(_ name: String) async {
-        guard let userID = auth.currentUserID?.uuidString.lowercased() else { return }
-        let now = ISO8601DateFormatter.iso.string(from: Date())
+        guard let userID = auth.currentUserID?.lowerUUID else { return }
+        let now = Date().iso8601
         do {
             // PowerSync exposes tables as views, so ON CONFLICT … DO UPDATE
             // is not supported. Insert-then-update covers the case where

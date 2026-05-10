@@ -65,9 +65,9 @@ final class RecordsRepository: ObservableObject {
     }
 
     func upsert(_ record: VinylRecord) async {
-        let updatedAt = ISO8601DateFormatter.iso.string(from: Date())
-        let createdAt = ISO8601DateFormatter.iso.string(from: record.createdAt)
-        let estimatedAt = record.estimatedPriceUpdatedAt.map(ISO8601DateFormatter.iso.string(from:))
+        let updatedAt = Date().iso8601
+        let createdAt = record.createdAt.iso8601
+        let estimatedAt = record.estimatedPriceUpdatedAt?.iso8601
         do {
             // PowerSync exposes tables as views — ON CONFLICT … DO UPDATE is
             // not supported. Insert-or-ignore then update covers both cases.
@@ -147,7 +147,7 @@ final class RecordsRepository: ObservableObject {
 
     func updateEstimate(recordID: String, cents: Int, currency: String) async {
         do {
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             try await database.execute(
                 sql: """
                 update records set
@@ -168,7 +168,7 @@ final class RecordsRepository: ObservableObject {
         do {
             try await database.execute(
                 sql: "update records set cover_art_storage_path = ?, updated_at = ? where id = ?",
-                parameters: [storagePath, ISO8601DateFormatter.iso.string(from: Date()), recordID]
+                parameters: [storagePath, Date().iso8601, recordID]
             )
         } catch {
             Log.error(error, category: "records.updateStoragePath")
@@ -177,7 +177,7 @@ final class RecordsRepository: ObservableObject {
 
     func softDelete(recordID: String) async {
         do {
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             try await database.execute(
                 sql: "update records set deleted_at = ?, updated_at = ? where id = ?",
                 parameters: [now, now, recordID]
@@ -213,7 +213,7 @@ final class RecordsRepository: ObservableObject {
     /// Move a record into a different Collection the user has write access to.
     func moveToCollection(recordID: String, collectionID: String) async {
         do {
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             try await database.execute(
                 sql: "update records set collection_id = ?, updated_at = ? where id = ?",
                 parameters: [collectionID, now, recordID]

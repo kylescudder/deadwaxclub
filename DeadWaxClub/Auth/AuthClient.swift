@@ -155,7 +155,7 @@ final class AuthClient: ObservableObject {
                 // Apple only returns the name on the very first sign-in.
                 // We prefer the given name alone (matches the in-app casual
                 // handle convention; user can edit from Settings).
-                if let userID = currentUserID?.uuidString.lowercased(),
+                if let userID = currentUserID?.lowerUUID,
                    let firstName = credential.fullName?.givenName?
                        .trimmingCharacters(in: .whitespaces),
                    !firstName.isEmpty {

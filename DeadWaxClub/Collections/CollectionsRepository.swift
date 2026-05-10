@@ -139,10 +139,10 @@ final class CollectionsRepository: ObservableObject {
     /// Membership creation goes via REST because `collection_members` syncs
     /// read-only (composite PK + synthetic `id`).
     func create(name: String) async -> VinylCollection? {
-        guard let createdBy = auth.currentUserID?.uuidString.lowercased() else { return nil }
-        let id = UUID().uuidString.lowercased()
+        guard let createdBy = auth.currentUserID?.lowerUUID else { return nil }
+        let id = UUID().lowerUUID
         let now = Date()
-        let nowString = ISO8601DateFormatter.iso.string(from: now)
+        let nowString = now.iso8601
         do {
             try await database.execute(
                 sql: """
@@ -174,7 +174,7 @@ final class CollectionsRepository: ObservableObject {
 
     func rename(collectionID: String, name: String) async {
         do {
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             try await database.execute(
                 sql: "update collections set name = ?, updated_at = ? where id = ?",
                 parameters: [name, now, collectionID]
@@ -187,7 +187,7 @@ final class CollectionsRepository: ObservableObject {
     /// Soft-delete. Only allowed for owner-role members (RLS enforces).
     func softDelete(collectionID: String) async {
         do {
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             try await database.execute(
                 sql: "update collections set deleted_at = ?, updated_at = ? where id = ?",
                 parameters: [now, now, collectionID]
@@ -236,7 +236,7 @@ final class CollectionsRepository: ObservableObject {
     }
 
     func leave(collectionID: String) async {
-        guard let userID = auth.currentUserID?.uuidString.lowercased() else { return }
+        guard let userID = auth.currentUserID?.lowerUUID else { return }
         await removeMember(collectionID: collectionID, userID: userID)
     }
 
@@ -252,9 +252,9 @@ final class CollectionsRepository: ObservableObject {
 
     /// Updates the user's `primary_collection_id` so new records land here by default.
     func setPrimary(collectionID: String) async {
-        guard let userID = auth.currentUserID?.uuidString.lowercased() else { return }
+        guard let userID = auth.currentUserID?.lowerUUID else { return }
         do {
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             try await database.execute(
                 sql: "update profiles set primary_collection_id = ?, updated_at = ? where id = ?",
                 parameters: [collectionID, now, userID]
@@ -269,7 +269,7 @@ final class CollectionsRepository: ObservableObject {
     /// Collection and wants to consolidate from their personal one.
     func moveAllRecords(from sourceCollectionID: String, to destinationCollectionID: String) async {
         do {
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             try await database.execute(
                 sql: """
                 update records set collection_id = ?, updated_at = ?

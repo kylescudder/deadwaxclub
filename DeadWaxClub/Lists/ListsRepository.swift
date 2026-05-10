@@ -45,9 +45,9 @@ final class ListsRepository: ObservableObject {
     }
 
     func create(name: String, description: String?, mode: ListShareMode) async -> VinylList? {
-        guard let ownerID = auth.currentUserID?.uuidString.lowercased() else { return nil }
+        guard let ownerID = auth.currentUserID?.lowerUUID else { return nil }
         let now = Date()
-        let id = UUID().uuidString.lowercased()
+        let id = UUID().lowerUUID
         let token: String? = (mode == .linkPublic) ? Self.makeShareToken() : nil
         let list = VinylList(
             id: id,
@@ -66,8 +66,8 @@ final class ListsRepository: ObservableObject {
     }
 
     func upsert(_ list: VinylList) async {
-        let createdAt = ISO8601DateFormatter.iso.string(from: list.createdAt)
-        let updatedAt = ISO8601DateFormatter.iso.string(from: Date())
+        let createdAt = list.createdAt.iso8601
+        let updatedAt = Date().iso8601
         do {
             // PowerSync exposes tables as views — ON CONFLICT … DO UPDATE is
             // not supported. Insert-or-ignore then update covers both cases.
@@ -114,7 +114,7 @@ final class ListsRepository: ObservableObject {
                 update lists set share_mode = ?, share_token = ?, updated_at = ? where id = ?
                 """,
                 parameters: [mode.rawValue, token,
-                             ISO8601DateFormatter.iso.string(from: Date()),
+                             Date().iso8601,
                              listID]
             )
         } catch {
@@ -124,7 +124,7 @@ final class ListsRepository: ObservableObject {
 
     func softDelete(listID: String) async {
         do {
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let now = Date().iso8601
             try await database.execute(
                 sql: "update lists set deleted_at = ?, updated_at = ? where id = ?",
                 parameters: [now, now, listID]
@@ -135,7 +135,7 @@ final class ListsRepository: ObservableObject {
     }
 
     func addRecord(_ recordID: String, to listID: String) async {
-        guard let userID = auth.currentUserID?.uuidString.lowercased() else { return }
+        guard let userID = auth.currentUserID?.lowerUUID else { return }
         do {
             // PowerSync's INSTEAD-OF triggers expect plain `INSERT … VALUES`.
             // `INSERT … SELECT … WHERE NOT EXISTS` and `ON CONFLICT … DO
@@ -154,8 +154,8 @@ final class ListsRepository: ObservableObject {
                 mapper: { try $0.getInt(name: "next_pos") }
             ) ?? 0
 
-            let id = UUID().uuidString.lowercased()
-            let now = ISO8601DateFormatter.iso.string(from: Date())
+            let id = UUID().lowerUUID
+            let now = Date().iso8601
             try await database.execute(
                 sql: """
                 insert into list_items (id, list_id, record_id, added_by, position, created_at)

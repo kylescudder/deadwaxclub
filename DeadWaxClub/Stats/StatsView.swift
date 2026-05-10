@@ -71,7 +71,7 @@ struct StatsView: View {
     }
 
     private func refresh() async {
-        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return }
+        guard let userID = services.auth.currentUserID?.lowerUUID else { return }
         let scope: StatsScope = selectedCollectionID
             .map { .singleCollection(collectionID: $0) }
             ?? .allMyCollections(userID: userID)

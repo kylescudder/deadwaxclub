@@ -211,7 +211,7 @@ struct AddRecordView: View {
     /// Collections the user can write to. Editing keeps the record's current
     /// home; new records default to the user's primary Collection.
     private var writableCollections: [VinylCollection] {
-        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return [] }
+        guard let userID = services.auth.currentUserID?.lowerUUID else { return [] }
         return services.collections.collections.filter { c in
             let role = services.collections.role(in: c.id, userID: userID)
             return role == .owner || role == .editor
@@ -296,7 +296,7 @@ struct AddRecordView: View {
         }()
 
         let record = VinylRecord(
-            id: existing?.id ?? UUID().uuidString.lowercased(),
+            id: existing?.id ?? UUID().lowerUUID,
             collectionID: collectionID,
             status: status,
             title: resolvedTitle,
@@ -335,9 +335,9 @@ struct AddRecordView: View {
         // Upload any photos the user picked / shot in this form. They append
         // to whatever Discogs already supplied (so position 0 stays the cover).
         if !pendingPhotos.isEmpty,
-           let userID = services.auth.currentUserID?.uuidString.lowercased() {
+           let userID = services.auth.currentUserID?.lowerUUID {
             for data in pendingPhotos {
-                let imageID = UUID().uuidString.lowercased()
+                let imageID = UUID().lowerUUID
                 do {
                     let path = try await services.coverArt.uploadUserImage(
                         bytes: data,

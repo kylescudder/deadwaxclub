@@ -90,7 +90,7 @@ final class AppServices: ObservableObject {
             notifications.stopWatching()
             return
         }
-        let id = userID.uuidString.lowercased()
+        let id = userID.lowerUUID
         profile.startWatching(userID: id)
         lists.startWatching(userID: id)
         collections.startWatching(userID: id)

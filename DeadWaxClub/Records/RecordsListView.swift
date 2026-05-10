@@ -131,7 +131,7 @@ struct RecordsListView: View {
     }
 
     private func reconfigure() {
-        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return }
+        guard let userID = services.auth.currentUserID?.lowerUUID else { return }
         services.records.startWatching(status: status, userID: userID)
     }
 

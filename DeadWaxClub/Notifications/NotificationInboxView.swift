@@ -103,7 +103,7 @@ struct NotificationInboxView: View {
     }
 
     private func markAllRead() async {
-        guard let userID = services.auth.currentUserID?.uuidString.lowercased() else { return }
+        guard let userID = services.auth.currentUserID?.lowerUUID else { return }
         await services.notifications.markAllRead(userID: userID)
     }
 }

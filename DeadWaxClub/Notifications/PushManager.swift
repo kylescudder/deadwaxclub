@@ -64,7 +64,7 @@ final class PushManager: NSObject, ObservableObject {
     }
 
     private func upload(apnsToken: String) async {
-        guard let auth, let userID = auth.currentUserID?.uuidString.lowercased() else { return }
+        guard let auth, let userID = auth.currentUserID?.lowerUUID else { return }
         let payload: [String: String] = [
             "user_id": userID,
             "apns_token": apnsToken,
