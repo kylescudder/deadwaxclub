@@ -50,7 +50,7 @@ struct ScanResultSheet: View {
 
                     Card {
                         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                            Text("Status").font(.footnote).foregroundStyle(Theme.Colors.textSecondary)
+                            Text("Status").footnoteSecondary()
                             Picker("", selection: $status) {
                                 ForEach(RecordStatus.allCases) { Text($0.label).tag($0) }
                             }
@@ -61,8 +61,7 @@ struct ScanResultSheet: View {
                     Card {
                         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                             Text("Log shop price (optional)")
-                                .font(.footnote)
-                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .footnoteSecondary()
                             HStack {
                                 TextField("0.00", text: $amount)
                                     .keyboardType(.decimalPad)

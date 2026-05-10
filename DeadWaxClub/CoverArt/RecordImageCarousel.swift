@@ -151,8 +151,7 @@ private struct SecondaryImageSlide: View {
                     .font(.system(size: 32))
                     .foregroundStyle(Theme.Colors.textSecondary)
                 Text("Image needs an internet connection")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .footnoteSecondary()
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, Theme.Spacing.lg)
             }

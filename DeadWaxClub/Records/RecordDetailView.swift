@@ -301,8 +301,7 @@ struct RecordDetailView: View {
                 } icon: {
                     Image(systemName: "checkmark.seal.fill").foregroundStyle(Theme.Colors.accent)
                 }
-                .font(.caption)
-                .foregroundStyle(Theme.Colors.textSecondary)
+                .captionSecondary()
 
                 if let latest = services.prices.entries.max(by: { $0.scannedAt < $1.scannedAt }) {
                     Text(latest.formattedPrice)
@@ -321,8 +320,7 @@ struct RecordDetailView: View {
                 } icon: {
                     Image(systemName: "globe").foregroundStyle(Theme.Colors.textSecondary)
                 }
-                .font(.caption)
-                .foregroundStyle(Theme.Colors.textSecondary)
+                .captionSecondary()
 
                 if let cents = currentRecord.estimatedPriceCents,
                    let currency = currentRecord.estimatedPriceCurrency {
@@ -376,8 +374,7 @@ struct RecordDetailView: View {
                                         Text(shop)
                                     }
                                 }
-                                .font(.caption)
-                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .captionSecondary()
                             }
                             Spacer()
                             Image(systemName: "pencil")

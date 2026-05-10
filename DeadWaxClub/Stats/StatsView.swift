@@ -91,7 +91,7 @@ struct StatsView: View {
     private func metric(_ label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value).font(.title.weight(.bold))
-            Text(label).font(.footnote).foregroundStyle(Theme.Colors.textSecondary)
+            Text(label).footnoteSecondary()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -103,14 +103,14 @@ struct StatsView: View {
                 HStack {
                     VStack(alignment: .leading) {
                         Text("You've spent")
-                            .font(.caption).foregroundStyle(Theme.Colors.textSecondary)
+                            .captionSecondary()
                         Text(formatCents(stats.totalSpentCents, currency: stats.currency))
                             .font(.title2.weight(.semibold))
                     }
                     Spacer()
                     VStack(alignment: .trailing) {
                         Text("Estimated value")
-                            .font(.caption).foregroundStyle(Theme.Colors.textSecondary)
+                            .captionSecondary()
                         Text(formatCents(stats.estimatedValueCents, currency: stats.currency))
                             .font(.title2.weight(.semibold))
                             .foregroundStyle(.green)
@@ -161,7 +161,7 @@ struct StatsView: View {
                     HStack {
                         VStack(alignment: .leading) {
                             Text(entry.title).font(.callout).lineLimit(1)
-                            Text(entry.artist).font(.caption).foregroundStyle(Theme.Colors.textSecondary).lineLimit(1)
+                            Text(entry.artist).captionSecondary().lineLimit(1)
                         }
                         Spacer()
                         Text(formatCents(entry.paidCents, currency: entry.currency))
@@ -180,7 +180,7 @@ struct StatsView: View {
                     HStack {
                         VStack(alignment: .leading) {
                             Text(entry.title).font(.callout).lineLimit(1)
-                            Text(entry.artist).font(.caption).foregroundStyle(Theme.Colors.textSecondary).lineLimit(1)
+                            Text(entry.artist).captionSecondary().lineLimit(1)
                         }
                         Spacer()
                         Text(formatCents(entry.lowestCents, currency: entry.currency))

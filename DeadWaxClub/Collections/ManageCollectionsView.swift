@@ -20,8 +20,7 @@ struct ManageCollectionsView: View {
                 }
                 if services.collections.collections.isEmpty {
                     Text("Your personal Collection will appear here once it syncs.")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .footnoteSecondary()
                 }
             } header: {
                 Text("Your Collections")
@@ -70,8 +69,7 @@ struct ManageCollectionsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(collection.name).foregroundStyle(Theme.Colors.textPrimary)
                 Text(memberSummary(for: collection))
-                    .font(.caption)
-                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .captionSecondary()
             }
         }
     }
@@ -162,8 +160,7 @@ private struct CollectionDetailView: View {
                             .font(.callout.monospaced())
                         Spacer()
                         Text(member.role.label)
-                            .font(.caption)
-                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .captionSecondary()
                         if isOwner && member.userID != currentUserID {
                             Button(role: .destructive) {
                                 Task { await services.collections.removeMember(collectionID: collection.id, userID: member.userID) }
@@ -182,8 +179,7 @@ private struct CollectionDetailView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(invite.email).font(.callout)
                                 Text("Pending · \(invite.role.label)")
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .captionSecondary()
                             }
                             Spacer()
                             if isOwner {

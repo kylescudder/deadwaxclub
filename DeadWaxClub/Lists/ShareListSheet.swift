@@ -41,8 +41,7 @@ struct ShareListSheet: View {
                                     Text(option.label)
                                         .foregroundStyle(Theme.Colors.textPrimary)
                                     Text(option.detail)
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .captionSecondary()
                                 }
                                 Spacer()
                                 if mode == option {
@@ -110,8 +109,7 @@ struct ShareListSheet: View {
                                         .font(.callout.monospaced())
                                     Spacer()
                                     Text(member.role.rawValue.capitalized)
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.Colors.textSecondary)
+                                        .captionSecondary()
                                     Button(role: .destructive) {
                                         Task { await services.lists.removeMember(listID: list.id, userID: member.userID) }
                                     } label: { Image(systemName: "minus.circle") }
@@ -127,8 +125,7 @@ struct ShareListSheet: View {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(invite.email).font(.callout)
                                             Text("Pending · \(invite.role.rawValue.capitalized)")
-                                                .font(.caption)
-                                                .foregroundStyle(Theme.Colors.textSecondary)
+                                                .captionSecondary()
                                         }
                                         Spacer()
                                         Button(role: .destructive) {
