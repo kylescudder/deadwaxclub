@@ -2,7 +2,16 @@ import SwiftUI
 import PhotosUI
 
 struct RecordDetailView: View {
+    /// Context for when the detail view is opened from a specific list. When
+    /// set, the Delete action removes the record from this list only instead
+    /// of soft-deleting it from the Collection.
+    struct ListContext {
+        let id: String
+        let name: String
+    }
+
     let record: VinylRecord
+    let listContext: ListContext?
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.dismiss) private var dismiss
@@ -20,8 +29,9 @@ struct RecordDetailView: View {
     @State private var errorCount = 0
     @State private var showDeleteConfirm = false
 
-    init(record: VinylRecord) {
+    init(record: VinylRecord, listContext: ListContext? = nil) {
         self.record = record
+        self.listContext = listContext
         self._currentRecord = State(initialValue: record)
     }
 
@@ -97,7 +107,13 @@ struct RecordDetailView: View {
                     }
                     Button(role: .destructive) {
                         showDeleteConfirm = true
-                    } label: { Label("Delete", systemImage: "trash") }
+                    } label: {
+                        if listContext != nil {
+                            Label("Remove from list", systemImage: "minus.circle")
+                        } else {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -141,16 +157,20 @@ struct RecordDetailView: View {
         ), presenting: imageUploadError) { _ in
             Button("OK", role: .cancel) {}
         } message: { Text($0) }
-        .alert("Delete this record?", isPresented: $showDeleteConfirm) {
-            Button("Delete", role: .destructive) {
+        .alert(deleteAlertTitle, isPresented: $showDeleteConfirm) {
+            Button(deleteAlertButtonLabel, role: .destructive) {
                 Task {
-                    await services.records.softDelete(recordID: currentRecord.id)
+                    if let listContext {
+                        await services.lists.removeRecord(currentRecord.id, from: listContext.id)
+                    } else {
+                        await services.records.softDelete(recordID: currentRecord.id)
+                    }
                     dismiss()
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("\(currentRecord.title) by \(currentRecord.artist) will be removed from your collection.")
+            Text(deleteAlertMessage)
         }
         .sensoryFeedback(.success, trigger: successCount)
         .sensoryFeedback(.error, trigger: errorCount)
@@ -506,6 +526,21 @@ struct RecordDetailView: View {
         await services.records.moveToCollection(recordID: currentRecord.id, collectionID: collectionID)
         currentRecord.collectionID = collectionID
         successCount += 1
+    }
+
+    private var deleteAlertTitle: String {
+        listContext != nil ? "Remove from list?" : "Delete this record?"
+    }
+
+    private var deleteAlertButtonLabel: String {
+        listContext != nil ? "Remove" : "Delete"
+    }
+
+    private var deleteAlertMessage: String {
+        if let listContext {
+            return "\(currentRecord.title) by \(currentRecord.artist) will be removed from \(listContext.name). It stays in your collection."
+        }
+        return "\(currentRecord.title) by \(currentRecord.artist) will be removed from your collection."
     }
 }
 
