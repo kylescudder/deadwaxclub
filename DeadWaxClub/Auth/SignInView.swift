@@ -11,9 +11,10 @@ struct SignInView: View {
         ScrollView {
             VStack(spacing: Theme.Spacing.xl) {
                 VStack(spacing: Theme.Spacing.sm) {
-                    Image(systemName: "opticaldisc.fill")
-                        .font(.system(size: 64))
-                        .foregroundStyle(Theme.Colors.accent)
+                    Image("AppLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 96, height: 96)
                     Text("Deadwax Club")
                         .font(.largeTitle.weight(.bold))
                     Text("Track the vinyl you own and the vinyl you want.")
@@ -62,7 +63,12 @@ struct SignInView: View {
                     AppleSignInButton()
                         .frame(height: 50)
 
-                    SecondaryButton(title: "Continue with Google", systemImage: "globe") {
+                    SecondaryButton(
+                        title: "Continue with Google",
+                        assetImage: "GoogleLogo",
+                        iconTextSpacing: 12,
+                        titleFont: .custom("Roboto-Medium", size: 17, relativeTo: .body)
+                    ) {
                         Task {
                             isWorking = true
                             await services.auth.signInWithGoogle()

@@ -32,16 +32,25 @@ struct PrimaryButton: View {
 struct SecondaryButton: View {
     let title: String
     var systemImage: String? = nil
+    var assetImage: String? = nil
+    var iconTextSpacing: CGFloat = Theme.Spacing.sm
+    var titleFont: Font = .body.weight(.medium)
     var fullWidth: Bool = true
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: Theme.Spacing.sm) {
-                if let systemImage {
+            HStack(spacing: iconTextSpacing) {
+                if let assetImage {
+                    Image(assetImage)
+                        .renderingMode(.original)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 18, height: 18)
+                } else if let systemImage {
                     Image(systemName: systemImage)
                 }
-                Text(title).fontWeight(.medium)
+                Text(title).font(titleFont)
             }
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .frame(minHeight: 50)

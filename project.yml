@@ -55,8 +55,14 @@ targets:
               - deadwaxclub
             CFBundleURLName: com.deadwaxclub.auth
         ITSAppUsesNonExemptEncryption: false
+        UIAppFonts:
+          - Roboto-Medium.ttf
         UIBackgroundModes:
           - remote-notification
+        UIStatusBarHidden: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
         SUPABASE_URL: $(SUPABASE_URL)
         SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
         POWERSYNC_URL: $(POWERSYNC_URL)
