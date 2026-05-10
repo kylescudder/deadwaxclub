@@ -5,6 +5,7 @@ struct RecordDetailView: View {
     let record: VinylRecord
 
     @EnvironmentObject private var services: AppServices
+    @Environment(\.dismiss) private var dismiss
     @State private var showLogPriceSheet = false
     @State private var showStatusMenu = false
     @State private var currentRecord: VinylRecord
@@ -17,6 +18,7 @@ struct RecordDetailView: View {
     @State private var imageUploadError: String?
     @State private var successCount = 0
     @State private var errorCount = 0
+    @State private var showDeleteConfirm = false
 
     init(record: VinylRecord) {
         self.record = record
@@ -94,7 +96,7 @@ struct RecordDetailView: View {
                         }
                     }
                     Button(role: .destructive) {
-                        Task { await services.records.softDelete(recordID: currentRecord.id) }
+                        showDeleteConfirm = true
                     } label: { Label("Delete", systemImage: "trash") }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -139,6 +141,17 @@ struct RecordDetailView: View {
         ), presenting: imageUploadError) { _ in
             Button("OK", role: .cancel) {}
         } message: { Text($0) }
+        .alert("Delete this record?", isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    await services.records.softDelete(recordID: currentRecord.id)
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("\(currentRecord.title) by \(currentRecord.artist) will be removed from your collection.")
+        }
         .sensoryFeedback(.success, trigger: successCount)
         .sensoryFeedback(.error, trigger: errorCount)
         .task {
