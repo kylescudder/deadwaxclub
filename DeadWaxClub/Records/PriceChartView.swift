@@ -45,9 +45,7 @@ struct PriceChartView: View {
     }
 
     private func currencyLabel(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = entries.first?.currency ?? "GBP"
+        let formatter = CurrencyFormatter.formatter(code: entries.first?.currency ?? "GBP")
         formatter.maximumFractionDigits = 0
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }

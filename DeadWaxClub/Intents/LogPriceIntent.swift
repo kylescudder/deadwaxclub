@@ -33,14 +33,8 @@ struct LogPriceIntent: AppIntent {
             currency: currency,
             shop: shop
         )
-        return .result(dialog: "Logged \(formatted(priceMajor, currency: currency)) for \(record.title).")
-    }
-
-    private func formatted(_ value: Double, currency: String) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = currency
-        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+        let priceString = CurrencyFormatter.formatMajor(priceMajor, code: currency)
+        return .result(dialog: "Logged \(priceString) for \(record.title).")
     }
 }
 

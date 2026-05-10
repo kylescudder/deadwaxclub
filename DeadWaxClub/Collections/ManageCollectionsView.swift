@@ -65,7 +65,7 @@ struct ManageCollectionsView: View {
             Image(systemName: services.profile.profile?.primaryCollectionID == collection.id
                   ? "star.fill" : "rectangle.stack")
                 .foregroundStyle(Theme.Colors.accent)
-                .frame(width: 24)
+                .frame(width: Theme.Spacing.iconRow)
             VStack(alignment: .leading, spacing: 2) {
                 Text(collection.name).foregroundStyle(Theme.Colors.textPrimary)
                 Text(memberSummary(for: collection))

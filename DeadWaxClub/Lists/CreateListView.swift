@@ -30,7 +30,7 @@ struct CreateListView: View {
                         HStack {
                             Image(systemName: option.systemImage)
                                 .foregroundStyle(Theme.Colors.accent)
-                                .frame(width: 24)
+                                .frame(width: Theme.Spacing.iconRow)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(option.label).foregroundStyle(Theme.Colors.textPrimary)
                                 Text(option.detail)

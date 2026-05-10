@@ -22,6 +22,10 @@ enum Theme {
         static let lg: CGFloat = 16
         static let xl: CGFloat = 24
         static let xxl: CGFloat = 32
+
+        /// Width of the leading-icon column in form rows. Keeps every
+        /// row's text baseline aligned regardless of which SF Symbol it uses.
+        static let iconRow: CGFloat = 24
     }
 
     enum Radius {

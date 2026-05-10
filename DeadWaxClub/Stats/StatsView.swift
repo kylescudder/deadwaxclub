@@ -104,14 +104,14 @@ struct StatsView: View {
                     VStack(alignment: .leading) {
                         Text("You've spent")
                             .captionSecondary()
-                        Text(formatCents(stats.totalSpentCents, currency: stats.currency))
+                        Text(CurrencyFormatter.formatCents(stats.totalSpentCents, code: stats.currency))
                             .font(.title2.weight(.semibold))
                     }
                     Spacer()
                     VStack(alignment: .trailing) {
                         Text("Estimated value")
                             .captionSecondary()
-                        Text(formatCents(stats.estimatedValueCents, currency: stats.currency))
+                        Text(CurrencyFormatter.formatCents(stats.estimatedValueCents, code: stats.currency))
                             .font(.title2.weight(.semibold))
                             .foregroundStyle(.green)
                     }
@@ -164,7 +164,7 @@ struct StatsView: View {
                             Text(entry.artist).captionSecondary().lineLimit(1)
                         }
                         Spacer()
-                        Text(formatCents(entry.paidCents, currency: entry.currency))
+                        Text(CurrencyFormatter.formatCents(entry.paidCents, code: entry.currency))
                             .font(.callout.weight(.semibold))
                     }
                 }
@@ -183,7 +183,7 @@ struct StatsView: View {
                             Text(entry.artist).captionSecondary().lineLimit(1)
                         }
                         Spacer()
-                        Text(formatCents(entry.lowestCents, currency: entry.currency))
+                        Text(CurrencyFormatter.formatCents(entry.lowestCents, code: entry.currency))
                             .font(.callout.weight(.semibold))
                             .foregroundStyle(.green)
                     }
@@ -192,12 +192,6 @@ struct StatsView: View {
         }
     }
 
-    private func formatCents(_ cents: Int, currency: String) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = currency
-        return formatter.string(from: NSDecimalNumber(value: Double(cents) / 100.0)) ?? "\(cents)"
-    }
 }
 
 @MainActor
