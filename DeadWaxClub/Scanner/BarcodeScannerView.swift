@@ -129,6 +129,8 @@ private struct PermissionPromptView: View {
 }
 
 private struct CameraDeniedView: View {
+    @Environment(\.openURL) private var openURL
+
     var body: some View {
         VStack(spacing: Theme.Spacing.lg) {
             Image(systemName: "camera.fill")
@@ -144,7 +146,7 @@ private struct CameraDeniedView: View {
             }
             PrimaryButton(title: "Open Settings", systemImage: "gear", fullWidth: false) {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
+                    openURL(url)
                 }
             }
         }

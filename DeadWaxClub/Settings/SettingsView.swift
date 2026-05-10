@@ -183,6 +183,7 @@ struct SettingsView: View {
 
 private struct NotificationSettingsRow: View {
     @ObservedObject private var push = PushManager.shared
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         switch push.authorizationStatus {
@@ -195,7 +196,7 @@ private struct NotificationSettingsRow: View {
                     .foregroundStyle(.red)
                 Button("Open Settings") {
                     if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
+                        openURL(url)
                     }
                 }
             }
