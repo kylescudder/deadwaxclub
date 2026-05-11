@@ -21,7 +21,12 @@ final class AuthClient: ObservableObject {
     init() {
         self.supabase = SupabaseClient(
             supabaseURL: AppSecrets.supabaseURL,
-            supabaseKey: AppSecrets.supabaseAnonKey
+            supabaseKey: AppSecrets.supabaseAnonKey,
+            options: SupabaseClientOptions(
+                auth: SupabaseClientOptions.AuthOptions(
+                    emitLocalSessionAsInitialSession: true
+                )
+            )
         )
     }
 
@@ -47,7 +52,7 @@ final class AuthClient: ObservableObject {
     }
 
     private func apply(session: Session?) {
-        if let session {
+        if let session, !session.isExpired {
             state = .signedIn(userID: session.user.id, email: session.user.email)
             Log.breadcrumb("session active", category: "auth")
         } else {
