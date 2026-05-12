@@ -45,14 +45,6 @@ The iOS Simulator doesn't expose these subsystems.
 - [ ] **Stats first-load spinner (#14)** — repro on a fresh sign-in after the
   recent changes, confirm the bug is still live before debugging it
 
-## Post-stability cleanup
-
-Hold these until 1–2 weeks of stable self-hosted operation.
-
-- [ ] Pause / export the old Supabase Cloud project
-- [ ] Pause / delete the PowerSync Cloud instance
-- [ ] Prune Cloud-era OAuth redirect URIs from Apple and Google consoles
-
 ## Deferred (separate stack)
 
 - [ ] **ets2** — restore the missing `kong` + `functions` containers on the
