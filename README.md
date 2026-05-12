@@ -25,8 +25,8 @@ Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl y
 | Concern        | Tool                                                              |
 | -------------- | ----------------------------------------------------------------- |
 | UI             | SwiftUI, iOS 17+                                                  |
-| Backend        | Supabase (Postgres + Auth + Storage + Edge Functions)             |
-| Sync           | [PowerSync Swift SDK](https://github.com/powersync-ja/powersync-swift) |
+| Backend        | Self-hosted Supabase (Postgres 17 + GoTrue + PostgREST + Storage + Edge Functions) |
+| Sync           | Self-hosted [PowerSync Service](https://github.com/powersync-ja/powersync-service) + [PowerSync Swift SDK](https://github.com/powersync-ja/powersync-swift) |
 | Auth           | `supabase-swift` (email, Sign in with Apple, Google)              |
 | Metadata       | [Discogs API](https://www.discogs.com/developers) (release + marketplace stats) |
 | Charts         | Swift Charts                                                      |
@@ -60,50 +60,78 @@ cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
 
 Fill in:
 
-- `SUPABASE_URL` and `SUPABASE_ANON_KEY` from your Supabase project settings.
-- `POWERSYNC_URL` from the PowerSync dashboard once you've created an instance.
-- `SENTRY_DSN` from a Sentry project (optional — leave blank to disable).
+- `SUPABASE_URL` — the API hostname for your Supabase instance. Self-hosted: `https://api.<your-domain>` (the Caddy/Kong entrypoint). Supabase Cloud: `https://<project>.supabase.co`.
+- `SUPABASE_ANON_KEY` — the `anon` JWT.
+- `POWERSYNC_URL` — your PowerSync service hostname. Self-hosted: `https://powersync.<your-domain>`. PowerSync Cloud: `https://<instance>.powersync.journeyapps.com`.
+- `SENTRY_DSN` — optional, leave blank to disable.
 
 ### 3. Provision Supabase
 
-With the project linked, apply every migration in `Supabase/migrations/` in one go:
+The production deployment self-hosts via the official [`supabase/supabase`](https://github.com/supabase/supabase) docker-compose stack on a Hetzner box, fronted by Caddy with auto-TLS. You can also run against Supabase Cloud — both paths use the same migrations.
+
+Apply migrations:
 
 ```sh
+# Self-hosted
+for f in supabase/migrations/*.sql; do
+  docker exec -i <your-db-container> psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q < "$f"
+done
+
+# Supabase Cloud
+supabase link --project-ref <your-project>
 supabase db push
 ```
 
-(Or paste each `Supabase/migrations/*.sql` file into the Supabase SQL editor in numeric order if you'd rather run them by hand.)
+Configure OAuth providers. Self-hosted Supabase reads these as GoTrue env vars on the `auth` service (set them in `docker-compose.override.yml` or `.env`):
 
-In **Authentication → Providers**:
-- Enable **Email**.
-- Enable **Apple** (paste a Services ID + key).
-- Enable **Google** (Google Cloud OAuth client ID + secret).
-- Set redirect URI to `deadwaxclub://auth-callback`.
+```
+GOTRUE_EXTERNAL_APPLE_ENABLED=true
+GOTRUE_EXTERNAL_APPLE_CLIENT_ID=com.deadwaxclub.app   # iOS bundle ID
+GOTRUE_EXTERNAL_GOOGLE_ENABLED=true
+GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID=<from Google Cloud OAuth web client>
+GOTRUE_EXTERNAL_GOOGLE_SECRET=<from Google Cloud OAuth web client>
+```
+
+Supabase Cloud users do the same in **Authentication → Providers** in the dashboard. Either way, add both redirect URIs to Apple/Google:
+- `https://<your-api-host>/auth/v1/callback`
+- `deadwaxclub://auth-callback`
 
 ### 4. Provision PowerSync
 
-1. Create an instance at <https://powersync.com>.
-2. Connect it to your Supabase project.
-3. Apply `supabase/powersync/sync_rules.yaml`.
-4. Copy the instance URL into `POWERSYNC_URL` in `Secrets.xcconfig`.
+PowerSync replicates Postgres → on-device SQLite. Postgres needs:
+- `wal_level=logical` (the `supabase/postgres` image ships with this)
+- The `powersync` publication, created by `supabase/migrations/0009_powersync_publication.sql`
+- A replication role with `BYPASSRLS` and read access to `public` + `auth`:
+  ```sql
+  CREATE ROLE powersync_replicator WITH REPLICATION LOGIN PASSWORD '...' BYPASSRLS;
+  GRANT USAGE ON SCHEMA public, auth TO powersync_replicator;
+  GRANT SELECT ON ALL TABLES IN SCHEMA public, auth TO powersync_replicator;
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO powersync_replicator;
+  ```
+
+Then either run [`journeyapps/powersync-service`](https://hub.docker.com/r/journeyapps/powersync-service) alongside your Supabase stack (with MongoDB for sync state) or create an instance at <https://powersync.com>. Either way, mount `supabase/powersync/sync_rules.yaml` as the service's sync rules, and put the resulting hostname into `POWERSYNC_URL` in `Secrets.xcconfig`.
 
 ### 5. Push notifications (optional but recommended)
 
-For lowest-price alerts:
+For lowest-price and collection-invite alerts:
 
 1. In the Apple Developer portal, create an APNs Auth Key (`.p8`).
-2. In the Supabase dashboard, go to **Edge Functions → Secrets** and set:
+2. Inject APNs secrets into the `functions` container env (self-hosted: `.env` / `docker-compose.override.yml`; Cloud: dashboard **Edge Functions → Secrets**):
    - `APNS_TEAM_ID` — your team ID
    - `APNS_KEY_ID` — the key's ID
-   - `APNS_PRIVATE_KEY` — full contents of the `.p8` file (newlines preserved)
+   - `APNS_PRIVATE_KEY` — full contents of the `.p8` file
    - `APNS_BUNDLE_ID` — `com.deadwaxclub.app` (or your own)
-3. Deploy the Edge Function:
+3. Deploy the functions:
    ```sh
-   supabase functions deploy notify-price-change
+   supabase functions deploy notify-inbox notify-price-change
    ```
-4. In **Database → Webhooks**, create a webhook on `price_entries` `INSERT` events pointing at `https://<project>.supabase.co/functions/v1/notify-price-change`, with header `Authorization: Bearer <SUPABASE_ANON_KEY>`.
+4. Wire the triggers. **Self-hosted**: `supabase/migrations/0020_notification_triggers.sql` installs in-DB triggers on `notifications` and `price_entries` that POST to the edge functions via `pg_net`. The anon key has to be set as a per-database GUC so the triggers can authenticate:
+   ```sql
+   ALTER DATABASE postgres SET app.anon_key = '<your anon key>';
+   ```
+   **Supabase Cloud**: skip migration 0020 and instead create Database Webhooks in the dashboard on `notifications` INSERT → `notify-inbox`, and `price_entries` INSERT → `notify-price-change` (header `Authorization: Bearer <SUPABASE_ANON_KEY>`).
 
-The function only sends when `is_new_low` is true (set by a `BEFORE INSERT` trigger), so you won't get spammed.
+The `notify-price-change` function only writes a `notifications` row when the trigger flags `is_new_low`, so you won't get spammed. `notify-inbox` is the single APNs fan-out.
 
 ### 6. Public list web viewer (optional)
 
@@ -170,11 +198,12 @@ DeadWaxClub/
   Resources/       Assets.xcassets
 
 supabase/
-  config.toml      supabase CLI config
-  migrations/      schema, RLS, triggers, RPCs
-  powersync/       sync rules
+  config.toml      supabase CLI config (local dev only)
+  migrations/      schema, RLS, triggers, RPCs (0020 wires in-DB notification triggers for self-hosted)
+  powersync/       sync rules (edition 3)
   functions/
-    notify-price-change/  Edge Function: APNs fan-out on new lows
+    notify-inbox/         Edge Function: APNs fan-out for any notifications row
+    notify-price-change/  Edge Function: writes a price_alert notification when is_new_low
 
 web/                static landing + public list viewer (Netlify-ready)
   index.html
