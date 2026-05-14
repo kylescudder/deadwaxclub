@@ -67,13 +67,20 @@ struct ListDetailView: View {
                             RecordRowView(record: record)
                         }
                         .listRowBackground(Theme.Colors.surface)
-                    }
-                    .onDelete { offsets in
-                        let toRemove = offsets.map { repo.records[$0] }
-                        Task {
-                            for r in toRemove {
-                                await services.lists.removeRecord(r.id, from: list.id)
+                        // Explicit swipe action with "Remove" wording so it's
+                        // obvious this only unlinks the record from this list
+                        // — it does not soft-delete the record itself. The
+                        // default .onDelete label is "Delete", which several
+                        // testers misread as destructive.
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button {
+                                Task {
+                                    await services.lists.removeRecord(record.id, from: list.id)
+                                }
+                            } label: {
+                                Label("Remove", systemImage: "minus.circle")
                             }
+                            .tint(.orange)
                         }
                     }
                 } header: {

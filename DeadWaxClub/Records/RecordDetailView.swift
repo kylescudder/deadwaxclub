@@ -374,42 +374,65 @@ struct RecordDetailView: View {
                     .padding(.top, Theme.Spacing.lg)
                     .padding(.bottom, Theme.Spacing.sm)
 
-                ForEach(Array(sortedEntries.enumerated()), id: \.element.id) { idx, entry in
-                    Button {
-                        editingPriceEntry = entry
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(entry.formattedPrice)
-                                    .font(.callout.weight(.semibold))
-                                    .foregroundStyle(Theme.Colors.textPrimary)
-                                HStack(spacing: 6) {
-                                    Text(entry.scannedAt.formatted(date: .abbreviated, time: .omitted))
-                                    if let shop = entry.shopName, !shop.isEmpty {
-                                        Text("·")
-                                        Text(shop)
-                                    }
+                // List (not a VStack of Buttons) so SwiftUI's .swipeActions
+                // gives us native swipe-to-delete. scrollDisabled keeps the
+                // outer ScrollView in charge of vertical scrolling; the fixed
+                // per-row height lets us size the List to its content so it
+                // doesn't expand to fill the screen.
+                List {
+                    ForEach(sortedEntries) { entry in
+                        priceLogRow(entry)
+                            .listRowBackground(Theme.Colors.surface)
+                            .listRowInsets(EdgeInsets(
+                                top: 0,
+                                leading: Theme.Spacing.lg,
+                                bottom: 0,
+                                trailing: Theme.Spacing.lg
+                            ))
+                            .frame(height: Self.priceRowHeight)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    Task { await services.prices.delete(entryID: entry.id) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
-                                .captionSecondary()
                             }
-                            Spacer()
-                            Image(systemName: "pencil")
-                                .foregroundStyle(Theme.Colors.textTertiary)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, Theme.Spacing.lg)
-                        .padding(.vertical, Theme.Spacing.sm)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    if idx < sortedEntries.count - 1 {
-                        Divider().padding(.leading, Theme.Spacing.lg)
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .scrollDisabled(true)
+                .frame(height: Self.priceRowHeight * CGFloat(sortedEntries.count))
                 .padding(.bottom, Theme.Spacing.sm)
             }
         }
+    }
+
+    private static let priceRowHeight: CGFloat = 56
+
+    private func priceLogRow(_ entry: PriceEntry) -> some View {
+        Button {
+            editingPriceEntry = entry
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.formattedPrice)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    HStack(spacing: 6) {
+                        Text(entry.scannedAt.formatted(date: .abbreviated, time: .omitted))
+                        if let shop = entry.shopName, !shop.isEmpty {
+                            Text("·")
+                            Text(shop)
+                        }
+                    }
+                    .captionSecondary()
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var sortedEntries: [PriceEntry] {
