@@ -62,7 +62,7 @@ struct ListDetailView: View {
                         // SwiftUI's TabView leaks the conflict into this
                         // stack, causing taps to push the wrong destination.
                         NavigationLink {
-                            RecordDetailView(record: record)
+                            RecordDetailView(record: record, removeFromList: list)
                         } label: {
                             RecordRowView(record: record)
                         }

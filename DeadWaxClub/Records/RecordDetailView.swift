@@ -3,6 +3,11 @@ import PhotosUI
 
 struct RecordDetailView: View {
     let record: VinylRecord
+    /// When the detail view is pushed from a Lists screen, the parent passes
+    /// the list down so the three-dot menu can offer "Remove from <list>"
+    /// instead of the destructive "Delete", which testers misread as wiping
+    /// the record from their collection entirely.
+    let removeFromList: VinylList?
 
     @EnvironmentObject private var services: AppServices
     @Environment(\.dismiss) private var dismiss
@@ -20,8 +25,9 @@ struct RecordDetailView: View {
     @State private var errorCount = 0
     @State private var isDismissing = false
 
-    init(record: VinylRecord) {
+    init(record: VinylRecord, removeFromList: VinylList? = nil) {
         self.record = record
+        self.removeFromList = removeFromList
         self._currentRecord = State(initialValue: record)
     }
 
@@ -95,9 +101,17 @@ struct RecordDetailView: View {
                             Label("Move to Collection…", systemImage: "rectangle.stack")
                         }
                     }
-                    Button(role: .destructive) {
-                        Task { await deleteAndDismiss() }
-                    } label: { Label("Delete", systemImage: "trash") }
+                    if let list = removeFromList {
+                        Button(role: .destructive) {
+                            Task { await removeFromListAndDismiss(list) }
+                        } label: {
+                            Label("Remove from \(list.name)", systemImage: "minus.circle")
+                        }
+                    } else {
+                        Button(role: .destructive) {
+                            Task { await deleteAndDismiss() }
+                        } label: { Label("Delete", systemImage: "trash") }
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -169,6 +183,12 @@ struct RecordDetailView: View {
     private func deleteAndDismiss() async {
         isDismissing = true
         await services.records.softDelete(recordID: currentRecord.id)
+        dismiss()
+    }
+
+    private func removeFromListAndDismiss(_ list: VinylList) async {
+        isDismissing = true
+        await services.lists.removeRecord(currentRecord.id, from: list.id)
         dismiss()
     }
 
@@ -396,6 +416,7 @@ struct RecordDetailView: View {
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
+                                .tint(.red)
                             }
                     }
                 }
