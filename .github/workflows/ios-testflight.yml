@@ -1,0 +1,138 @@
+name: iOS · TestFlight
+
+# Builds the iOS app, archives it, and uploads to TestFlight via
+# App Store Connect API. See docs/ci-testflight.md for the one-time
+# secrets setup.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'DeadWaxClub/**'
+      - 'project.yml'
+      - 'Config/Secrets.xcconfig.example'
+      - 'Scripts/ci/**'
+      - '.github/workflows/ios-testflight.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Archive & upload
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      SCHEME: DeadWaxClub
+      ARCHIVE_PATH: build/DeadWaxClub.xcarchive
+      EXPORT_PATH: build/ipa
+      EXPORT_OPTIONS: Scripts/ci/ExportOptions.plist
+      APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+      APP_STORE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: |
+          if [ -d /Applications/Xcode_16.app ]; then
+            sudo xcode-select -s /Applications/Xcode_16.app
+          fi
+          xcodebuild -version
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Write Secrets.xcconfig
+        env:
+          IOS_SECRETS: ${{ secrets.IOS_SECRETS_XCCONFIG }}
+        run: |
+          if [ -z "${IOS_SECRETS}" ]; then
+            echo "::error::IOS_SECRETS_XCCONFIG secret is empty"
+            exit 1
+          fi
+          mkdir -p Config
+          printf '%s\n' "$IOS_SECRETS" > Config/Secrets.xcconfig
+
+      - name: Write App Store Connect API key
+        env:
+          API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          if [ -z "${API_KEY_P8}" ] || [ -z "${APP_STORE_KEY_ID}" ] || [ -z "${APP_STORE_ISSUER_ID}" ]; then
+            echo "::error::APP_STORE_CONNECT_API_KEY_P8 / _KEY_ID / _ISSUER_ID secret(s) missing"
+            exit 1
+          fi
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s\n' "$API_KEY_P8" > "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8"
+          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8"
+
+      - name: Set CURRENT_PROJECT_VERSION to run number
+        run: |
+          sed -i '' "s/CURRENT_PROJECT_VERSION: \"1\"/CURRENT_PROJECT_VERSION: \"${GITHUB_RUN_NUMBER}\"/" project.yml
+
+      - name: Set DEVELOPMENT_TEAM
+        if: env.APP_STORE_TEAM_ID != ''
+        run: |
+          sed -i '' "s/DEVELOPMENT_TEAM: \"\"/DEVELOPMENT_TEAM: \"${APP_STORE_TEAM_ID}\"/" project.yml
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project DeadWaxClub.xcodeproj \
+            -scheme "$SCHEME"
+
+      - name: Archive
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project DeadWaxClub.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE_PATH" \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8" \
+            -authenticationKeyID "$APP_STORE_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_ISSUER_ID" \
+            -allowProvisioningUpdates
+
+      - name: Export IPA
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8" \
+            -authenticationKeyID "$APP_STORE_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_ISSUER_ID" \
+            -allowProvisioningUpdates
+
+      - name: Upload to TestFlight
+        run: |
+          IPA=$(ls "$EXPORT_PATH"/*.ipa | head -1)
+          if [ -z "$IPA" ]; then
+            echo "::error::No .ipa produced by export"
+            exit 1
+          fi
+          xcrun altool --upload-app \
+            --file "$IPA" \
+            --type ios \
+            --apiKey "$APP_STORE_KEY_ID" \
+            --apiIssuer "$APP_STORE_ISSUER_ID"
+
+      - name: Upload archive as artifact (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeadWaxClub-failed-archive
+          path: ${{ env.ARCHIVE_PATH }}
+          retention-days: 7
