@@ -185,14 +185,18 @@ final class AuthClient: ObservableObject {
         UserDefaults.standard.removeObject(forKey: AuthClient.recoveryPendingKey)
     }
 
-    /// Sets a new password against the active recovery session. On success the
-    /// recovery flag clears and Supabase upgrades the session to a normal
-    /// signed-in one (the user stays logged in).
+    /// Sets a new password against the active recovery session. On success we
+    /// drop the recovery flag *and* sign the user out, so they have to come
+    /// back through SignInView with their fresh password — letting the
+    /// recovery session silently log them straight in would be both confusing
+    /// (no proof they actually know the new password) and a soft security
+    /// downgrade against shoulder-surfing the email link.
     func updatePassword(newPassword: String) async -> Bool {
         lastError = nil
         do {
             _ = try await supabase.auth.update(user: UserAttributes(password: newPassword))
             isPasswordRecovery = false
+            try await supabase.auth.signOut()
             return true
         } catch {
             lastError = error.localizedDescription
@@ -311,13 +315,19 @@ final class AuthClient: ObservableObject {
             "auth callback url: \(url.absoluteString) recovery=\(isRecovery) (urlSays=\(urlSaysRecovery) flagSays=\(flagSaysRecovery))",
             category: "auth.callback"
         )
+        // Flip the flag *before* session(from:) returns so the state change
+        // and the recovery flag land in the same render pass — otherwise
+        // RootView momentarily renders MainTabView underneath the sheet.
+        if isRecovery {
+            self.isPasswordRecovery = true
+        }
         do {
             try await supabase.auth.session(from: url)
-            if isRecovery {
-                self.isPasswordRecovery = true
-            }
             Log.breadcrumb("auth callback session established", category: "auth.callback")
         } catch {
+            if isRecovery {
+                self.isPasswordRecovery = false
+            }
             lastError = "Couldn't finish from this link: \(error.localizedDescription)"
             Log.error(error, category: "auth.callback")
         }

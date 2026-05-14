@@ -12,29 +12,38 @@ struct RootView: View {
             case .signedOut:
                 NavigationStack { SignInView() }
             case .signedIn:
-                MainTabView()
-                    .sheet(isPresented: Binding(
-                        get: { services.onboarding.isOnboarding },
-                        set: { _ in }
-                    )) {
-                        OnboardingSheet(
-                            initialSteps: services.onboarding.pendingSteps,
-                            onCompleteDiscogsToken: {
-                                services.onboarding.markDiscogsTokenSeen()
-                                services.evaluateOnboarding()
-                            },
-                            onSkipDiscogsToken: {
-                                services.onboarding.markDiscogsTokenSeen()
-                                services.evaluateOnboarding()
-                            },
-                            onCompleteNotifications: {
-                                services.onboarding.markNotificationsSeen()
-                                services.evaluateOnboarding()
-                            }
-                        )
-                        .presentationDetents([.large])
-                        .interactiveDismissDisabled()
-                    }
+                // While a password-recovery session is active, keep the user
+                // on the sign-in screen underneath the recovery sheet — we
+                // don't want to leak the main app to someone holding a
+                // recovery link, and after they set a new password they're
+                // signed out and have to come back through this screen anyway.
+                if services.auth.isPasswordRecovery {
+                    NavigationStack { SignInView() }
+                } else {
+                    MainTabView()
+                        .sheet(isPresented: Binding(
+                            get: { services.onboarding.isOnboarding },
+                            set: { _ in }
+                        )) {
+                            OnboardingSheet(
+                                initialSteps: services.onboarding.pendingSteps,
+                                onCompleteDiscogsToken: {
+                                    services.onboarding.markDiscogsTokenSeen()
+                                    services.evaluateOnboarding()
+                                },
+                                onSkipDiscogsToken: {
+                                    services.onboarding.markDiscogsTokenSeen()
+                                    services.evaluateOnboarding()
+                                },
+                                onCompleteNotifications: {
+                                    services.onboarding.markNotificationsSeen()
+                                    services.evaluateOnboarding()
+                                }
+                            )
+                            .presentationDetents([.large])
+                            .interactiveDismissDisabled()
+                        }
+                }
             }
         }
         .task { await services.auth.bootstrap() }
