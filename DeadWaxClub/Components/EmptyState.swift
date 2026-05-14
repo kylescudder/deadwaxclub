@@ -2,6 +2,11 @@ import SwiftUI
 
 struct EmptyState: View {
     let systemImage: String
+    /// When set, takes precedence over `systemImage` and renders a custom
+    /// asset (e.g. the app logo) inside the accent-tinted circle instead of
+    /// an SF Symbol. The asset is rendered as-original at the same nominal
+    /// size as the SF Symbol path.
+    var imageName: String? = nil
     let title: String
     let message: String
     var actionTitle: String? = nil
@@ -16,10 +21,17 @@ struct EmptyState: View {
                 Circle()
                     .fill(Theme.Colors.accent.opacity(0.12))
                     .frame(width: 112, height: 112)
-                Image(systemName: systemImage)
-                    .font(.system(size: 48, weight: .regular))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(Theme.Colors.accent)
+                if let imageName {
+                    Image(imageName)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 64, height: 64)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 48, weight: .regular))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Theme.Colors.accent)
+                }
             }
             VStack(spacing: Theme.Spacing.sm) {
                 Text(title)

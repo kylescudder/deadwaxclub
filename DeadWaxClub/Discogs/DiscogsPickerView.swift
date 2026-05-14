@@ -154,7 +154,13 @@ struct DiscogsPickerView: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Theme.Colors.surface)
                 .frame(width: 56, height: 56)
-                .overlay(Image(systemName: "opticaldisc").foregroundStyle(Theme.Colors.textTertiary))
+                .overlay(
+                    Image("AppLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .padding(10)
+                        .opacity(0.6)
+                )
         }
     }
 

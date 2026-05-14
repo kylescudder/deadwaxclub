@@ -84,6 +84,7 @@ struct RecordsListView: View {
         if filtered.isEmpty && !filter.isActive && search.isEmpty {
             EmptyState(
                 systemImage: status == .owned ? "opticaldisc" : "heart.fill",
+                imageName: status == .owned ? "AppLogo" : nil,
                 title: status == .owned ? "Your collection is empty" : "Nothing on your wishlist",
                 message: status == .owned
                     ? "Scan a barcode in a shop or add a record manually to get started."

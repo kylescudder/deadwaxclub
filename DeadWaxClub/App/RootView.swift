@@ -132,7 +132,14 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $selection) {
             NavigationStack { RecordsListView() }
-                .tabItem { Label("Records", systemImage: "opticaldisc") }
+                .tabItem {
+                    Label {
+                        Text("Records")
+                    } icon: {
+                        Image("AppLogo")
+                            .renderingMode(.template)
+                    }
+                }
                 .tag(MainTab.records)
             NavigationStack { ScannerTabView() }
                 .tabItem { Label("Scan", systemImage: "barcode.viewfinder") }
