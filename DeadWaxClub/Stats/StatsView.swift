@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import Combine
 import PowerSync
 
 struct StatsView: View {
@@ -197,10 +198,18 @@ struct StatsView: View {
 @MainActor
 final class StatsRepositoryHolder: ObservableObject {
     @Published var repo: StatsRepository?
+    // Re-broadcast the inner repo's objectWillChange so SwiftUI re-renders
+    // when stats/isLoading change. Without this, the view only updates on
+    // the initial `repo` assignment and gets stuck on whatever it rendered
+    // mid-refresh — which on a fresh sign-in is the loading spinner.
+    private var cancellable: AnyCancellable?
 
     func attach(database: PowerSyncDatabaseProtocol) {
-        if repo == nil {
-            repo = StatsRepository(database: database)
+        guard repo == nil else { return }
+        let r = StatsRepository(database: database)
+        repo = r
+        cancellable = r.objectWillChange.sink { [weak self] in
+            self?.objectWillChange.send()
         }
     }
 }
