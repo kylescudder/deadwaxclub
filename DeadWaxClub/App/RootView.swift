@@ -77,6 +77,17 @@ struct RootView: View {
             // services and auto-navigates to the matching Collection.
             NavigationStack { ManageCollectionsView() }
         }
+        // Password-recovery sheet: shown whenever Supabase has handed us a
+        // recovery session (the user just clicked the email reset link).
+        // Stacked at the end so it sits above every other sheet, including
+        // sign-in if the user wasn't already authenticated.
+        .sheet(isPresented: Binding(
+            get: { services.auth.isPasswordRecovery },
+            set: { services.auth.isPasswordRecovery = $0 }
+        )) {
+            ResetPasswordSheet()
+                .presentationDetents([.medium, .large])
+        }
         .animation(.easeInOut(duration: 0.2), value: services.auth.state)
     }
 

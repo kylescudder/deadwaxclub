@@ -6,6 +6,7 @@ struct SignInView: View {
     @State private var password = ""
     @State private var isWorking = false
     @State private var showSignUp = false
+    @State private var showForgotPassword = false
 
     var body: some View {
         ScrollView {
@@ -39,6 +40,13 @@ struct SignInView: View {
                         .padding()
                         .background(Theme.Colors.surface)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+
+                    HStack {
+                        Spacer()
+                        Button("Forgot password?") { showForgotPassword = true }
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.accent)
+                    }
                 }
 
                 if let error = services.auth.lastError {
@@ -87,6 +95,10 @@ struct SignInView: View {
         .background(Theme.Colors.background)
         .scrollDismissesKeyboard(.interactively)
         .navigationDestination(isPresented: $showSignUp) { SignUpView() }
+        .sheet(isPresented: $showForgotPassword) {
+            ForgotPasswordSheet(initialEmail: email)
+                .presentationDetents([.medium, .large])
+        }
         .onOpenURL { url in
             Task { await services.auth.handle(callbackURL: url) }
         }

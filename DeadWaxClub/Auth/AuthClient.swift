@@ -13,6 +13,11 @@ final class AuthClient: ObservableObject {
 
     @Published private(set) var state: State = .unknown
     @Published var lastError: String?
+    /// Set to `true` when Supabase emits a `.passwordRecovery` auth event —
+    /// i.e. the user has just opened a recovery link from their email and the
+    /// client is holding a recovery session. RootView watches this and
+    /// presents the "set a new password" sheet on top of whatever's on screen.
+    @Published var isPasswordRecovery: Bool = false
 
     let supabase: SupabaseClient
 
@@ -45,7 +50,10 @@ final class AuthClient: ObservableObject {
         stateTask?.cancel()
         stateTask = Task { [weak self] in
             guard let self else { return }
-            for await (_, session) in supabase.auth.authStateChanges {
+            for await (event, session) in supabase.auth.authStateChanges {
+                if event == .passwordRecovery {
+                    self.isPasswordRecovery = true
+                }
                 self.apply(session: session)
             }
         }
@@ -122,6 +130,43 @@ final class AuthClient: ObservableObject {
         } catch {
             lastError = error.localizedDescription
             Log.error(error, category: "auth")
+        }
+    }
+
+    // MARK: - Password reset
+
+    /// Triggers Supabase to send a password-recovery email. The link in the
+    /// email opens the app on `authRedirectURL`; `handle(callbackURL:)` then
+    /// establishes a recovery session and the auth-state listener flips
+    /// `isPasswordRecovery`, prompting RootView to show the reset sheet.
+    func sendPasswordReset(email: String) async -> Bool {
+        lastError = nil
+        do {
+            try await supabase.auth.resetPasswordForEmail(
+                email,
+                redirectTo: AppSecrets.authRedirectURL
+            )
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            Log.error(error, category: "auth.passwordReset")
+            return false
+        }
+    }
+
+    /// Sets a new password against the active recovery session. On success the
+    /// recovery flag clears and Supabase upgrades the session to a normal
+    /// signed-in one (the user stays logged in).
+    func updatePassword(newPassword: String) async -> Bool {
+        lastError = nil
+        do {
+            _ = try await supabase.auth.update(user: UserAttributes(password: newPassword))
+            isPasswordRecovery = false
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            Log.error(error, category: "auth.updatePassword")
+            return false
         }
     }
 
