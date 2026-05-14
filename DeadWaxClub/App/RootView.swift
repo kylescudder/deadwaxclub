@@ -107,18 +107,38 @@ private struct CollectionDeepLinkPresentation: Identifiable {
 }
 
 struct MainTabView: View {
+    @State private var selection: MainTab = .records
+
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             NavigationStack { RecordsListView() }
                 .tabItem { Label("Records", systemImage: "opticaldisc") }
+                .tag(MainTab.records)
             NavigationStack { ScannerTabView() }
                 .tabItem { Label("Scan", systemImage: "barcode.viewfinder") }
+                .tag(MainTab.scan)
             NavigationStack { ListsTabView() }
                 .tabItem { Label("Lists", systemImage: "list.bullet.rectangle") }
+                .tag(MainTab.lists)
             NavigationStack { StatsView() }
                 .tabItem { Label("Stats", systemImage: "chart.bar") }
+                .tag(MainTab.stats)
             NavigationStack { SettingsView() }
                 .tabItem { Label("Settings", systemImage: "gear") }
+                .tag(MainTab.settings)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .switchMainTab)) { note in
+            if let tab = note.userInfo?["tab"] as? MainTab { selection = tab }
         }
     }
+}
+
+enum MainTab: Hashable {
+    case records, scan, lists, stats, settings
+}
+
+extension Notification.Name {
+    /// Posted to ask MainTabView to switch tabs (e.g. the empty Records
+    /// state nudging the user to the Scan tab).
+    static let switchMainTab = Notification.Name("dwc.switchMainTab")
 }

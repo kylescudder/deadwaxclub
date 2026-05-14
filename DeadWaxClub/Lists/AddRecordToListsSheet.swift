@@ -8,6 +8,7 @@ struct AddRecordToListsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selected: Set<String> = []
     @State private var isSaving = false
+    @State private var showCreateList = false
     @State private var selectionCount = 0
     @State private var saveCount = 0
 
@@ -18,7 +19,9 @@ struct AddRecordToListsSheet: View {
                     EmptyState(
                         systemImage: "list.bullet.rectangle",
                         title: "No lists yet",
-                        message: "Create a list first, then add records to it."
+                        message: "Create your first list, then add this record to it.",
+                        actionTitle: "Create a list",
+                        action: { showCreateList = true }
                     )
                 } else {
                     List(services.lists.lists) { list in
@@ -51,6 +54,19 @@ struct AddRecordToListsSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { Task { await save() } }
                         .disabled(selected.isEmpty || isSaving)
+                }
+            }
+            .sheet(isPresented: $showCreateList) {
+                NavigationStack {
+                    CreateListView { created in
+                        // Auto-add the current record to the new list and
+                        // close this sheet — the user opened "Add to list"
+                        // to do exactly this, so don't make them tap twice.
+                        // addRecord continues in the background after dismiss.
+                        Task { await services.lists.addRecord(record.id, to: created.id) }
+                        saveCount += 1
+                        dismiss()
+                    }
                 }
             }
             .sensoryFeedback(.selection, trigger: selectionCount)

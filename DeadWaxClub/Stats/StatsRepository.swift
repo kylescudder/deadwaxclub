@@ -150,6 +150,7 @@ final class StatsRepository: ObservableObject {
                 from price_entries pe
                 join records r on r.id = pe.record_id
                 where r.\(where_) and r.status = 'owned' and r.deleted_at is null
+                  and pe.deleted_at is null
             ) latest
             where latest.rn = 1
             """,
@@ -229,6 +230,7 @@ final class StatsRepository: ObservableObject {
             from records r
             join price_entries pe on pe.record_id = r.id
             where r.\(where_) and r.status = 'owned' and r.deleted_at is null
+              and pe.deleted_at is null
             order by pe.price_cents desc
             limit ?
             """,
@@ -253,6 +255,7 @@ final class StatsRepository: ObservableObject {
             from records r
             join price_entries pe on pe.record_id = r.id
             where r.\(where_) and r.status = 'wishlist' and r.deleted_at is null
+              and pe.deleted_at is null
             group by r.id, r.title, r.artist
             order by low asc
             limit ?

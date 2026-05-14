@@ -210,6 +210,24 @@ final class RecordsRepository: ObservableObject {
         }
     }
 
+    /// True iff a live (non-tombstoned) row exists in local SQLite for this
+    /// record. Used by RecordDetailView to detect remote soft-deletes while
+    /// the screen is still open, so we can pop back instead of leaving the
+    /// user staring at a stale record.
+    func exists(recordID: String) async -> Bool {
+        do {
+            let rows = try await database.getAll(
+                sql: "select 1 from records where id = ? and deleted_at is null limit 1",
+                parameters: [recordID],
+                mapper: { _ in true }
+            )
+            return !rows.isEmpty
+        } catch {
+            Log.error(error, category: "records.exists")
+            return true
+        }
+    }
+
     /// Move a record into a different Collection the user has write access to.
     func moveToCollection(recordID: String, collectionID: String) async {
         do {

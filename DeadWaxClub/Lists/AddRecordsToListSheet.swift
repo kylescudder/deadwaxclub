@@ -16,6 +16,7 @@ struct AddRecordsToListSheet: View {
     @AppStorage("records.sort") private var sortRaw: String = RecordsSort.recentlyUpdated.rawValue
     @State private var filter: RecordsFilter = .none
     @State private var showFilterSheet = false
+    @State private var showAddRecord = false
     @State private var selectionCount = 0
     @State private var saveCount = 0
 
@@ -67,6 +68,9 @@ struct AddRecordsToListSheet: View {
             .sheet(isPresented: $showFilterSheet) {
                 RecordsFilterSheet(filter: $filter, showStatusFilter: true)
             }
+            .sheet(isPresented: $showAddRecord, onDismiss: { Task { await loadAll() } }) {
+                NavigationStack { AddRecordView(initialStatus: .owned) }
+            }
             .sensoryFeedback(.selection, trigger: selectionCount)
             .sensoryFeedback(.success, trigger: saveCount)
             .task { await loadAll() }
@@ -79,7 +83,19 @@ struct AddRecordsToListSheet: View {
             EmptyState(
                 systemImage: "opticaldisc",
                 title: "No records to add yet",
-                message: "Add records to your Collection (owned or wishlist) and they'll show up here for adding to a list."
+                message: "Add a record to your collection and it'll show up here.",
+                actionTitle: "Add a record",
+                action: { showAddRecord = true },
+                secondaryActionTitle: "Scan a barcode",
+                secondaryActionSystemImage: "barcode.viewfinder",
+                secondaryAction: {
+                    dismiss()
+                    NotificationCenter.default.post(
+                        name: .switchMainTab,
+                        object: nil,
+                        userInfo: ["tab": MainTab.scan]
+                    )
+                }
             )
         } else if filtered.isEmpty {
             EmptyState(

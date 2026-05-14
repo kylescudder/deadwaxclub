@@ -48,10 +48,11 @@ struct ListDetailView: View {
         if repo.records.isEmpty {
             EmptyState(
                 systemImage: "tray",
-                title: "No records on this list",
-                message: "Add records from your collection or wishlist.",
-                actionTitle: "Add records"
-            ) { showAddRecordSheet = true }
+                title: "This list is empty",
+                message: "Pick records from your collection or wishlist to add them here.",
+                actionTitle: "Add records",
+                action: { showAddRecordSheet = true }
+            )
         } else {
             List {
                 Section {
@@ -62,18 +63,25 @@ struct ListDetailView: View {
                         // SwiftUI's TabView leaks the conflict into this
                         // stack, causing taps to push the wrong destination.
                         NavigationLink {
-                            RecordDetailView(record: record)
+                            RecordDetailView(record: record, removeFromList: list)
                         } label: {
                             RecordRowView(record: record)
                         }
                         .listRowBackground(Theme.Colors.surface)
-                    }
-                    .onDelete { offsets in
-                        let toRemove = offsets.map { repo.records[$0] }
-                        Task {
-                            for r in toRemove {
-                                await services.lists.removeRecord(r.id, from: list.id)
+                        // Explicit swipe action with "Remove" wording so it's
+                        // obvious this only unlinks the record from this list
+                        // — it does not soft-delete the record itself. The
+                        // default .onDelete label is "Delete", which several
+                        // testers misread as destructive.
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button {
+                                Task {
+                                    await services.lists.removeRecord(record.id, from: list.id)
+                                }
+                            } label: {
+                                Label("Remove", systemImage: "minus.circle")
                             }
+                            .tint(.orange)
                         }
                     }
                 } header: {

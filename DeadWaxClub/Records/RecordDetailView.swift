@@ -3,8 +3,14 @@ import PhotosUI
 
 struct RecordDetailView: View {
     let record: VinylRecord
+    /// When the detail view is pushed from a Lists screen, the parent passes
+    /// the list down so the three-dot menu can offer "Remove from <list>"
+    /// instead of the destructive "Delete", which testers misread as wiping
+    /// the record from their collection entirely.
+    let removeFromList: VinylList?
 
     @EnvironmentObject private var services: AppServices
+    @Environment(\.dismiss) private var dismiss
     @State private var showLogPriceSheet = false
     @State private var showStatusMenu = false
     @State private var currentRecord: VinylRecord
@@ -17,9 +23,11 @@ struct RecordDetailView: View {
     @State private var imageUploadError: String?
     @State private var successCount = 0
     @State private var errorCount = 0
+    @State private var isDismissing = false
 
-    init(record: VinylRecord) {
+    init(record: VinylRecord, removeFromList: VinylList? = nil) {
         self.record = record
+        self.removeFromList = removeFromList
         self._currentRecord = State(initialValue: record)
     }
 
@@ -93,9 +101,17 @@ struct RecordDetailView: View {
                             Label("Move to Collection…", systemImage: "rectangle.stack")
                         }
                     }
-                    Button(role: .destructive) {
-                        Task { await services.records.softDelete(recordID: currentRecord.id) }
-                    } label: { Label("Delete", systemImage: "trash") }
+                    if let list = removeFromList {
+                        Button(role: .destructive) {
+                            Task { await removeFromListAndDismiss(list) }
+                        } label: {
+                            Label("Remove from \(list.name)", systemImage: "minus.circle")
+                        }
+                    } else {
+                        Button(role: .destructive) {
+                            Task { await deleteAndDismiss() }
+                        } label: { Label("Delete", systemImage: "trash") }
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -154,6 +170,33 @@ struct RecordDetailView: View {
             // source_url but no storage_path (e.g. inserted on a build
             // before eager-mirroring landed, or from a previous failed run).
             await services.mirrorPendingImages(forRecord: currentRecord.id)
+        }
+        // Pop the view when the record disappears from local SQLite — covers
+        // remote soft-deletes from another device. Status toggles don't fire
+        // here because the row still exists with deleted_at null.
+        .onChange(of: services.records.records) { _, _ in
+            guard !isDismissing else { return }
+            Task { await dismissIfDeleted() }
+        }
+    }
+
+    private func deleteAndDismiss() async {
+        isDismissing = true
+        await services.records.softDelete(recordID: currentRecord.id)
+        dismiss()
+    }
+
+    private func removeFromListAndDismiss(_ list: VinylList) async {
+        isDismissing = true
+        await services.lists.removeRecord(currentRecord.id, from: list.id)
+        dismiss()
+    }
+
+    private func dismissIfDeleted() async {
+        let stillThere = await services.records.exists(recordID: currentRecord.id)
+        if !stillThere {
+            isDismissing = true
+            dismiss()
         }
     }
 
@@ -351,42 +394,66 @@ struct RecordDetailView: View {
                     .padding(.top, Theme.Spacing.lg)
                     .padding(.bottom, Theme.Spacing.sm)
 
-                ForEach(Array(sortedEntries.enumerated()), id: \.element.id) { idx, entry in
-                    Button {
-                        editingPriceEntry = entry
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(entry.formattedPrice)
-                                    .font(.callout.weight(.semibold))
-                                    .foregroundStyle(Theme.Colors.textPrimary)
-                                HStack(spacing: 6) {
-                                    Text(entry.scannedAt.formatted(date: .abbreviated, time: .omitted))
-                                    if let shop = entry.shopName, !shop.isEmpty {
-                                        Text("·")
-                                        Text(shop)
-                                    }
+                // List (not a VStack of Buttons) so SwiftUI's .swipeActions
+                // gives us native swipe-to-delete. scrollDisabled keeps the
+                // outer ScrollView in charge of vertical scrolling; the fixed
+                // per-row height lets us size the List to its content so it
+                // doesn't expand to fill the screen.
+                List {
+                    ForEach(sortedEntries) { entry in
+                        priceLogRow(entry)
+                            .listRowBackground(Theme.Colors.surface)
+                            .listRowInsets(EdgeInsets(
+                                top: 0,
+                                leading: Theme.Spacing.lg,
+                                bottom: 0,
+                                trailing: Theme.Spacing.lg
+                            ))
+                            .frame(height: Self.priceRowHeight)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    Task { await services.prices.delete(entryID: entry.id) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
-                                .captionSecondary()
+                                .tint(.red)
                             }
-                            Spacer()
-                            Image(systemName: "pencil")
-                                .foregroundStyle(Theme.Colors.textTertiary)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, Theme.Spacing.lg)
-                        .padding(.vertical, Theme.Spacing.sm)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-
-                    if idx < sortedEntries.count - 1 {
-                        Divider().padding(.leading, Theme.Spacing.lg)
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .scrollDisabled(true)
+                .frame(height: Self.priceRowHeight * CGFloat(sortedEntries.count))
                 .padding(.bottom, Theme.Spacing.sm)
             }
         }
+    }
+
+    private static let priceRowHeight: CGFloat = 56
+
+    private func priceLogRow(_ entry: PriceEntry) -> some View {
+        Button {
+            editingPriceEntry = entry
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.formattedPrice)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    HStack(spacing: 6) {
+                        Text(entry.scannedAt.formatted(date: .abbreviated, time: .omitted))
+                        if let shop = entry.shopName, !shop.isEmpty {
+                            Text("·")
+                            Text(shop)
+                        }
+                    }
+                    .captionSecondary()
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var sortedEntries: [PriceEntry] {
