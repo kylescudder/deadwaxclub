@@ -119,14 +119,18 @@ struct NotificationBellToolbarItem: ToolbarContent {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell")
                     if unreadCount > 0 {
-                        Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.red)
-                            .clipShape(Capsule())
-                            .offset(x: 8, y: -6)
+                        // Plain dot — we don't care about exact counts in the
+                        // toolbar, and dropping the number means the bell can
+                        // keep a fixed size regardless of how unread the
+                        // inbox is.
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 10, height: 10)
+                            .overlay(
+                                Circle()
+                                    .stroke(Theme.Colors.background, lineWidth: 1.5)
+                            )
+                            .offset(x: 2, y: 0)
                     }
                 }
             }

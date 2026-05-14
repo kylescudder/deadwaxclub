@@ -11,6 +11,10 @@ enum Log {
     }
 
     static func breadcrumb(_ message: String, category: String = "app", level: SentryLevel = .info) {
+        // Also log to OSLog so the message is visible in Xcode's console
+        // during local debugging — without this, breadcrumbs only show up
+        // in Sentry, which is no-op in dev when SENTRY_DSN is empty.
+        logger(category).info("\(message, privacy: .public)")
         let crumb = Breadcrumb(level: level, category: category)
         crumb.message = message
         SentrySDK.addBreadcrumb(crumb)
