@@ -119,17 +119,18 @@ struct NotificationBellToolbarItem: ToolbarContent {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell")
                     if unreadCount > 0 {
-                        // Badge sits inside the bell's bounding box — the
-                        // toolbar's pill background clips anything that
-                        // protrudes above the baseline on iOS 26.
-                        Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.red)
-                            .clipShape(Capsule())
-                            .offset(x: 6, y: -2)
+                        // Plain dot — we don't care about exact counts in the
+                        // toolbar, and dropping the number means the bell can
+                        // keep a fixed size regardless of how unread the
+                        // inbox is.
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 8, height: 8)
+                            .overlay(
+                                Circle()
+                                    .stroke(Theme.Colors.background, lineWidth: 1.5)
+                            )
+                            .offset(x: 4, y: -2)
                     }
                 }
             }
