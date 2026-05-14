@@ -119,14 +119,17 @@ struct NotificationBellToolbarItem: ToolbarContent {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell")
                     if unreadCount > 0 {
+                        // Badge sits inside the bell's bounding box — the
+                        // toolbar's pill background clips anything that
+                        // protrudes above the baseline on iOS 26.
                         Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
-                            .font(.caption2.weight(.bold))
+                            .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
                             .background(Color.red)
                             .clipShape(Capsule())
-                            .offset(x: 8, y: -6)
+                            .offset(x: 6, y: -2)
                     }
                 }
             }
