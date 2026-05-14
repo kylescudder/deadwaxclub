@@ -224,14 +224,22 @@ final class StatsRepository: ObservableObject {
 
     private func topPaidEntries(scope: StatsScope, limit: Int) async throws -> [PaidEntry] {
         let (where_, param) = scopeClause(scope)
+        // Group by record so a record with multiple price entries shows up
+        // once at its highest paid price — without this the same record
+        // surfaces N times for N entries, as in #20. Soft-deleted records
+        // (r.deleted_at) and tombstoned entries (pe.deleted_at) are both
+        // excluded.
         let rows = try await database.getAll(
             sql: """
-            select r.id, r.title, r.artist, pe.price_cents, pe.currency
+            select r.id, r.title, r.artist,
+                   max(pe.price_cents) as price_cents,
+                   max(pe.currency) as currency
             from records r
             join price_entries pe on pe.record_id = r.id
             where r.\(where_) and r.status = 'owned' and r.deleted_at is null
               and pe.deleted_at is null
-            order by pe.price_cents desc
+            group by r.id, r.title, r.artist
+            order by price_cents desc
             limit ?
             """,
             parameters: [param, limit],
