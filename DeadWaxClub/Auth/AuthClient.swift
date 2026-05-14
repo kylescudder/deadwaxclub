@@ -113,6 +113,9 @@ final class AuthClient: ObservableObject {
                 data: metadata,
                 redirectTo: AppSecrets.authRedirectURL
             )
+            // Either branch means the user took an explicit signup action,
+            // so any stashed reset-password intent is stale.
+            AuthClient.clearPendingRecoveryFlag()
             return response.session != nil
                 ? .signedIn
                 : .needsEmailConfirmation(email: email)
@@ -127,6 +130,7 @@ final class AuthClient: ObservableObject {
         lastError = nil
         do {
             _ = try await supabase.auth.signIn(email: email, password: password)
+            AuthClient.clearPendingRecoveryFlag()
         } catch {
             lastError = error.localizedDescription
             Log.error(error, category: "auth")
@@ -171,6 +175,14 @@ final class AuthClient: ObservableObject {
         }
         UserDefaults.standard.removeObject(forKey: key)
         return until > Date()
+    }
+
+    /// Drops the pending-recovery flag without checking its value. Called from
+    /// every other auth success path so the flag can only survive when nothing
+    /// else has happened — otherwise a signup confirmation or magic link
+    /// clicked within the 1-hour window would falsely trigger the reset sheet.
+    private static func clearPendingRecoveryFlag() {
+        UserDefaults.standard.removeObject(forKey: AuthClient.recoveryPendingKey)
     }
 
     /// Sets a new password against the active recovery session. On success the
@@ -221,6 +233,7 @@ final class AuthClient: ObservableObject {
                 _ = try await supabase.auth.signInWithIdToken(
                     credentials: .init(provider: .apple, idToken: token, nonce: nonce)
                 )
+                AuthClient.clearPendingRecoveryFlag()
                 // Apple only returns the name on the very first sign-in.
                 // We prefer the given name alone (matches the in-app casual
                 // handle convention; user can edit from Settings).
@@ -256,6 +269,7 @@ final class AuthClient: ObservableObject {
             )
             let callback = try await GoogleSignIn.start(authURL: url, callbackScheme: "deadwaxclub")
             try await supabase.auth.session(from: callback)
+            AuthClient.clearPendingRecoveryFlag()
         } catch {
             lastError = error.localizedDescription
             Log.error(error, category: "auth.google")
@@ -331,6 +345,7 @@ final class AuthClient: ObservableObject {
     }
 
     func signOut() async {
+        AuthClient.clearPendingRecoveryFlag()
         do {
             try await supabase.auth.signOut()
         } catch {
