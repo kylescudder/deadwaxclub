@@ -244,18 +244,35 @@ final class AuthClient: ObservableObject {
     }
 
     /// Handle a callback URL when iOS reopens the app on the deadwaxclub:// scheme
-    /// (e.g. for magic links, email confirmation, OAuth completion).
+    /// (e.g. for magic links, email confirmation, password recovery, OAuth
+    /// completion).
+    ///
+    /// We dedupe rapid duplicate invocations because RootView and SignInView
+    /// both used to install onOpenURL handlers — the second call would try to
+    /// re-exchange a one-time recovery code that the first call had already
+    /// consumed, throwing a misleading error onto lastError.
+    private var lastHandledCallback: (url: String, at: Date)?
+
     func handle(callbackURL url: URL) async {
+        let now = Date()
+        if let last = lastHandledCallback,
+           last.url == url.absoluteString,
+           now.timeIntervalSince(last.at) < 5 {
+            Log.breadcrumb("auth callback ignored (duplicate within 5s)", category: "auth.callback")
+            return
+        }
+        lastHandledCallback = (url.absoluteString, now)
+
         Log.breadcrumb("auth callback url: \(url.absoluteString)", category: "auth.callback")
         do {
             try await supabase.auth.session(from: url)
             Log.breadcrumb("auth callback session established", category: "auth.callback")
         } catch {
-            // Common failure: URL is missing tokens because an email client
-            // (Gmail web, Outlook) wrapped the link in a tracker that stripped
-            // them. The PKCE `?code=...` form survives this; the implicit
-            // `#access_token=...` form doesn't.
-            lastError = "Couldn't finish signing in from this link. Try signing in directly with your email and password."
+            // Surface the underlying message so we can actually see what
+            // Supabase rejected — the previous generic copy made every
+            // failure mode look the same and suggested "sign in directly"
+            // even when the user is mid password-recovery.
+            lastError = "Couldn't finish from this link: \(error.localizedDescription)"
             Log.error(error, category: "auth.callback")
         }
     }

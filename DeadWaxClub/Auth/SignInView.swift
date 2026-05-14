@@ -99,9 +99,6 @@ struct SignInView: View {
             ForgotPasswordSheet(initialEmail: email)
                 .presentationDetents([.medium, .large])
         }
-        .onOpenURL { url in
-            Task { await services.auth.handle(callbackURL: url) }
-        }
     }
 
     private var isFormValid: Bool {
