@@ -25,8 +25,21 @@ struct ListsTabView: View {
                             ListRowView(list: list)
                         }
                         .listRowBackground(Theme.Colors.surface)
+                        // Only owners can destroy a list. Collaborators /
+                        // viewers on someone else's collaborative or shared
+                        // list see no swipe affordance — they aren't allowed
+                        // to delete the underlying list, only the owner is.
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            if isOwner(of: list) {
+                                Button(role: .destructive) {
+                                    Task { await services.lists.softDelete(listID: list.id) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .tint(.red)
+                            }
+                        }
                     }
-                    .onDelete(perform: delete)
                 }
                 .listStyle(.insetGrouped)
                 .scrollContentBackground(.hidden)
@@ -60,9 +73,9 @@ struct ListsTabView: View {
         }
     }
 
-    private func delete(at offsets: IndexSet) {
-        let toRemove = offsets.map { services.lists.lists[$0] }
-        Task { for l in toRemove { await services.lists.softDelete(listID: l.id) } }
+    private func isOwner(of list: VinylList) -> Bool {
+        guard let userID = services.auth.currentUserID?.lowerUUID else { return false }
+        return list.ownerID == userID
     }
 }
 

@@ -48,10 +48,11 @@ struct ListDetailView: View {
         if repo.records.isEmpty {
             EmptyState(
                 systemImage: "tray",
-                title: "No records on this list",
-                message: "Add records from your collection or wishlist.",
-                actionTitle: "Add records"
-            ) { showAddRecordSheet = true }
+                title: "This list is empty",
+                message: "Pick records from your collection or wishlist to add them here.",
+                actionTitle: "Add records",
+                action: { showAddRecordSheet = true }
+            )
         } else {
             List {
                 Section {
