@@ -263,18 +263,47 @@ final class AuthClient: ObservableObject {
         }
         lastHandledCallback = (url.absoluteString, now)
 
-        Log.breadcrumb("auth callback url: \(url.absoluteString)", category: "auth.callback")
+        // Detect recovery from the URL itself — supabase-swift's
+        // authStateChanges doesn't reliably emit .passwordRecovery for every
+        // shape of recovery URL (implicit vs PKCE), but the URL always
+        // carries `type=recovery` in either the query or the fragment.
+        let isRecovery = AuthClient.urlContainsTypeRecovery(url)
+
+        Log.breadcrumb(
+            "auth callback url: \(url.absoluteString) recovery=\(isRecovery)",
+            category: "auth.callback"
+        )
         do {
             try await supabase.auth.session(from: url)
+            if isRecovery {
+                self.isPasswordRecovery = true
+            }
             Log.breadcrumb("auth callback session established", category: "auth.callback")
         } catch {
-            // Surface the underlying message so we can actually see what
-            // Supabase rejected — the previous generic copy made every
-            // failure mode look the same and suggested "sign in directly"
-            // even when the user is mid password-recovery.
             lastError = "Couldn't finish from this link: \(error.localizedDescription)"
             Log.error(error, category: "auth.callback")
         }
+    }
+
+    /// True when the URL carries `type=recovery` in either its query string
+    /// (PKCE-style `?code=...&type=recovery`) or its fragment (implicit-style
+    /// `#access_token=...&type=recovery&...`).
+    private static func urlContainsTypeRecovery(_ url: URL) -> Bool {
+        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return false
+        }
+        if comps.queryItems?.contains(where: { $0.name == "type" && $0.value == "recovery" }) == true {
+            return true
+        }
+        if let fragment = comps.fragment {
+            for pair in fragment.split(separator: "&") {
+                let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+                if parts.count == 2, parts[0] == "type", parts[1] == "recovery" {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     func signOut() async {
