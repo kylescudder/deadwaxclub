@@ -40,12 +40,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode 16
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install iOS platform (if missing)
         run: |
-          if [ -d /Applications/Xcode_16.app ]; then
-            sudo xcode-select -s /Applications/Xcode_16.app
-          fi
-          xcodebuild -version
+          # macos-15 runners ship Xcode 16 but lazily-download iOS SDKs.
+          # Idempotent — no-op if already present.
+          sudo xcodebuild -downloadPlatform iOS || true
 
       - name: Install xcodegen
         run: brew install xcodegen
