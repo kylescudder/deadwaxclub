@@ -54,6 +54,8 @@ enum DatabaseSchema {
             Column.text("shop_name"),
             Column.text("scanned_at"),
             Column.text("created_at"),
+            Column.text("updated_at"),
+            Column.text("deleted_at"),
             Column.integer("previous_min_cents"),
             Column.integer("is_new_low"),
         ],

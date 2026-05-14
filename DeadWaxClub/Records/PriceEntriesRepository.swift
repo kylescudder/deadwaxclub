@@ -20,7 +20,7 @@ final class PriceEntriesRepository: ObservableObject {
             guard let self else { return }
             let sql = """
                 select * from price_entries
-                where record_id = ?
+                where record_id = ? and deleted_at is null
                 order by scanned_at asc
             """
             do {
@@ -41,11 +41,12 @@ final class PriceEntriesRepository: ObservableObject {
 
     func add(_ entry: PriceEntry) async {
         do {
+            let now = Date().iso8601
             try await database.execute(
                 sql: """
                 insert into price_entries
-                  (id, record_id, owner_id, collection_id, price_cents, currency, shop_name, scanned_at, created_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (id, record_id, owner_id, collection_id, price_cents, currency, shop_name, scanned_at, created_at, updated_at)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 parameters: [
                     entry.id,
@@ -57,6 +58,7 @@ final class PriceEntriesRepository: ObservableObject {
                     entry.shopName,
                     entry.scannedAt.iso8601,
                     entry.createdAt.iso8601,
+                    now,
                 ]
             )
         } catch {
@@ -72,7 +74,8 @@ final class PriceEntriesRepository: ObservableObject {
                   price_cents = ?,
                   currency = ?,
                   shop_name = ?,
-                  scanned_at = ?
+                  scanned_at = ?,
+                  updated_at = ?
                 where id = ?
                 """,
                 parameters: [
@@ -80,6 +83,7 @@ final class PriceEntriesRepository: ObservableObject {
                     entry.currency,
                     entry.shopName,
                     entry.scannedAt.iso8601,
+                    Date().iso8601,
                     entry.id,
                 ]
             )
@@ -90,9 +94,10 @@ final class PriceEntriesRepository: ObservableObject {
 
     func delete(entryID: String) async {
         do {
+            let now = Date().iso8601
             try await database.execute(
-                sql: "delete from price_entries where id = ?",
-                parameters: [entryID]
+                sql: "update price_entries set deleted_at = ?, updated_at = ? where id = ?",
+                parameters: [now, now, entryID]
             )
         } catch {
             Log.error(error, category: "prices.delete")
