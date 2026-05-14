@@ -125,12 +125,12 @@ struct NotificationBellToolbarItem: ToolbarContent {
                         // inbox is.
                         Circle()
                             .fill(Color.red)
-                            .frame(width: 8, height: 8)
+                            .frame(width: 10, height: 10)
                             .overlay(
                                 Circle()
                                     .stroke(Theme.Colors.background, lineWidth: 1.5)
                             )
-                            .offset(x: 4, y: -2)
+                            .offset(x: 2, y: 0)
                     }
                 }
             }
