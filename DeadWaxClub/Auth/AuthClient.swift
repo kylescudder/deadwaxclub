@@ -146,12 +146,31 @@ final class AuthClient: ObservableObject {
                 email,
                 redirectTo: AppSecrets.authRedirectURL
             )
+            // Self-hosted GoTrue's PKCE redirect can omit `type=recovery`, so
+            // we record that recovery is pending for this device — the next
+            // PKCE callback within an hour is treated as recovery even if the
+            // URL doesn't carry the type qualifier.
+            UserDefaults.standard.set(
+                Date().addingTimeInterval(3600),
+                forKey: AuthClient.recoveryPendingKey
+            )
             return true
         } catch {
             lastError = error.localizedDescription
             Log.error(error, category: "auth.passwordReset")
             return false
         }
+    }
+
+    private static let recoveryPendingKey = "auth.recoveryPendingUntil"
+
+    private static func consumePendingRecoveryFlag() -> Bool {
+        let key = AuthClient.recoveryPendingKey
+        guard let until = UserDefaults.standard.object(forKey: key) as? Date else {
+            return false
+        }
+        UserDefaults.standard.removeObject(forKey: key)
+        return until > Date()
     }
 
     /// Sets a new password against the active recovery session. On success the
@@ -263,14 +282,19 @@ final class AuthClient: ObservableObject {
         }
         lastHandledCallback = (url.absoluteString, now)
 
-        // Detect recovery from the URL itself — supabase-swift's
-        // authStateChanges doesn't reliably emit .passwordRecovery for every
-        // shape of recovery URL (implicit vs PKCE), but the URL always
-        // carries `type=recovery` in either the query or the fragment.
-        let isRecovery = AuthClient.urlContainsTypeRecovery(url)
+        // Two signals tell us this is a recovery callback:
+        //   1. `type=recovery` in the URL (PKCE on hosted Supabase does this).
+        //   2. A pending-recovery flag we stashed when sendPasswordReset
+        //      succeeded (self-hosted GoTrue's PKCE redirect omits the type
+        //      qualifier, so we'd otherwise treat it as a normal sign-in).
+        // We compute both before consuming the flag so the OSLog line is
+        // diagnosable.
+        let urlSaysRecovery = AuthClient.urlContainsTypeRecovery(url)
+        let flagSaysRecovery = AuthClient.consumePendingRecoveryFlag()
+        let isRecovery = urlSaysRecovery || flagSaysRecovery
 
         Log.breadcrumb(
-            "auth callback url: \(url.absoluteString) recovery=\(isRecovery)",
+            "auth callback url: \(url.absoluteString) recovery=\(isRecovery) (urlSays=\(urlSaysRecovery) flagSays=\(flagSaysRecovery))",
             category: "auth.callback"
         )
         do {
