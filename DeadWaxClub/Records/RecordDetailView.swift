@@ -5,6 +5,7 @@ struct RecordDetailView: View {
     let record: VinylRecord
 
     @EnvironmentObject private var services: AppServices
+    @Environment(\.dismiss) private var dismiss
     @State private var showLogPriceSheet = false
     @State private var showStatusMenu = false
     @State private var currentRecord: VinylRecord
@@ -17,6 +18,7 @@ struct RecordDetailView: View {
     @State private var imageUploadError: String?
     @State private var successCount = 0
     @State private var errorCount = 0
+    @State private var isDismissing = false
 
     init(record: VinylRecord) {
         self.record = record
@@ -94,7 +96,7 @@ struct RecordDetailView: View {
                         }
                     }
                     Button(role: .destructive) {
-                        Task { await services.records.softDelete(recordID: currentRecord.id) }
+                        Task { await deleteAndDismiss() }
                     } label: { Label("Delete", systemImage: "trash") }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -154,6 +156,27 @@ struct RecordDetailView: View {
             // source_url but no storage_path (e.g. inserted on a build
             // before eager-mirroring landed, or from a previous failed run).
             await services.mirrorPendingImages(forRecord: currentRecord.id)
+        }
+        // Pop the view when the record disappears from local SQLite — covers
+        // remote soft-deletes from another device. Status toggles don't fire
+        // here because the row still exists with deleted_at null.
+        .onChange(of: services.records.records) { _, _ in
+            guard !isDismissing else { return }
+            Task { await dismissIfDeleted() }
+        }
+    }
+
+    private func deleteAndDismiss() async {
+        isDismissing = true
+        await services.records.softDelete(recordID: currentRecord.id)
+        dismiss()
+    }
+
+    private func dismissIfDeleted() async {
+        let stillThere = await services.records.exists(recordID: currentRecord.id)
+        if !stillThere {
+            isDismissing = true
+            dismiss()
         }
     }
 

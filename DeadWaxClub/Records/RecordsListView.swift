@@ -35,6 +35,9 @@ struct RecordsListView: View {
         .background(Theme.Colors.background)
         .navigationTitle("Records")
         .navigationBarTitleDisplayMode(.large)
+        .navigationDestination(for: VinylRecord.self) { record in
+            RecordDetailView(record: record)
+        }
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
         .toolbar {
             NotificationBellToolbarItem(
@@ -80,13 +83,23 @@ struct RecordsListView: View {
         let filtered = filteredAndSortedRecords
         if filtered.isEmpty && !filter.isActive && search.isEmpty {
             EmptyState(
-                systemImage: status == .owned ? "opticaldisc" : "heart",
-                title: status == .owned ? "No records yet" : "Nothing on your wishlist",
+                systemImage: status == .owned ? "opticaldisc" : "heart.fill",
+                title: status == .owned ? "Your collection is empty" : "Nothing on your wishlist",
                 message: status == .owned
-                    ? "Scan a barcode in a shop or add records manually to start your collection."
+                    ? "Scan a barcode in a shop or add a record manually to get started."
                     : "Save vinyl you want to buy and track price changes over time.",
-                actionTitle: "Add record"
-            ) { showAddSheet = true }
+                actionTitle: status == .owned ? "Add a record" : "Add to wishlist",
+                action: { showAddSheet = true },
+                secondaryActionTitle: status == .owned ? "Scan a barcode" : nil,
+                secondaryActionSystemImage: status == .owned ? "barcode.viewfinder" : nil,
+                secondaryAction: status == .owned ? {
+                    NotificationCenter.default.post(
+                        name: .switchMainTab,
+                        object: nil,
+                        userInfo: ["tab": MainTab.scan]
+                    )
+                } : nil
+            )
         } else if filtered.isEmpty {
             EmptyState(
                 systemImage: "magnifyingglass",
@@ -111,9 +124,6 @@ struct RecordsListView: View {
                 try? await Task.sleep(nanoseconds: 400_000_000)
             }
             .sensoryFeedback(.impact(weight: .light), trigger: refreshCount)
-            .navigationDestination(for: VinylRecord.self) { record in
-                RecordDetailView(record: record)
-            }
         }
     }
 
