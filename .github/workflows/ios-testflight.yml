@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build:
     name: Archive & upload
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       SCHEME: DeadWaxClub
@@ -45,8 +45,9 @@ jobs:
 
       - name: Install iOS platform (if missing)
         run: |
-          # macos-15 runners ship Xcode 16 but lazily-download iOS SDKs.
-          # Idempotent — no-op if already present.
+          # Idempotent — no-op if already present. Apple now requires
+          # builds to ship the iOS 26 SDK (Xcode 26) for App Store
+          # submission, hence runs-on: macos-26.
           sudo xcodebuild -downloadPlatform iOS || true
 
       - name: Install xcodegen
