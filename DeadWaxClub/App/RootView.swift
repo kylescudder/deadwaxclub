@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct RootView: View {
     @EnvironmentObject private var services: AppServices
@@ -132,7 +133,13 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $selection) {
             NavigationStack { RecordsListView() }
-                .tabItem { Label("Records", systemImage: "opticaldisc") }
+                .tabItem {
+                    Label {
+                        Text("Records")
+                    } icon: {
+                        recordsTabIcon
+                    }
+                }
                 .tag(MainTab.records)
             NavigationStack { ScannerTabView() }
                 .tabItem { Label("Scan", systemImage: "barcode.viewfinder") }
@@ -150,6 +157,20 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .switchMainTab)) { note in
             if let tab = note.userInfo?["tab"] as? MainTab { selection = tab }
         }
+    }
+
+    private var recordsTabIcon: Image {
+        guard let image = UIImage(named: "AppLogoIcon") else {
+            return Image(systemName: "opticaldisc")
+        }
+
+        let size = CGSize(width: 24, height: 24)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let resized = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+
+        return Image(uiImage: resized.withRenderingMode(.alwaysOriginal))
     }
 }
 

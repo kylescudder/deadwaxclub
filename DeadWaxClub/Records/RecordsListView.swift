@@ -38,7 +38,11 @@ struct RecordsListView: View {
         .navigationDestination(for: VinylRecord.self) { record in
             RecordDetailView(record: record)
         }
-        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
+        .searchable(
+            text: $search,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search my collection"
+        )
         .toolbar {
             NotificationBellToolbarItem(
                 isPresented: $showNotificationInbox,
@@ -83,7 +87,8 @@ struct RecordsListView: View {
         let filtered = filteredAndSortedRecords
         if filtered.isEmpty && !filter.isActive && search.isEmpty {
             EmptyState(
-                systemImage: status == .owned ? "opticaldisc" : "heart.fill",
+                systemImage: status == .owned ? "circle" : "heart.fill",
+                imageName: status == .owned ? "AppLogoIcon" : nil,
                 title: status == .owned ? "Your collection is empty" : "Nothing on your wishlist",
                 message: status == .owned
                     ? "Scan a barcode in a shop or add a record manually to get started."
@@ -150,4 +155,3 @@ struct RecordsListView: View {
         Task { for r in toRemove { await services.records.softDelete(recordID: r.id) } }
     }
 }
-

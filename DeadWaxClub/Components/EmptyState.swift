@@ -2,6 +2,7 @@ import SwiftUI
 
 struct EmptyState: View {
     let systemImage: String
+    var imageName: String? = nil
     let title: String
     let message: String
     var actionTitle: String? = nil
@@ -13,13 +14,25 @@ struct EmptyState: View {
     var body: some View {
         VStack(spacing: Theme.Spacing.lg) {
             ZStack {
-                Circle()
-                    .fill(Theme.Colors.accent.opacity(0.12))
+                if let imageName {
+                    ZStack {
+                        Image(imageName)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 112, height: 112)
+                            .scaleEffect(1.23)
+                    }
                     .frame(width: 112, height: 112)
-                Image(systemName: systemImage)
-                    .font(.system(size: 48, weight: .regular))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(Theme.Colors.accent)
+                    .clipShape(Circle())
+                } else {
+                    Circle()
+                        .fill(Theme.Colors.accent.opacity(0.12))
+                        .frame(width: 112, height: 112)
+                    Image(systemName: systemImage)
+                        .font(.system(size: 48, weight: .regular))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Theme.Colors.accent)
+                }
             }
             VStack(spacing: Theme.Spacing.sm) {
                 Text(title)
