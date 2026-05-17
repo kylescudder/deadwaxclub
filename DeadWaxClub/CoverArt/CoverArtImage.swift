@@ -44,9 +44,11 @@ struct CoverArtImage: View {
     private var placeholder: some View {
         ZStack {
             Theme.Colors.surfaceElevated
-            Image(systemName: "opticaldisc")
-                .font(.system(size: 24))
-                .foregroundStyle(Theme.Colors.textTertiary)
+            Image("AppLogo")
+                .resizable()
+                .scaledToFit()
+                .padding(12)
+                .opacity(0.6)
         }
     }
 }
