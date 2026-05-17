@@ -17,7 +17,9 @@ struct StatsView: View {
                     scopePicker
                 }
 
-                if let stats = repo.repo?.stats {
+                if repo.repo?.isLoading == true {
+                    LoadingView().frame(height: 240)
+                } else if let stats = repo.repo?.stats {
                     summaryCard(stats: stats)
                     valueCard(stats: stats)
                     if !stats.byDecade.isEmpty {
@@ -32,8 +34,6 @@ struct StatsView: View {
                     if !stats.lowestSeen.isEmpty {
                         lowestSeenCard(entries: stats.lowestSeen)
                     }
-                } else if repo.repo?.isLoading == true {
-                    LoadingView().frame(height: 240)
                 } else {
                     EmptyState(
                         systemImage: "chart.bar",
@@ -76,6 +76,7 @@ struct StatsView: View {
         let scope: StatsScope = selectedCollectionID
             .map { .singleCollection(collectionID: $0) }
             ?? .allMyCollections(userID: userID)
+
         await repo.repo?.refresh(scope: scope)
     }
 

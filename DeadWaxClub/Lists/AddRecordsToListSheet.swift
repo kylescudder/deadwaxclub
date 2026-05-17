@@ -81,7 +81,8 @@ struct AddRecordsToListSheet: View {
     private var content: some View {
         if allRecords.isEmpty {
             EmptyState(
-                systemImage: "opticaldisc",
+                systemImage: "circle",
+                imageName: "AppLogoIcon",
                 title: "No records to add yet",
                 message: "Add a record to your collection and it'll show up here.",
                 actionTitle: "Add a record",

@@ -34,7 +34,7 @@ struct VinylRecordEntity: AppEntity, Identifiable {
         if let path = coverArtPath, let url = CoverArtCache.publicStorageURL(path: path) {
             return DisplayRepresentation.Image(url: url)
         }
-        return DisplayRepresentation.Image(systemName: "opticaldisc")
+        return DisplayRepresentation.Image(named: "AppLogo")
     }
 }
 
