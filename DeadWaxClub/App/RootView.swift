@@ -3,6 +3,7 @@ import UIKit
 
 struct RootView: View {
     @EnvironmentObject private var services: AppServices
+    @Environment(\.scenePhase) private var scenePhase
     @State private var publicListToken: String?
 
     var body: some View {
@@ -99,6 +100,12 @@ struct RootView: View {
                 .presentationDetents([.medium, .large])
         }
         .animation(.easeInOut(duration: 0.2), value: services.auth.state)
+        .onAppear { QuickActionRouter.activate() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                QuickActionRouter.activate()
+            }
+        }
     }
 
     private func handle(url: URL) {
@@ -110,6 +117,12 @@ struct RootView: View {
         }
         if url.scheme == "deadwaxclub", url.host == "list", let token = url.pathComponents.last, !token.isEmpty {
             publicListToken = token
+            return
+        }
+        if url.scheme == "deadwaxclub", url.host == "shortcut",
+           let actionName = url.pathComponents.last,
+           let action = AppQuickAction(rawValue: actionName) {
+            QuickActionRouter.handle(action)
             return
         }
         // Otherwise pass to auth (OAuth callback / email confirmation).
@@ -129,10 +142,17 @@ private struct CollectionDeepLinkPresentation: Identifiable {
 
 struct MainTabView: View {
     @State private var selection: MainTab = .records
+    @State private var addRecordRequest: UUID?
+    @State private var logPriceRequest: UUID?
 
     var body: some View {
         TabView(selection: $selection) {
-            NavigationStack { RecordsListView() }
+            NavigationStack {
+                RecordsListView(
+                    addRecordRequest: addRecordRequest,
+                    logPriceRequest: logPriceRequest
+                )
+            }
                 .tabItem {
                     Label {
                         Text("Records")
@@ -156,6 +176,14 @@ struct MainTabView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchMainTab)) { note in
             if let tab = note.userInfo?["tab"] as? MainTab { selection = tab }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openAddRecord)) { _ in
+            selection = .records
+            addRecordRequest = UUID()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openLogPrice)) { _ in
+            selection = .records
+            logPriceRequest = UUID()
         }
     }
 
@@ -182,4 +210,6 @@ extension Notification.Name {
     /// Posted to ask MainTabView to switch tabs (e.g. the empty Records
     /// state nudging the user to the Scan tab).
     static let switchMainTab = Notification.Name("dwc.switchMainTab")
+    static let openAddRecord = Notification.Name("dwc.openAddRecord")
+    static let openLogPrice = Notification.Name("dwc.openLogPrice")
 }

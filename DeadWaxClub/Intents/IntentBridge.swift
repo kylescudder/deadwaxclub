@@ -16,6 +16,7 @@ enum IntentBridge {
             sql: """
             select * from records
             where deleted_at is null
+              and status = 'owned'
               and (lower(title) like ? or lower(artist) like ? or lower(colourway) like ?)
             order by updated_at desc
             limit 25
@@ -31,7 +32,7 @@ enum IntentBridge {
         guard let services, !ids.isEmpty else { return [] }
         let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ", ")
         let rows = try await services.sync.database.getAll(
-            sql: "select * from records where id in (\(placeholders))",
+            sql: "select * from records where id in (\(placeholders)) and deleted_at is null",
             parameters: ids,
             mapper: { VinylRecord.from(cursor: $0) }
         )
@@ -43,7 +44,9 @@ enum IntentBridge {
         guard let services else { return [] }
         let rows = try await services.sync.database.getAll(
             sql: """
-            select * from records where deleted_at is null
+            select * from records
+            where deleted_at is null
+              and status = 'owned'
             order by updated_at desc limit ?
             """,
             parameters: [limit],

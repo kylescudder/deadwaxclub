@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct RecordsListView: View {
+    var addRecordRequest: UUID?
+    var logPriceRequest: UUID?
+
     @EnvironmentObject private var services: AppServices
     @State private var status: RecordStatus = .owned
     @State private var search: String = ""
@@ -9,6 +12,8 @@ struct RecordsListView: View {
     @State private var filter: RecordsFilter = .none
     @State private var showFilterSheet = false
     @State private var showNotificationInbox = false
+    @State private var showLogPricePicker = false
+    @State private var logPriceRecord: VinylRecord?
     @State private var refreshCount = 0
 
     private var sort: RecordsSort {
@@ -78,8 +83,65 @@ struct RecordsListView: View {
         .sheet(isPresented: $showNotificationInbox) {
             NotificationInboxView()
         }
+        .sheet(isPresented: $showLogPricePicker) {
+            NavigationStack {
+                List(logPriceRecords) { record in
+                    Button {
+                        logPriceRecord = record
+                        showLogPricePicker = false
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(record.title)
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                            Text(record.artist)
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                        }
+                    }
+                }
+                .navigationTitle("Log price")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showLogPricePicker = false }
+                    }
+                }
+                .overlay {
+                    if logPriceRecords.isEmpty {
+                        EmptyState(
+                            systemImage: "tag",
+                            title: "No collection records",
+                            message: "Add a record to your collection before logging a price."
+                        )
+                    }
+                }
+            }
+        }
+        .sheet(item: $logPriceRecord) { record in
+            LogPriceSheet(record: record)
+        }
+        .onChange(of: addRecordRequest) { _, request in
+            if request != nil {
+                status = .owned
+                showAddSheet = true
+            }
+        }
+        .onChange(of: logPriceRequest) { _, request in
+            if request != nil {
+                status = .owned
+                showLogPricePicker = true
+            }
+        }
         .task(id: status) { reconfigure() }
         .onAppear { reconfigure() }
+    }
+
+    private var logPriceRecords: [VinylRecord] {
+        services.records.records
+            .filter { $0.status == .owned }
+            .sorted { lhs, rhs in
+                lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
     }
 
     @ViewBuilder
