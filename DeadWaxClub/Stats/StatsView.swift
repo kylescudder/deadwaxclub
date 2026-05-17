@@ -9,6 +9,9 @@ struct StatsView: View {
     /// nil = aggregate across every Collection the user belongs to.
     @State private var selectedCollectionID: String?
     @State private var refreshCount = 0
+    @State private var isHoldingStatsLoader = false
+
+    private let statsLoaderPreviewDelay: UInt64 = 2_000_000_000
 
     var body: some View {
         ScrollView {
@@ -17,7 +20,9 @@ struct StatsView: View {
                     scopePicker
                 }
 
-                if let stats = repo.repo?.stats {
+                if repo.repo?.isLoading == true || isHoldingStatsLoader {
+                    LoadingView().frame(height: 240)
+                } else if let stats = repo.repo?.stats {
                     summaryCard(stats: stats)
                     valueCard(stats: stats)
                     if !stats.byDecade.isEmpty {
@@ -32,8 +37,6 @@ struct StatsView: View {
                     if !stats.lowestSeen.isEmpty {
                         lowestSeenCard(entries: stats.lowestSeen)
                     }
-                } else if repo.repo?.isLoading == true {
-                    LoadingView().frame(height: 240)
                 } else {
                     EmptyState(
                         systemImage: "chart.bar",
@@ -76,7 +79,12 @@ struct StatsView: View {
         let scope: StatsScope = selectedCollectionID
             .map { .singleCollection(collectionID: $0) }
             ?? .allMyCollections(userID: userID)
+
+        isHoldingStatsLoader = true
+        async let minimumLoaderTime: Void = Task.sleep(nanoseconds: statsLoaderPreviewDelay)
         await repo.repo?.refresh(scope: scope)
+        _ = try? await minimumLoaderTime
+        isHoldingStatsLoader = false
     }
 
     private func summaryCard(stats: CollectionStats) -> some View {

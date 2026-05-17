@@ -5,8 +5,10 @@ struct LoadingView: View {
 
     var body: some View {
         VStack(spacing: Theme.Spacing.md) {
-            ProgressView()
-                .controlSize(.large)
+            LottieAnimationView(name: "dwc_logo_spinner.lottie")
+                .frame(width: 96, height: 96)
+                .fixedSize()
+
             if let message {
                 Text(message)
                     .font(.callout)

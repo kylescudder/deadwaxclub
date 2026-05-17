@@ -22,6 +22,9 @@ packages:
   PowerSync:
     url: https://github.com/powersync-ja/powersync-swift
     from: 1.0.0
+  Lottie:
+    url: https://github.com/airbnb/lottie-ios
+    from: 4.5.0
   Sentry:
     url: https://github.com/getsentry/sentry-cocoa
     from: 8.40.0
@@ -89,5 +92,7 @@ targets:
         product: Supabase
       - package: PowerSync
         product: PowerSync
+      - package: Lottie
+        product: Lottie
       - package: Sentry
         product: Sentry
