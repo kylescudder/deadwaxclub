@@ -12,13 +12,22 @@ struct DeadWaxClubShortcuts: AppShortcutsProvider {
             systemImageName: "tag"
         )
         AppShortcut(
-            intent: OpenRecordIntent(),
+            intent: ScanBarcodeIntent(),
             phrases: [
-                "Open a record in \(.applicationName)",
-                "Show me a vinyl in \(.applicationName)",
+                "Scan a barcode in \(.applicationName)",
+                "Scan vinyl with \(.applicationName)",
             ],
-            shortTitle: "Open record",
-            systemImageName: "opticaldisc"
+            shortTitle: "Scan barcode",
+            systemImageName: "barcode.viewfinder"
+        )
+        AppShortcut(
+            intent: AddRecordIntent(),
+            phrases: [
+                "Add a record in \(.applicationName)",
+                "Search for a record in \(.applicationName)",
+            ],
+            shortTitle: "Add record",
+            systemImageName: "plus"
         )
     }
 }
