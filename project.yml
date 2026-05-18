@@ -29,6 +29,15 @@ packages:
     url: https://github.com/getsentry/sentry-cocoa
     from: 8.40.0
 
+schemes:
+  DeadWaxClub:
+    build:
+      targets:
+        DeadWaxClub: all
+    run:
+      config: Debug
+      executable: DeadWaxClub
+
 targets:
   DeadWaxClub:
     type: application
@@ -96,3 +105,28 @@ targets:
         product: Lottie
       - package: Sentry
         product: Sentry
+      - target: DeadWaxClubWidgets
+        embed: true
+
+  DeadWaxClubWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: DeadWaxClubWidgets
+      - path: DeadWaxClub/Widgets/WidgetSnapshotStore.swift
+    info:
+      path: DeadWaxClubWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Deadwax Club Widgets
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.deadwaxclub.app.widgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_ENTITLEMENTS: DeadWaxClubWidgets/DeadWaxClubWidgets.entitlements
+        SKIP_INSTALL: YES
