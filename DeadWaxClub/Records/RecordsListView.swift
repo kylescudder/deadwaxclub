@@ -153,19 +153,10 @@ struct RecordsListView: View {
                 imageName: status == .owned ? "AppLogoIcon" : nil,
                 title: status == .owned ? "Your collection is empty" : "Nothing on your wishlist",
                 message: status == .owned
-                    ? "Scan a barcode in a shop or add a record manually to get started."
+                    ? ""
                     : "Save vinyl you want to buy and track price changes over time.",
                 actionTitle: status == .owned ? "Add a record" : "Add to wishlist",
-                action: { showAddSheet = true },
-                secondaryActionTitle: status == .owned ? "Scan a barcode" : nil,
-                secondaryActionSystemImage: status == .owned ? "barcode.viewfinder" : nil,
-                secondaryAction: status == .owned ? {
-                    NotificationCenter.default.post(
-                        name: .switchMainTab,
-                        object: nil,
-                        userInfo: ["tab": MainTab.scan]
-                    )
-                } : nil
+                action: { showAddSheet = true }
             )
         } else if filtered.isEmpty {
             EmptyState(

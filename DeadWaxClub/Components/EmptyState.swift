@@ -39,10 +39,12 @@ struct EmptyState: View {
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .multilineTextAlignment(.center)
-                Text(message)
-                    .font(.callout)
-                    .foregroundStyle(Theme.Colors.textSecondary)
-                    .multilineTextAlignment(.center)
+                if !message.isEmpty {
+                    Text(message)
+                        .font(.callout)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
             }
             if actionTitle != nil || secondaryActionTitle != nil {
                 VStack(spacing: Theme.Spacing.sm) {
