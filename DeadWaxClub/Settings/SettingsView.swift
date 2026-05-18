@@ -93,7 +93,10 @@ struct SettingsView: View {
             } header: {
                 Text("Discogs API")
             } footer: {
-                Text("Used for barcode lookups, cover art, artist, colour way, and estimated marketplace value. Get a token at discogs.com/settings/developers.")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Used for barcode lookups, cover art, artist, colour way, and estimated marketplace value.")
+                    Link("Get a Discogs developer token", destination: URL(string: "https://www.discogs.com/settings/developers")!)
+                }
             }
 
             Section("Account") {

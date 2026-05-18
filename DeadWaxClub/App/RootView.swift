@@ -149,6 +149,7 @@ private struct CollectionDeepLinkPresentation: Identifiable {
 
 struct MainTabView: View {
     @State private var selection: MainTab = .records
+    @State private var recordsStatus: RecordStatus = .owned
     @State private var addRecordRequest: UUID?
     @State private var logPriceRequest: UUID?
 
@@ -156,6 +157,7 @@ struct MainTabView: View {
         TabView(selection: $selection) {
             NavigationStack {
                 RecordsListView(
+                    status: $recordsStatus,
                     addRecordRequest: addRecordRequest,
                     logPriceRequest: logPriceRequest
                 )
@@ -168,7 +170,7 @@ struct MainTabView: View {
                     }
                 }
                 .tag(MainTab.records)
-            NavigationStack { ScannerTabView() }
+            NavigationStack { ScannerTabView(defaultStatus: recordsStatus) }
                 .tabItem { Label("Scan", systemImage: "barcode.viewfinder") }
                 .tag(MainTab.scan)
             NavigationStack { ListsTabView() }

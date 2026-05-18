@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ScannerTabView: View {
+    let defaultStatus: RecordStatus
+
     @EnvironmentObject private var services: AppServices
     @State private var scannedBarcode: String?
     @State private var lookup: DiscogsLookup?
@@ -40,7 +42,12 @@ struct ScannerTabView: View {
         } message: { Text($0) }
         .sheet(isPresented: $showResultSheet, onDismiss: reset) {
             if let lookup, let barcode = scannedBarcode {
-                ScanResultSheet(lookup: lookup, barcode: barcode, existing: existing)
+                ScanResultSheet(
+                    lookup: lookup,
+                    barcode: barcode,
+                    existing: existing,
+                    initialStatus: defaultStatus
+                )
             }
         }
     }
