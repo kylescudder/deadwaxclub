@@ -10,12 +10,14 @@ struct ScannerTabView: View {
     @State private var isLooking = false
     @State private var lookupError: String?
     @State private var showResultSheet = false
+    @State private var scannerSessionID = UUID()
 
     var body: some View {
         ZStack {
             BarcodeScannerHost { barcode in
                 Task { await handle(barcode: barcode) }
             }
+            .id(scannerSessionID)
             .ignoresSafeArea()
 
             VStack {
@@ -36,7 +38,7 @@ struct ScannerTabView: View {
         .navigationBarTitleDisplayMode(.inline)
         .alert("Scan failed", isPresented: Binding(
             get: { lookupError != nil },
-            set: { if !$0 { lookupError = nil; scannedBarcode = nil } }
+            set: { if !$0 { reset() } }
         ), presenting: lookupError) { _ in
             Button("OK", role: .cancel) {}
         } message: { Text($0) }
@@ -76,5 +78,7 @@ struct ScannerTabView: View {
         scannedBarcode = nil
         lookup = nil
         existing = nil
+        lookupError = nil
+        scannerSessionID = UUID()
     }
 }
