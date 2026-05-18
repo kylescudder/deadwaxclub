@@ -12,7 +12,7 @@ struct PrimaryButton: View {
         Button(action: action) {
             HStack(spacing: Theme.Spacing.sm) {
                 if isLoading {
-                    ProgressView().tint(.white)
+                    ProgressView().tint(foregroundColor)
                 } else if let systemImage {
                     Image(systemName: systemImage)
                 }
@@ -22,10 +22,14 @@ struct PrimaryButton: View {
             .frame(minHeight: 50)
             .padding(.horizontal, Theme.Spacing.lg)
             .background(isDestructive ? Color.red : Theme.Colors.accent)
-            .foregroundStyle(.white)
+            .foregroundStyle(foregroundColor)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
         }
         .disabled(isLoading)
+    }
+
+    private var foregroundColor: Color {
+        isDestructive ? .white : .black
     }
 }
 
