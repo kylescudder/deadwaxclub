@@ -105,6 +105,7 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: DeadWaxClubWidgets
+      - path: DeadWaxClub/Widgets/WidgetSnapshotStore.swift
     info:
       path: DeadWaxClubWidgets/Info.plist
       properties:
@@ -118,4 +119,5 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.deadwaxclub.app.widgets
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_ENTITLEMENTS: DeadWaxClubWidgets/DeadWaxClubWidgets.entitlements
         SKIP_INSTALL: YES

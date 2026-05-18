@@ -1,5 +1,6 @@
 import Foundation
 import PowerSync
+import WidgetKit
 
 /// Watches the per-user `notifications` inbox and exposes the unread count.
 /// Mark-as-read flows write back through PowerSync (RLS gates to user_id).
@@ -40,6 +41,7 @@ final class NotificationsRepository: ObservableObject {
                         self.notifications = mapped
                         self.unreadCount = unread
                     }
+                    await self.refreshWishlistPriceWidget(from: mapped)
                 }
             } catch {
                 Log.error(error, category: "notifications.watch")
@@ -51,6 +53,8 @@ final class NotificationsRepository: ObservableObject {
         watchTask?.cancel(); watchTask = nil
         notifications = []
         unreadCount = 0
+        WidgetSnapshotStore.saveWishlistPriceAlert(nil)
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshotStore.priceAlertWidgetKind)
     }
 
     func markRead(_ notificationID: String) async {
@@ -74,6 +78,46 @@ final class NotificationsRepository: ObservableObject {
             )
         } catch {
             Log.error(error, category: "notifications.markAllRead")
+        }
+    }
+
+    private func refreshWishlistPriceWidget(from notifications: [InboxNotification]) async {
+        let priceAlerts = notifications.filter { $0.kind == .priceAlert }
+        let recordIDs = Array(Set(priceAlerts.compactMap { $0.payload["record_id"] }))
+        guard !recordIDs.isEmpty else {
+            WidgetSnapshotStore.saveWishlistPriceAlert(nil)
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshotStore.priceAlertWidgetKind)
+            return
+        }
+
+        do {
+            let placeholders = Array(repeating: "?", count: recordIDs.count).joined(separator: ", ")
+            let wishlistRecordIDs = try await database.getAll(
+                sql: "select id from records where id in (\(placeholders)) and status = 'wishlist' and deleted_at is null",
+                parameters: recordIDs,
+                mapper: { try? $0.getString(name: "id") }
+            )
+            let wishlistIDs = Set(wishlistRecordIDs.compactMap { $0 })
+            let latest = priceAlerts.first { alert in
+                guard let recordID = alert.payload["record_id"] else { return false }
+                return wishlistIDs.contains(recordID)
+            }
+
+            WidgetSnapshotStore.saveWishlistPriceAlert(latest.map { alert in
+                WishlistPriceAlertSnapshot(
+                    id: alert.id,
+                    recordID: alert.payload["record_id"] ?? "",
+                    title: alert.title,
+                    body: alert.body,
+                    priceCents: alert.payload["price_cents"].flatMap(Int.init),
+                    currency: alert.payload["currency"],
+                    shopName: alert.payload["shop_name"],
+                    createdAt: alert.createdAt
+                )
+            })
+            WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshotStore.priceAlertWidgetKind)
+        } catch {
+            Log.error(error, category: "notifications.widget")
         }
     }
 }

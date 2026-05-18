@@ -125,6 +125,13 @@ struct RootView: View {
             QuickActionRouter.handle(action)
             return
         }
+        if url.scheme == "deadwaxclub", url.host == "record",
+           let recordID = url.pathComponents.last, !recordID.isEmpty {
+            NotificationCenter.default.post(
+                name: .openRecord, object: nil, userInfo: ["record_id": recordID]
+            )
+            return
+        }
         // Otherwise pass to auth (OAuth callback / email confirmation).
         Task { await services.auth.handle(callbackURL: url) }
     }
