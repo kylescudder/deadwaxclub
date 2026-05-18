@@ -29,6 +29,15 @@ packages:
     url: https://github.com/getsentry/sentry-cocoa
     from: 8.40.0
 
+schemes:
+  DeadWaxClub:
+    build:
+      targets:
+        DeadWaxClub: all
+    run:
+      config: Debug
+      executable: DeadWaxClub
+
 targets:
   DeadWaxClub:
     type: application

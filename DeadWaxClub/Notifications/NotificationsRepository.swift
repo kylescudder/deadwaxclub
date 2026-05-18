@@ -85,39 +85,98 @@ final class NotificationsRepository: ObservableObject {
         let priceAlerts = notifications.filter { $0.kind == .priceAlert }
         let recordIDs = Array(Set(priceAlerts.compactMap { $0.payload["record_id"] }))
         guard !recordIDs.isEmpty else {
-            WidgetSnapshotStore.saveWishlistPriceAlert(nil)
+            WidgetSnapshotStore.saveWishlistPriceAlerts([])
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshotStore.priceAlertWidgetKind)
             return
         }
 
         do {
             let placeholders = Array(repeating: "?", count: recordIDs.count).joined(separator: ", ")
-            let wishlistRecordIDs = try await database.getAll(
-                sql: "select id from records where id in (\(placeholders)) and status = 'wishlist' and deleted_at is null",
+            let wishlistRecords = try await database.getAll(
+                sql: """
+                select id, cover_art_storage_path, cover_art_source_url
+                from records
+                where id in (\(placeholders)) and status = 'wishlist' and deleted_at is null
+                """,
                 parameters: recordIDs,
-                mapper: { try? $0.getString(name: "id") }
+                mapper: { cursor -> WidgetWishlistRecord? in
+                    guard let id = try? cursor.getString(name: "id") else { return nil }
+                    return WidgetWishlistRecord(
+                        id: id,
+                        coverArtStoragePath: try? cursor.getStringOptional(name: "cover_art_storage_path"),
+                        coverArtSourceURL: try? cursor.getStringOptional(name: "cover_art_source_url")
+                    )
+                }
             )
-            let wishlistIDs = Set(wishlistRecordIDs.compactMap { $0 })
-            let latest = priceAlerts.first { alert in
+            let recordsByID = Dictionary(uniqueKeysWithValues: wishlistRecords.compactMap { record in
+                record.map { ($0.id, $0) }
+            })
+            let wishlistIDs = Set(recordsByID.keys)
+            let wishlistAlerts = priceAlerts.filter { alert in
                 guard let recordID = alert.payload["record_id"] else { return false }
                 return wishlistIDs.contains(recordID)
             }
 
-            WidgetSnapshotStore.saveWishlistPriceAlert(latest.map { alert in
-                WishlistPriceAlertSnapshot(
-                    id: alert.id,
-                    recordID: alert.payload["record_id"] ?? "",
-                    title: alert.title,
-                    body: alert.body,
-                    priceCents: alert.payload["price_cents"].flatMap(Int.init),
-                    currency: alert.payload["currency"],
-                    shopName: alert.payload["shop_name"],
-                    createdAt: alert.createdAt
+            var snapshots: [WishlistPriceAlertSnapshot] = []
+            for alert in wishlistAlerts.prefix(3) {
+                let recordID = alert.payload["record_id"] ?? ""
+                let coverArtFileName: String?
+                if let record = recordsByID[recordID] {
+                    coverArtFileName = await saveWidgetCoverArt(for: record)
+                } else {
+                    coverArtFileName = nil
+                }
+                snapshots.append(
+                    WishlistPriceAlertSnapshot(
+                        id: alert.id,
+                        recordID: recordID,
+                        title: alert.title,
+                        body: alert.body,
+                        priceCents: alert.payload["price_cents"].flatMap(Int.init),
+                        currency: alert.payload["currency"],
+                        shopName: alert.payload["shop_name"],
+                        coverArtFileName: coverArtFileName,
+                        createdAt: alert.createdAt
+                    )
                 )
-            })
+            }
+            WidgetSnapshotStore.saveWishlistPriceAlerts(snapshots)
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshotStore.priceAlertWidgetKind)
         } catch {
             Log.error(error, category: "notifications.widget")
         }
     }
+
+    private func saveWidgetCoverArt(for record: WidgetWishlistRecord) async -> String? {
+        if let data = try? Data(contentsOf: CoverArtCache.localFile(for: record.id)) {
+            return WidgetSnapshotStore.saveCoverArt(data, recordID: record.id)
+        }
+
+        let remoteURL: URL? = {
+            if let path = record.coverArtStoragePath {
+                return CoverArtCache.publicStorageURL(path: path)
+            }
+            return record.coverArtSourceURL.flatMap(URL.init(string:))
+        }()
+        guard let remoteURL else { return nil }
+
+        do {
+            var request = URLRequest(url: remoteURL)
+            request.setValue("DeadWaxClub/0.1", forHTTPHeaderField: "User-Agent")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                return nil
+            }
+            return WidgetSnapshotStore.saveCoverArt(data, recordID: record.id)
+        } catch {
+            Log.error(error, category: "notifications.widgetCover")
+            return nil
+        }
+    }
+}
+
+private struct WidgetWishlistRecord {
+    var id: String
+    var coverArtStoragePath: String?
+    var coverArtSourceURL: String?
 }
