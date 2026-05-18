@@ -1,11 +1,11 @@
 import SwiftUI
 
 struct RecordsListView: View {
+    @Binding var status: RecordStatus
     var addRecordRequest: UUID?
     var logPriceRequest: UUID?
 
     @EnvironmentObject private var services: AppServices
-    @State private var status: RecordStatus = .owned
     @State private var search: String = ""
     @State private var showAddSheet = false
     @AppStorage("records.sort") private var sortRaw: String = RecordsSort.recentlyUpdated.rawValue

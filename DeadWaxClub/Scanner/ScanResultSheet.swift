@@ -15,6 +15,13 @@ struct ScanResultSheet: View {
     @State private var isSaving = false
     @State private var saveCount = 0
 
+    init(lookup: DiscogsLookup, barcode: String, existing: VinylRecord?, initialStatus: RecordStatus) {
+        self.lookup = lookup
+        self.barcode = barcode
+        self.existing = existing
+        _status = State(initialValue: existing?.status ?? initialStatus)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {

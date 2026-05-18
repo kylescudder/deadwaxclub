@@ -139,12 +139,16 @@ private struct CollectionDetailView: View {
     var body: some View {
         Form {
             Section("Name") {
-                TextField("Collection name", text: $editingName)
-                    .onSubmit { Task { await renameIfChanged() } }
-                Button("Save name") { Task { await renameIfChanged() } }
-                    .disabled(editingName.trimmingCharacters(in: .whitespaces).isEmpty
-                              || editingName == collection.name
-                              || !isOwner)
+                if isOwner {
+                    TextField("Collection name", text: $editingName)
+                        .onSubmit { Task { await renameIfChanged() } }
+                    Button("Save name") { Task { await renameIfChanged() } }
+                        .disabled(editingName.trimmingCharacters(in: .whitespaces).isEmpty
+                                  || editingName == collection.name)
+                } else {
+                    Text(collection.name)
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                }
             }
 
             Section("Members") {
@@ -156,8 +160,8 @@ private struct CollectionDetailView: View {
                 }
                 ForEach(members) { member in
                     HStack {
-                        Text(member.userID.prefix(8) + "…")
-                            .font(.callout.monospaced())
+                        Text(memberName(member))
+                            .font(.callout)
                         Spacer()
                         Text(member.role.label)
                             .captionSecondary()
@@ -263,6 +267,9 @@ private struct CollectionDetailView: View {
         .navigationTitle(collection.name)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { editingName = collection.name }
+        .task(id: services.collections.members(of: collection.id)) {
+            await services.collections.refreshMemberProfiles(collectionID: collection.id)
+        }
         .alert("Leave this Collection?", isPresented: $showLeaveConfirm) {
             Button("Leave", role: .destructive) {
                 Task {
@@ -302,6 +309,13 @@ private struct CollectionDetailView: View {
         guard !trimmed.isEmpty, trimmed != collection.name, isOwner else { return }
         await services.collections.rename(collectionID: collection.id, name: trimmed)
         successCount += 1
+    }
+
+    private func memberName(_ member: CollectionMember) -> String {
+        if member.userID == currentUserID {
+            return services.collections.displayName(for: member.userID) ?? "You"
+        }
+        return services.collections.displayName(for: member.userID) ?? String(member.userID.prefix(8) + "…")
     }
 
     private func invite() async {

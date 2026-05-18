@@ -48,6 +48,16 @@ struct CollectionMember: Identifiable, Hashable {
     var joinedAt: Date
 }
 
+struct CollectionMemberProfile: Identifiable, Decodable, Hashable {
+    let id: String
+    let displayName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName = "display_name"
+    }
+}
+
 extension CollectionMember {
     static func from(cursor: SqlCursor) -> CollectionMember? {
         do {

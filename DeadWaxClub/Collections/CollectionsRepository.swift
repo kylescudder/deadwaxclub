@@ -10,12 +10,14 @@ final class CollectionsRepository: ObservableObject {
     @Published private(set) var collections: [VinylCollection] = []
     @Published private(set) var members: [CollectionMember] = []
     @Published private(set) var pendingInvites: [CollectionPendingInvite] = []
+    @Published private(set) var memberProfilesByID: [String: CollectionMemberProfile] = [:]
 
     private let database: PowerSyncDatabaseProtocol
     private let auth: AuthClient
     private var collectionsTask: Task<Void, Never>?
     private var membersTask: Task<Void, Never>?
     private var invitesTask: Task<Void, Never>?
+    private var refreshedProfileCollectionIDs: Set<String> = []
 
     init(database: PowerSyncDatabaseProtocol, auth: AuthClient) {
         self.database = database
@@ -41,6 +43,8 @@ final class CollectionsRepository: ObservableObject {
         collections = []
         members = []
         pendingInvites = []
+        memberProfilesByID = [:]
+        refreshedProfileCollectionIDs = []
     }
 
     func members(of collectionID: String) -> [CollectionMember] {
@@ -53,6 +57,11 @@ final class CollectionsRepository: ObservableObject {
 
     func role(in collectionID: String, userID: String) -> CollectionMemberRole? {
         members.first(where: { $0.collectionID == collectionID && $0.userID == userID })?.role
+    }
+
+    func displayName(for userID: String) -> String? {
+        let trimmed = memberProfilesByID[userID]?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed : nil
     }
 
     private func watchCollections(userID: String) {
@@ -100,6 +109,10 @@ final class CollectionsRepository: ObservableObject {
                 for try await rows in stream {
                     let mapped = rows.compactMap { $0 }
                     await MainActor.run { self.members = mapped }
+                    let collectionIDs = Set(mapped.map(\.collectionID))
+                    for collectionID in collectionIDs where !self.refreshedProfileCollectionIDs.contains(collectionID) {
+                        await self.refreshMemberProfiles(collectionID: collectionID)
+                    }
                 }
             } catch {
                 Log.error(error, category: "collections.members.watch")
@@ -232,6 +245,23 @@ final class CollectionsRepository: ObservableObject {
                 .execute()
         } catch {
             Log.error(error, category: "collections.removeMember")
+        }
+    }
+
+    func refreshMemberProfiles(collectionID: String) async {
+        do {
+            let profiles: [CollectionMemberProfile] = try await auth.supabase
+                .rpc("get_collection_member_profiles", params: ["p_collection_id": collectionID])
+                .execute()
+                .value
+            var updated = memberProfilesByID
+            for profile in profiles {
+                updated[profile.id] = profile
+            }
+            memberProfilesByID = updated
+            refreshedProfileCollectionIDs.insert(collectionID)
+        } catch {
+            Log.error(error, category: "collections.memberProfiles")
         }
     }
 
