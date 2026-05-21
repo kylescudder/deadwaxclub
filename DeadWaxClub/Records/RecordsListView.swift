@@ -9,7 +9,6 @@ struct RecordsListView: View {
     @State private var search: String = ""
     @State private var showAddSheet = false
     @AppStorage("records.sort") private var sortRaw: String = RecordsSort.recentlyUpdated.rawValue
-    @AppStorage("records.grouping") private var groupingRaw: String = RecordsGrouping.automatic.rawValue
     @State private var filter: RecordsFilter = .none
     @State private var showFilterSheet = false
     @State private var showNotificationInbox = false
@@ -19,10 +18,6 @@ struct RecordsListView: View {
 
     private var sort: RecordsSort {
         RecordsSort(rawValue: sortRaw) ?? .recentlyUpdated
-    }
-
-    private var grouping: RecordsGrouping {
-        RecordsGrouping(rawValue: groupingRaw) ?? .automatic
     }
 
     var body: some View {
@@ -65,12 +60,6 @@ struct RecordsListView: View {
                             Text(sort.label).tag(sort.rawValue)
                         }
                     }
-                    Picker("Group", selection: $groupingRaw) {
-                        ForEach(RecordsGrouping.allCases) { grouping in
-                            Text(grouping.label).tag(grouping.rawValue)
-                        }
-                    }
-                    Divider()
                     Button {
                         showFilterSheet = true
                     } label: {
@@ -175,7 +164,7 @@ struct RecordsListView: View {
                 message: "Try a different search term or clear your filters."
             )
         } else {
-            let sections = filtered.grouped(by: sort, grouping: grouping)
+            let sections = filtered.grouped(by: sort, grouping: .automatic)
             ScrollViewReader { proxy in
                 List {
                     ForEach(sections) { section in
@@ -215,7 +204,9 @@ struct RecordsListView: View {
             recordRows(section.records)
         } else {
             ForEach(section.subsections) { subsection in
-                RecordsSubsectionHeader(title: subsection.title)
+                if let title = subsection.title {
+                    RecordsSubsectionHeader(title: title)
+                }
                 recordRows(subsection.records)
             }
         }
