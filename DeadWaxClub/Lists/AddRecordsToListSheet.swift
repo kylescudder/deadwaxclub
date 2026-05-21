@@ -2,9 +2,7 @@ import SwiftUI
 
 /// Picker that shows every record across all the user's Collections (both
 /// owned and wishlist) and lets them multi-select to add to a list. Sort and
-/// filter mirror the Records tab — same `RecordsSort`, same `RecordsFilter`,
-/// and they share the persisted sort/group AppStorage keys so the user's preferred
-/// organization applies in both places.
+/// filter mirror the Records tab — same `RecordsSort`, same `RecordsFilter`.
 struct AddRecordsToListSheet: View {
     let listID: String
 
@@ -14,7 +12,6 @@ struct AddRecordsToListSheet: View {
     @State private var selected: Set<String> = []
     @State private var search = ""
     @AppStorage("records.sort") private var sortRaw: String = RecordsSort.recentlyUpdated.rawValue
-    @AppStorage("records.grouping") private var groupingRaw: String = RecordsGrouping.automatic.rawValue
     @State private var filter: RecordsFilter = .none
     @State private var showFilterSheet = false
     @State private var showAddRecord = false
@@ -23,10 +20,6 @@ struct AddRecordsToListSheet: View {
 
     private var sort: RecordsSort {
         RecordsSort(rawValue: sortRaw) ?? .recentlyUpdated
-    }
-
-    private var grouping: RecordsGrouping {
-        RecordsGrouping(rawValue: groupingRaw) ?? .automatic
     }
 
     var body: some View {
@@ -54,12 +47,6 @@ struct AddRecordsToListSheet: View {
                                 Text(sort.label).tag(sort.rawValue)
                             }
                         }
-                        Picker("Group", selection: $groupingRaw) {
-                            ForEach(RecordsGrouping.allCases) { grouping in
-                                Text(grouping.label).tag(grouping.rawValue)
-                            }
-                        }
-                        Divider()
                         Button {
                             showFilterSheet = true
                         } label: {
@@ -115,7 +102,7 @@ struct AddRecordsToListSheet: View {
                 message: "Try a different search term or clear your filters."
             )
         } else {
-            let sections = filtered.grouped(by: sort, grouping: grouping)
+            let sections = filtered.grouped(by: sort, grouping: .automatic)
             ScrollViewReader { proxy in
                 List {
                     ForEach(sections) { section in
@@ -149,7 +136,9 @@ struct AddRecordsToListSheet: View {
             recordRows(section.records)
         } else {
             ForEach(section.subsections) { subsection in
-                RecordsSubsectionHeader(title: subsection.title)
+                if let title = subsection.title {
+                    RecordsSubsectionHeader(title: title)
+                }
                 recordRows(subsection.records)
             }
         }
