@@ -3,8 +3,8 @@ import SwiftUI
 /// Picker that shows every record across all the user's Collections (both
 /// owned and wishlist) and lets them multi-select to add to a list. Sort and
 /// filter mirror the Records tab — same `RecordsSort`, same `RecordsFilter`,
-/// and they share the persisted `records.sort` AppStorage key so the user's
-/// preferred order applies in both places.
+/// and they share the persisted sort/group AppStorage keys so the user's preferred
+/// organization applies in both places.
 struct AddRecordsToListSheet: View {
     let listID: String
 
@@ -14,6 +14,7 @@ struct AddRecordsToListSheet: View {
     @State private var selected: Set<String> = []
     @State private var search = ""
     @AppStorage("records.sort") private var sortRaw: String = RecordsSort.recentlyUpdated.rawValue
+    @AppStorage("records.grouping") private var groupingRaw: String = RecordsGrouping.automatic.rawValue
     @State private var filter: RecordsFilter = .none
     @State private var showFilterSheet = false
     @State private var showAddRecord = false
@@ -22,6 +23,10 @@ struct AddRecordsToListSheet: View {
 
     private var sort: RecordsSort {
         RecordsSort(rawValue: sortRaw) ?? .recentlyUpdated
+    }
+
+    private var grouping: RecordsGrouping {
+        RecordsGrouping(rawValue: groupingRaw) ?? .automatic
     }
 
     var body: some View {
@@ -47,6 +52,11 @@ struct AddRecordsToListSheet: View {
                         Picker("Sort", selection: $sortRaw) {
                             ForEach(RecordsSort.allCases) { sort in
                                 Text(sort.label).tag(sort.rawValue)
+                            }
+                        }
+                        Picker("Group", selection: $groupingRaw) {
+                            ForEach(RecordsGrouping.allCases) { grouping in
+                                Text(grouping.label).tag(grouping.rawValue)
                             }
                         }
                         Divider()
@@ -105,25 +115,62 @@ struct AddRecordsToListSheet: View {
                 message: "Try a different search term or clear your filters."
             )
         } else {
-            List {
-                ForEach(filtered) { record in
-                    Button {
-                        if selected.contains(record.id) { selected.remove(record.id) }
-                        else { selected.insert(record.id) }
-                        selectionCount += 1
-                    } label: {
-                        HStack {
-                            RecordRowView(record: record)
-                            Spacer()
-                            Image(systemName: selected.contains(record.id) ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(Theme.Colors.accent)
+            let sections = filtered.grouped(by: sort, grouping: grouping)
+            ScrollViewReader { proxy in
+                List {
+                    ForEach(sections) { section in
+                        if let title = section.title {
+                            Section(title) {
+                                sectionRows(section)
+                            }
+                            .id(section.id)
+                        } else {
+                            recordRows(section.records)
                         }
                     }
-                    .listRowBackground(Theme.Colors.surface)
+                }
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .overlay(alignment: .trailing) {
+                    RecordsAlphabetIndex(sections: sections) { sectionID in
+                        withAnimation(.snappy) {
+                            proxy.scrollTo(sectionID, anchor: .top)
+                        }
+                    }
+                    .padding(.trailing, 3)
                 }
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
+        }
+    }
+
+    @ViewBuilder
+    private func sectionRows(_ section: RecordsSection) -> some View {
+        if section.subsections.isEmpty {
+            recordRows(section.records)
+        } else {
+            ForEach(section.subsections) { subsection in
+                RecordsSubsectionHeader(title: subsection.title)
+                recordRows(subsection.records)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func recordRows(_ records: [VinylRecord]) -> some View {
+        ForEach(records) { record in
+            Button {
+                if selected.contains(record.id) { selected.remove(record.id) }
+                else { selected.insert(record.id) }
+                selectionCount += 1
+            } label: {
+                HStack {
+                    RecordRowView(record: record)
+                    Spacer()
+                    Image(systemName: selected.contains(record.id) ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(Theme.Colors.accent)
+                }
+            }
+            .listRowBackground(Theme.Colors.surface)
         }
     }
 

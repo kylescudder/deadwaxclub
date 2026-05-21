@@ -9,6 +9,7 @@ struct RecordsListView: View {
     @State private var search: String = ""
     @State private var showAddSheet = false
     @AppStorage("records.sort") private var sortRaw: String = RecordsSort.recentlyUpdated.rawValue
+    @AppStorage("records.grouping") private var groupingRaw: String = RecordsGrouping.automatic.rawValue
     @State private var filter: RecordsFilter = .none
     @State private var showFilterSheet = false
     @State private var showNotificationInbox = false
@@ -18,6 +19,10 @@ struct RecordsListView: View {
 
     private var sort: RecordsSort {
         RecordsSort(rawValue: sortRaw) ?? .recentlyUpdated
+    }
+
+    private var grouping: RecordsGrouping {
+        RecordsGrouping(rawValue: groupingRaw) ?? .automatic
     }
 
     var body: some View {
@@ -58,6 +63,11 @@ struct RecordsListView: View {
                     Picker("Sort", selection: $sortRaw) {
                         ForEach(RecordsSort.allCases) { sort in
                             Text(sort.label).tag(sort.rawValue)
+                        }
+                    }
+                    Picker("Group", selection: $groupingRaw) {
+                        ForEach(RecordsGrouping.allCases) { grouping in
+                            Text(grouping.label).tag(grouping.rawValue)
                         }
                     }
                     Divider()
@@ -165,24 +175,61 @@ struct RecordsListView: View {
                 message: "Try a different search term or clear your filters."
             )
         } else {
-            List {
-                ForEach(filtered) { record in
-                    NavigationLink(value: record) {
-                        RecordRowView(record: record)
+            let sections = filtered.grouped(by: sort, grouping: grouping)
+            ScrollViewReader { proxy in
+                List {
+                    ForEach(sections) { section in
+                        if let title = section.title {
+                            Section(title) {
+                                sectionRows(section)
+                            }
+                            .id(section.id)
+                        } else {
+                            recordRows(section.records)
+                        }
                     }
-                    .listRowBackground(Theme.Colors.surface)
                 }
-                .onDelete(perform: delete)
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .overlay(alignment: .trailing) {
+                    RecordsAlphabetIndex(sections: sections) { sectionID in
+                        withAnimation(.snappy) {
+                            proxy.scrollTo(sectionID, anchor: .top)
+                        }
+                    }
+                    .padding(.trailing, 3)
+                }
+                .refreshable {
+                    refreshCount += 1
+                    reconfigure()
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                }
+                .sensoryFeedback(.impact(weight: .light), trigger: refreshCount)
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .refreshable {
-                refreshCount += 1
-                reconfigure()
-                try? await Task.sleep(nanoseconds: 400_000_000)
-            }
-            .sensoryFeedback(.impact(weight: .light), trigger: refreshCount)
         }
+    }
+
+    @ViewBuilder
+    private func sectionRows(_ section: RecordsSection) -> some View {
+        if section.subsections.isEmpty {
+            recordRows(section.records)
+        } else {
+            ForEach(section.subsections) { subsection in
+                RecordsSubsectionHeader(title: subsection.title)
+                recordRows(subsection.records)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func recordRows(_ records: [VinylRecord]) -> some View {
+        ForEach(records) { record in
+            NavigationLink(value: record) {
+                RecordRowView(record: record)
+            }
+            .listRowBackground(Theme.Colors.surface)
+        }
+        .onDelete { offsets in delete(at: offsets, in: records) }
     }
 
     private var filteredAndSortedRecords: [VinylRecord] {
@@ -203,8 +250,59 @@ struct RecordsListView: View {
         services.records.startWatching(status: status, userID: userID)
     }
 
-    private func delete(at offsets: IndexSet) {
-        let toRemove = offsets.map { filteredAndSortedRecords[$0] }
+    private func delete(at offsets: IndexSet, in records: [VinylRecord]) {
+        let toRemove = offsets.map { records[$0] }
         Task { for r in toRemove { await services.records.softDelete(recordID: r.id) } }
+    }
+}
+
+struct RecordsSubsectionHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Theme.Colors.accent)
+            .textCase(.uppercase)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+            .listRowInsets(EdgeInsets(top: 0, leading: Theme.Spacing.lg, bottom: 0, trailing: Theme.Spacing.lg))
+            .listRowBackground(Theme.Colors.surface)
+    }
+}
+
+struct RecordsAlphabetIndex: View {
+    let sections: [RecordsSection]
+    let onSelect: (String) -> Void
+
+    private var entries: [(title: String, sectionID: String)] {
+        sections.compactMap { section in
+            guard let title = section.title,
+                  title.count == 1,
+                  title.first?.isLetter == true || title == "#" else { return nil }
+            return (title, section.id)
+        }
+    }
+
+    var body: some View {
+        if entries.count > 1 {
+            VStack(spacing: 1) {
+                ForEach(entries, id: \.sectionID) { entry in
+                    Button {
+                        onSelect(entry.sectionID)
+                    } label: {
+                        Text(entry.title)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.accent)
+                            .frame(width: 18, height: 12)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .accessibilityLabel("Section index")
+        }
     }
 }
