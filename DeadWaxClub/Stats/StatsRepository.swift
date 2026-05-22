@@ -184,9 +184,10 @@ final class StatsRepository: ObservableObject {
         let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
-            select (year/10)*10 as decade_start, count(*) as c
+            select (coalesce(album_year, year)/10)*10 as decade_start, count(*) as c
             from records
-            where \(where_) and status = 'owned' and deleted_at is null and year is not null
+            where \(where_) and status = 'owned' and deleted_at is null
+              and coalesce(album_year, year) is not null
             group by decade_start
             order by decade_start asc
             """,

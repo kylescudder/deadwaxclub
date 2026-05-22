@@ -265,35 +265,71 @@ struct RecordsSubsectionHeader: View {
 struct RecordsAlphabetIndex: View {
     let sections: [RecordsSection]
     let onSelect: (String) -> Void
+    @State private var activeSectionID: String?
+
+    private let rowHeight: CGFloat = 12
+    private let rowSpacing: CGFloat = 1
+    private let verticalPadding: CGFloat = 6
 
     private var entries: [(title: String, sectionID: String)] {
         sections.compactMap { section in
             guard let title = section.title,
-                  title.count == 1,
-                  title.first?.isLetter == true || title == "#" else { return nil }
-            return (title, section.id)
+                  let indexTitle = indexTitle(for: title) else { return nil }
+            return (indexTitle, section.id)
         }
+    }
+
+    private var entryWidth: CGFloat {
+        entries.contains { $0.title.count > 1 } ? 30 : 18
     }
 
     var body: some View {
         if entries.count > 1 {
-            VStack(spacing: 1) {
+            VStack(spacing: rowSpacing) {
                 ForEach(entries, id: \.sectionID) { entry in
-                    Button {
-                        onSelect(entry.sectionID)
-                    } label: {
-                        Text(entry.title)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Theme.Colors.accent)
-                            .frame(width: 18, height: 12)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+                    Text(entry.title)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(
+                            activeSectionID == entry.sectionID
+                                ? Theme.Colors.textPrimary
+                                : Theme.Colors.accent
+                        )
+                        .frame(width: entryWidth, height: rowHeight)
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, verticalPadding)
             .background(.ultraThinMaterial, in: Capsule())
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { value in
+                        selectEntry(at: value.location.y)
+                    }
+                    .onEnded { _ in
+                        activeSectionID = nil
+                    }
+            )
+            .sensoryFeedback(.selection, trigger: activeSectionID)
             .accessibilityLabel("Section index")
         }
+    }
+
+    private func selectEntry(at yPosition: CGFloat) {
+        let rowStride = rowHeight + rowSpacing
+        let rawIndex = Int((yPosition - verticalPadding) / rowStride)
+        let index = min(max(rawIndex, 0), entries.count - 1)
+        let sectionID = entries[index].sectionID
+
+        guard activeSectionID != sectionID else { return }
+        activeSectionID = sectionID
+        onSelect(sectionID)
+    }
+
+    private func indexTitle(for sectionTitle: String) -> String? {
+        if sectionTitle == "#" { return sectionTitle }
+        if sectionTitle.count == 1, sectionTitle.first?.isLetter == true { return sectionTitle }
+        if sectionTitle == "Unknown year" { return "?" }
+        if Int(sectionTitle) != nil { return String(sectionTitle.suffix(2)) }
+        return nil
     }
 }

@@ -24,11 +24,17 @@ enum DiscogsModels {
         let id: Int64
         let title: String
         let year: Int?
+        let master_id: Int64?
         let artists: [Artist]?
         let images: [Image]?
         let formats: [Format]?
         let identifiers: [Identifier]?
         let notes: String?
+    }
+
+    struct Master: Decodable {
+        let id: Int64
+        let year: Int?
     }
 
     struct Artist: Decodable {
@@ -71,7 +77,10 @@ struct DiscogsLookup: Equatable {
     let releaseID: Int64
     let title: String
     let artist: String
+    /// Specific Discogs release year: for a repress, this is the repress year.
     let year: Int?
+    /// Original album/master year when Discogs links the release to a master.
+    let albumYear: Int?
     let colourway: String?
     let coverArtURL: String?
     /// All images in the Discogs release, primary first, secondaries after,

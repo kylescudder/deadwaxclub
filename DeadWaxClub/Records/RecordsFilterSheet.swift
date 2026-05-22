@@ -57,7 +57,7 @@ struct RecordsFilterSheet: View {
                         .pickerStyle(.segmented)
                     }
                 }
-                Section("Year") {
+                Section("Album year") {
                     HStack {
                         Picker("From", selection: $yearFrom) {
                             Text("Any").tag(Int?.none)
@@ -127,8 +127,7 @@ struct RecordsFilterSheet: View {
         .sensoryFeedback(.impact(weight: .light), trigger: applyCount)
     }
 
-    /// Newest year first (vinyl users care about recent reissues more often
-    /// than 1920s pressings). Range generous enough to cover anything realistic.
+    /// Newest year first. Range generous enough to cover anything realistic.
     private static let yearOptions: [Int] = {
         let current = Calendar.current.component(.year, from: Date())
         return Array((1900...(current + 1)).reversed())

@@ -43,7 +43,7 @@ extension VinylRecordEntity {
         self.id = record.id
         self.title = record.title
         self.artist = record.artist
-        self.year = record.year
+        self.year = record.displayYear
         self.colourway = record.colourway
         self.coverArtPath = record.coverArtStoragePath
     }

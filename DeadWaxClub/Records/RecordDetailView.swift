@@ -279,7 +279,10 @@ struct RecordDetailView: View {
                     detailRow("Collection", homeName)
                 }
                 if let year = currentRecord.year {
-                    detailRow("Year", String(year))
+                    detailRow("Record year", String(year))
+                }
+                if let albumYear = currentRecord.albumYear {
+                    detailRow("Album year", String(albumYear))
                 }
                 if let cw = currentRecord.colourway, !cw.isEmpty {
                     detailRow("Colour way", cw)
@@ -496,6 +499,7 @@ struct RecordDetailView: View {
         updated.title = lookup.title
         updated.artist = lookup.artist
         if let y = lookup.year { updated.year = y }
+        if let y = lookup.albumYear { updated.albumYear = y }
         if let cw = lookup.colourway { updated.colourway = cw }
         if let cover = lookup.coverArtURL { updated.coverArtSourceURL = cover }
         if let bc = lookup.barcode { updated.barcode = bc }

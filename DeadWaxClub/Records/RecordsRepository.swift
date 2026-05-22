@@ -74,12 +74,12 @@ final class RecordsRepository: ObservableObject {
             try await database.execute(
                 sql: """
                 insert or ignore into records
-                  (id, collection_id, status, title, artist, year, colourway,
+                  (id, collection_id, status, title, artist, year, album_year, colourway,
                    cover_art_source_url, cover_art_storage_path,
                    discogs_release_id, barcode, notes,
                    estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
                    created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 parameters: [
                     record.id,
@@ -88,6 +88,7 @@ final class RecordsRepository: ObservableObject {
                     record.title,
                     record.artist,
                     record.year,
+                    record.albumYear,
                     record.colourway,
                     record.coverArtSourceURL,
                     record.coverArtStoragePath,
@@ -109,6 +110,7 @@ final class RecordsRepository: ObservableObject {
                   title = ?,
                   artist = ?,
                   year = ?,
+                  album_year = ?,
                   colourway = ?,
                   cover_art_source_url = ?,
                   cover_art_storage_path = ?,
@@ -127,6 +129,7 @@ final class RecordsRepository: ObservableObject {
                     record.title,
                     record.artist,
                     record.year,
+                    record.albumYear,
                     record.colourway,
                     record.coverArtSourceURL,
                     record.coverArtStoragePath,
@@ -161,6 +164,18 @@ final class RecordsRepository: ObservableObject {
             )
         } catch {
             Log.error(error, category: "records.updateEstimate")
+        }
+    }
+
+    func updateStatus(recordID: String, status: RecordStatus) async {
+        do {
+            let now = Date().iso8601
+            try await database.execute(
+                sql: "update records set status = ?, updated_at = ? where id = ?",
+                parameters: [status.rawValue, now, recordID]
+            )
+        } catch {
+            Log.error(error, category: "records.updateStatus")
         }
     }
 
@@ -206,6 +221,118 @@ final class RecordsRepository: ObservableObject {
             return rows.compactMap { $0 }.first
         } catch {
             Log.error(error, category: "records.findByBarcode")
+            return nil
+        }
+    }
+
+    func findDuplicate(
+        title: String,
+        artist: String,
+        displayYear: Int?,
+        colourway: String?,
+        discogsReleaseID: Int64?,
+        barcode: String?,
+        userID: String,
+        collectionID: String,
+        excludingRecordID: String? = nil
+    ) async -> VinylRecord? {
+        if let discogsReleaseID,
+           let match = await firstDuplicate(
+            whereSQL: "discogs_release_id = ?",
+            parameters: [discogsReleaseID],
+            userID: userID,
+            collectionID: collectionID,
+            excludingRecordID: excludingRecordID
+           ) {
+            return match
+        }
+
+        let trimmedBarcode = barcode?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedBarcode, !trimmedBarcode.isEmpty,
+           let match = await firstDuplicate(
+            whereSQL: "barcode = ?",
+            parameters: [trimmedBarcode],
+            userID: userID,
+            collectionID: collectionID,
+            excludingRecordID: excludingRecordID
+           ) {
+            return match
+        }
+
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedTitle.isEmpty, !normalizedArtist.isEmpty else { return nil }
+
+        let titleArtistColourwaySQL = """
+        lower(trim(title)) = ?
+          and lower(trim(artist)) = ?
+          and lower(trim(coalesce(colourway, ''))) = ?
+        """
+        let titleArtistColourwayParameters: [Any?] = [
+            normalizedTitle,
+            normalizedArtist,
+            (colourway ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+        ]
+
+        var whereSQL = titleArtistColourwaySQL
+        var parameters = titleArtistColourwayParameters
+        if let displayYear {
+            whereSQL += " and coalesce(album_year, year) = ?"
+            parameters.append(displayYear)
+        } else {
+            whereSQL += " and coalesce(album_year, year) is null"
+        }
+
+        if let match = await firstDuplicate(
+            whereSQL: whereSQL,
+            parameters: parameters,
+            userID: userID,
+            collectionID: collectionID,
+            excludingRecordID: excludingRecordID
+        ) {
+            return match
+        }
+
+        return await firstDuplicate(
+            whereSQL: titleArtistColourwaySQL,
+            parameters: titleArtistColourwayParameters,
+            userID: userID,
+            collectionID: collectionID,
+            excludingRecordID: excludingRecordID
+        )
+    }
+
+    private func firstDuplicate(
+        whereSQL: String,
+        parameters: [Any?],
+        userID: String,
+        collectionID: String,
+        excludingRecordID: String?
+    ) async -> VinylRecord? {
+        do {
+            var sql = """
+            select * from records
+            where collection_id = ?
+              and collection_id in (select collection_id from collection_members where user_id = ?)
+              and deleted_at is null
+              and \(whereSQL)
+            """
+            var params: [Any?] = [collectionID, userID]
+            params.append(contentsOf: parameters)
+            if let excludingRecordID {
+                sql += " and id <> ?"
+                params.append(excludingRecordID)
+            }
+            sql += " order by case status when 'owned' then 0 else 1 end, updated_at desc limit 1"
+
+            let rows = try await database.getAll(
+                sql: sql,
+                parameters: params,
+                mapper: { VinylRecord.from(cursor: $0) }
+            )
+            return rows.compactMap { $0 }.first
+        } catch {
+            Log.error(error, category: "records.findDuplicate")
             return nil
         }
     }
