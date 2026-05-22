@@ -22,6 +22,7 @@ enum DatabaseSchema {
             Column.text("title"),
             Column.text("artist"),
             Column.integer("year"),
+            Column.integer("album_year"),
             Column.text("colourway"),
             Column.text("cover_art_source_url"),
             Column.text("cover_art_storage_path"),

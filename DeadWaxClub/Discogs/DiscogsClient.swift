@@ -56,15 +56,7 @@ final class DiscogsClient: ObservableObject {
         let search: DiscogsModels.SearchResponse = try await get(url: components.url!, token: token)
         guard let first = search.results.first else { throw LookupError.noResults }
 
-        async let release: DiscogsModels.Release = get(
-            url: base.appendingPathComponent("releases/\(first.id)"),
-            token: token
-        )
-        async let stats: DiscogsModels.MarketplaceStats? = optionalGet(
-            url: base.appendingPathComponent("marketplace/stats/\(first.id)"),
-            token: token
-        )
-        return try await Self.map(release: release, stats: stats, fallbackBarcode: barcode)
+        return try await lookup(releaseID: first.id, token: token, fallbackBarcode: barcode)
     }
 
     /// Free-text search by title and/or artist for vinyl releases. Returns
@@ -107,15 +99,7 @@ final class DiscogsClient: ObservableObject {
 
     func release(id: Int64) async throws -> DiscogsLookup {
         let token = try token()
-        async let release: DiscogsModels.Release = get(
-            url: base.appendingPathComponent("releases/\(id)"),
-            token: token
-        )
-        async let stats: DiscogsModels.MarketplaceStats? = optionalGet(
-            url: base.appendingPathComponent("marketplace/stats/\(id)"),
-            token: token
-        )
-        return try await Self.map(release: release, stats: stats, fallbackBarcode: nil)
+        return try await lookup(releaseID: id, token: token, fallbackBarcode: nil)
     }
 
     /// Fetch only the marketplace stats for an existing release, e.g. to
@@ -142,6 +126,37 @@ final class DiscogsClient: ObservableObject {
         }
     }
 
+    private func lookup(releaseID: Int64, token: String, fallbackBarcode: String?) async throws -> DiscogsLookup {
+        async let releaseTask: DiscogsModels.Release = get(
+            url: base.appendingPathComponent("releases/\(releaseID)"),
+            token: token
+        )
+        async let statsTask: DiscogsModels.MarketplaceStats? = optionalGet(
+            url: base.appendingPathComponent("marketplace/stats/\(releaseID)"),
+            token: token
+        )
+
+        let release = try await releaseTask
+        let stats = try await statsTask
+        let masterYear: Int?
+        if let masterID = release.master_id {
+            let master: DiscogsModels.Master? = try await optionalGet(
+                url: base.appendingPathComponent("masters/\(masterID)"),
+                token: token
+            )
+            masterYear = master?.year
+        } else {
+            masterYear = nil
+        }
+
+        return Self.map(
+            release: release,
+            stats: stats,
+            fallbackBarcode: fallbackBarcode,
+            masterYear: masterYear
+        )
+    }
+
     private func get<T: Decodable>(url: URL, token: String) async throws -> T {
         var req = URLRequest(url: url)
         req.setValue("Discogs token=\(token)", forHTTPHeaderField: "Authorization")
@@ -162,7 +177,8 @@ final class DiscogsClient: ObservableObject {
     private static func map(
         release: DiscogsModels.Release,
         stats: DiscogsModels.MarketplaceStats?,
-        fallbackBarcode: String?
+        fallbackBarcode: String?,
+        masterYear: Int?
     ) -> DiscogsLookup {
         // Order: primary first, secondaries after in Discogs's own order.
         // Falls back to whatever's first if no image is explicitly tagged.
@@ -200,6 +216,7 @@ final class DiscogsClient: ObservableObject {
             title: release.title,
             artist: artist.isEmpty ? "Unknown artist" : artist,
             year: release.year,
+            albumYear: masterYear,
             colourway: colourway,
             coverArtURL: primaryURI,
             imageURLs: allURIs,

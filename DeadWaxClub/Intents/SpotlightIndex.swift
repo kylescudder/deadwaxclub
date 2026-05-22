@@ -14,7 +14,7 @@ enum SpotlightIndex {
             if let cw = record.colourway, !cw.isEmpty {
                 attrs.album = cw
             }
-            if let year = record.year {
+            if let year = record.displayYear {
                 attrs.contentCreationDate = Calendar.current.date(from: DateComponents(year: year))
             }
             attrs.keywords = [record.artist, record.colourway, record.barcode]

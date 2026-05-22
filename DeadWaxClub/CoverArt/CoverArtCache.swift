@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Two-tier cover art cache:
 /// 1. Local file at `<Caches>/covers/<recordID>.jpg` — read first, available fully offline.
@@ -69,9 +70,7 @@ final class CoverArtCache: ObservableObject {
 
         if needsRemote {
             do {
-                // Path is keyed on collection_id so every member of a shared
-                // Collection fetches the same bytes (uploaded once per record).
-                let path = "\(record.collectionID)/\(record.id).jpg"
+                let path = primaryCoverPath(for: record)
                 try await uploadToSupabase(bytes: bytes, path: path)
                 onStoragePathPersisted(path)
             } catch {
@@ -174,13 +173,50 @@ final class CoverArtCache: ObservableObject {
         recordID: String,
         imageID: String
     ) async throws -> String {
-        let path = "\(collectionID)/\(recordID)/\(imageID).jpg"
+        let path = "user/\(collectionID)/\(recordID)/\(imageID).jpg"
         try await uploadToSupabase(bytes: bytes, path: path)
         return path
     }
 
     private func recordImagePath(image: RecordImage) -> String {
-        "\(image.collectionID)/\(image.recordID)/\(image.id).jpg"
+        if let sourceURL = image.sourceURL {
+            return "discogs/images/\(Self.stableHash(sourceURL)).jpg"
+        }
+        return "user/\(image.collectionID)/\(image.recordID)/\(image.id).jpg"
+    }
+
+    private func primaryCoverPath(for record: VinylRecord) -> String {
+        if let releaseID = record.discogsReleaseID {
+            return "discogs/releases/\(releaseID)/primary.jpg"
+        }
+
+        let key = [
+            record.artist,
+            record.title,
+            record.displayYear.map(String.init),
+            record.colourway,
+        ]
+            .compactMap { $0 }
+            .joined(separator: "|")
+        return "manual/\(Self.storageSlug(for: key))/primary.jpg"
+    }
+
+    private nonisolated static func stableHash(_ value: String) -> String {
+        let digest = SHA256.hash(data: Data(value.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private nonisolated static func storageSlug(for value: String) -> String {
+        let folded = value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        let scalars = folded.unicodeScalars.map { scalar -> Character in
+            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "-"
+        }
+        let slug = String(scalars)
+            .split(separator: "-")
+            .joined(separator: "-")
+        return slug.isEmpty ? stableHash(value) : slug
     }
 
     private func fetchBytes(fromURL urlString: String) async -> Data? {

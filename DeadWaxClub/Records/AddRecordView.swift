@@ -13,6 +13,7 @@ struct AddRecordView: View {
     @State private var title = ""
     @State private var artist = ""
     @State private var year = ""
+    @State private var albumYear = ""
     @State private var colourway = ""
     @State private var barcode = ""
     @State private var notes = ""
@@ -35,7 +36,11 @@ struct AddRecordView: View {
     @State private var photoPickerSelection: PhotosPickerItem?
     @State private var showCameraPicker = false
     @State private var photoError: String?
+    @State private var saveNotice: AddRecordNotice?
     @State private var successCount = 0
+    @State private var errorCount = 0
+    @State private var selectionCount = 0
+    @State private var celebrationCount = 0
     @State private var removePhotoCount = 0
 
     init(initialStatus: RecordStatus, existing: VinylRecord? = nil) {
@@ -49,7 +54,8 @@ struct AddRecordView: View {
             Section("Details") {
                 TextField("Title", text: $title)
                 TextField("Artist", text: $artist)
-                TextField("Year", text: $year).keyboardType(.numberPad)
+                TextField("Record release year", text: $year).keyboardType(.numberPad)
+                TextField("Album year", text: $albumYear).keyboardType(.numberPad)
                 TextField("Colour way", text: $colourway)
             }
             Section("Identification") {
@@ -115,7 +121,12 @@ struct AddRecordView: View {
         }
         .onAppear { populate() }
         .sensoryFeedback(.success, trigger: successCount)
+        .sensoryFeedback(.error, trigger: errorCount)
+        .sensoryFeedback(.selection, trigger: selectionCount)
         .sensoryFeedback(.impact(weight: .light), trigger: removePhotoCount)
+        .overlay {
+            ConfettiBurst(trigger: celebrationCount)
+        }
         .sheet(isPresented: $showDiscogsPicker) {
             DiscogsPickerView(initialTitle: title, initialArtist: artist) { lookup in
                 applyLookup(lookup)
@@ -135,6 +146,19 @@ struct AddRecordView: View {
         .onChange(of: photoPickerSelection) { _, newItem in
             guard let newItem else { return }
             Task { await loadPickedPhoto(newItem) }
+        }
+        .onChange(of: status) { _, _ in selectionCount += 1 }
+        .onChange(of: selectedCollectionID) { _, _ in selectionCount += 1 }
+        .alert(item: $saveNotice) { notice in
+            Alert(
+                title: Text(notice.title),
+                message: Text(notice.message),
+                dismissButton: .default(Text("OK")) {
+                    if notice.dismissAfterAcknowledgement {
+                        dismiss()
+                    }
+                }
+            )
         }
     }
 
@@ -223,6 +247,7 @@ struct AddRecordView: View {
             title = existing.title
             artist = existing.artist
             year = existing.year.map(String.init) ?? ""
+            albumYear = existing.albumYear.map(String.init) ?? ""
             colourway = existing.colourway ?? ""
             barcode = existing.barcode ?? ""
             notes = existing.notes ?? ""
@@ -236,12 +261,17 @@ struct AddRecordView: View {
         }
     }
 
+    private func collectionName(_ collectionID: String) -> String {
+        services.collections.collections.first(where: { $0.id == collectionID })?.name ?? "this collection"
+    }
+
     /// Pulled from the picker. Overwrites the user's typed facts because
     /// they explicitly chose this release; preserves notes/status.
     private func applyLookup(_ lookup: DiscogsLookup) {
         title = lookup.title
         artist = lookup.artist
         if let y = lookup.year { year = String(y) }
+        if let y = lookup.albumYear { albumYear = String(y) }
         if let cw = lookup.colourway { colourway = cw }
         if let cover = lookup.coverArtURL { coverURL = cover }
         if let bc = lookup.barcode { barcode = bc }
@@ -284,16 +314,56 @@ struct AddRecordView: View {
         let resolvedTitle = trimmedTitle.isEmpty ? (enrichment?.title ?? "") : trimmedTitle
         let resolvedArtist = trimmedArtist.isEmpty ? (enrichment?.artist ?? "") : trimmedArtist
         let resolvedYear = Int(year) ?? enrichment?.year
+        let resolvedAlbumYear = Int(albumYear) ?? enrichment?.albumYear
         let resolvedColourway = colourway.isEmpty ? enrichment?.colourway : colourway
         let resolvedCoverURL = coverURL.isEmpty ? enrichment?.coverArtURL : coverURL
         let resolvedBarcode = trimmedBarcode.isEmpty ? enrichment?.barcode : trimmedBarcode
         let resolvedReleaseID = attachedReleaseID ?? enrichment?.releaseID ?? existing?.discogsReleaseID
+        let resolvedDisplayYear = resolvedAlbumYear ?? resolvedYear
         let resolvedEstimateCents = attachedEstimateCents ?? enrichment?.estimatedPriceCents ?? existing?.estimatedPriceCents
         let resolvedEstimateCurrency = attachedEstimateCurrency ?? enrichment?.estimatedCurrency ?? existing?.estimatedPriceCurrency
         let resolvedEstimateUpdatedAt: Date? = {
             if attachedEstimateCents != nil || enrichment?.estimatedPriceCents != nil { return now }
             return existing?.estimatedPriceUpdatedAt
         }()
+
+        if existing == nil,
+           let userID = services.auth.currentUserID?.lowerUUID,
+           let duplicate = await services.records.findDuplicate(
+            title: resolvedTitle,
+            artist: resolvedArtist,
+            displayYear: resolvedDisplayYear,
+            colourway: resolvedColourway,
+            discogsReleaseID: resolvedReleaseID,
+            barcode: resolvedBarcode,
+            userID: userID,
+            collectionID: collectionID
+           ) {
+            let destinationName = collectionName(collectionID)
+            if duplicate.status == .wishlist && status == .owned {
+                await services.records.updateStatus(recordID: duplicate.id, status: .owned)
+                saveNotice = AddRecordNotice(
+                    title: "Wishlist item purchased",
+                    message: "You have purchased something from your wishlist. We moved it to Owned in \(destinationName).",
+                    dismissAfterAcknowledgement: true
+                )
+                celebrationCount += 1
+                successCount += 1
+            } else if duplicate.status == .owned {
+                saveNotice = AddRecordNotice(
+                    title: "You already own this record",
+                    message: "This record is already in \(destinationName)."
+                )
+                errorCount += 1
+            } else {
+                saveNotice = AddRecordNotice(
+                    title: "Already on your wishlist",
+                    message: "This record is already on your wishlist in \(destinationName)."
+                )
+                errorCount += 1
+            }
+            return
+        }
 
         let record = VinylRecord(
             id: existing?.id ?? UUID().lowerUUID,
@@ -302,6 +372,7 @@ struct AddRecordView: View {
             title: resolvedTitle,
             artist: resolvedArtist,
             year: resolvedYear,
+            albumYear: resolvedAlbumYear,
             colourway: resolvedColourway,
             coverArtSourceURL: resolvedCoverURL,
             coverArtStoragePath: resolvedReleaseID == existing?.discogsReleaseID ? existing?.coverArtStoragePath : nil,
@@ -360,4 +431,11 @@ struct AddRecordView: View {
         successCount += 1
         dismiss()
     }
+}
+
+private struct AddRecordNotice: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+    var dismissAfterAcknowledgement = false
 }

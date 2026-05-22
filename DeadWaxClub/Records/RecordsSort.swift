@@ -18,8 +18,8 @@ enum RecordsSort: String, CaseIterable, Identifiable {
         case .recentlyAdded:   return "Recently added"
         case .artistAZ:        return "Artist (A–Z)"
         case .titleAZ:         return "Title (A–Z)"
-        case .yearNewest:      return "Year (newest first)"
-        case .yearOldest:      return "Year (oldest first)"
+        case .yearNewest:      return "Album year (newest first)"
+        case .yearOldest:      return "Album year (oldest first)"
         case .priceHighest:    return "Estimated value (high → low)"
         case .priceLowest:     return "Estimated value (low → high)"
         }
@@ -43,7 +43,7 @@ enum RecordsGrouping: String, CaseIterable, Identifiable {
         case .none:      return "None"
         case .artist:    return "Artist"
         case .title:     return "Title"
-        case .year:      return "Year"
+        case .year:      return "Album year"
         case .recency:   return "Recency"
         case .price:     return "Estimated value"
         }
@@ -134,7 +134,7 @@ extension Array where Element == VinylRecord {
         if let result = compareDateDesc(lhs.updatedAt, rhs.updatedAt) { return result }
         if let result = compareArtistNameAsc(lhs.artist, rhs.artist) { return result }
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
-        if let result = compareYearDesc(lhs.year, rhs.year) { return result }
+        if let result = compareYearDesc(lhs.displayYear, rhs.displayYear) { return result }
         return compareIDAsc(lhs.id, rhs.id) ?? false
     }
 
@@ -142,13 +142,13 @@ extension Array where Element == VinylRecord {
         if let result = compareDateDesc(lhs.createdAt, rhs.createdAt) { return result }
         if let result = compareArtistNameAsc(lhs.artist, rhs.artist) { return result }
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
-        if let result = compareYearDesc(lhs.year, rhs.year) { return result }
+        if let result = compareYearDesc(lhs.displayYear, rhs.displayYear) { return result }
         return compareIDAsc(lhs.id, rhs.id) ?? false
     }
 
     private func compareArtistAZ(_ lhs: VinylRecord, _ rhs: VinylRecord) -> Bool {
         if let result = compareArtistNameAsc(lhs.artist, rhs.artist) { return result }
-        if let result = compareYearAsc(lhs.year, rhs.year) { return result }
+        if let result = compareYearAsc(lhs.displayYear, rhs.displayYear) { return result }
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
         if let result = compareDateDesc(lhs.createdAt, rhs.createdAt) { return result }
         return compareIDAsc(lhs.id, rhs.id) ?? false
@@ -157,12 +157,12 @@ extension Array where Element == VinylRecord {
     private func compareTitleAZ(_ lhs: VinylRecord, _ rhs: VinylRecord) -> Bool {
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
         if let result = compareArtistNameAsc(lhs.artist, rhs.artist) { return result }
-        if let result = compareYearAsc(lhs.year, rhs.year) { return result }
+        if let result = compareYearAsc(lhs.displayYear, rhs.displayYear) { return result }
         return compareIDAsc(lhs.id, rhs.id) ?? false
     }
 
     private func compareYearNewest(_ lhs: VinylRecord, _ rhs: VinylRecord) -> Bool {
-        if let result = compareYearDesc(lhs.year, rhs.year) { return result }
+        if let result = compareYearDesc(lhs.displayYear, rhs.displayYear) { return result }
         if let result = compareArtistNameAsc(lhs.artist, rhs.artist) { return result }
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
         if let result = compareDateDesc(lhs.updatedAt, rhs.updatedAt) { return result }
@@ -170,7 +170,7 @@ extension Array where Element == VinylRecord {
     }
 
     private func compareYearOldest(_ lhs: VinylRecord, _ rhs: VinylRecord) -> Bool {
-        if let result = compareYearAsc(lhs.year, rhs.year) { return result }
+        if let result = compareYearAsc(lhs.displayYear, rhs.displayYear) { return result }
         if let result = compareArtistNameAsc(lhs.artist, rhs.artist) { return result }
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
         if let result = compareDateDesc(lhs.updatedAt, rhs.updatedAt) { return result }
@@ -180,7 +180,7 @@ extension Array where Element == VinylRecord {
     private func comparePriceHighest(_ lhs: VinylRecord, _ rhs: VinylRecord) -> Bool {
         if let result = comparePriceDesc(lhs.estimatedPriceCents, rhs.estimatedPriceCents) { return result }
         if let result = compareArtistNameAsc(lhs.artist, rhs.artist) { return result }
-        if let result = compareYearDesc(lhs.year, rhs.year) { return result }
+        if let result = compareYearDesc(lhs.displayYear, rhs.displayYear) { return result }
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
         return compareIDAsc(lhs.id, rhs.id) ?? false
     }
@@ -188,7 +188,7 @@ extension Array where Element == VinylRecord {
     private func comparePriceLowest(_ lhs: VinylRecord, _ rhs: VinylRecord) -> Bool {
         if let result = comparePriceAsc(lhs.estimatedPriceCents, rhs.estimatedPriceCents) { return result }
         if let result = compareArtistNameAsc(lhs.artist, rhs.artist) { return result }
-        if let result = compareYearAsc(lhs.year, rhs.year) { return result }
+        if let result = compareYearAsc(lhs.displayYear, rhs.displayYear) { return result }
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
         return compareIDAsc(lhs.id, rhs.id) ?? false
     }
@@ -208,14 +208,14 @@ extension Array where Element == VinylRecord {
 
     private func compareArtistReleaseYearAsc(_ lhs: VinylRecord, _ rhs: VinylRecord) -> Bool {
         if let result = compareArtistNameAsc(lhs.artist, rhs.artist) { return result }
-        if let result = compareYearAsc(lhs.year, rhs.year) { return result }
+        if let result = compareYearAsc(lhs.displayYear, rhs.displayYear) { return result }
         if let result = compareDateAsc(lhs.createdAt, rhs.createdAt) { return result }
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
         return compareIDAsc(lhs.id, rhs.id) ?? false
     }
 
     private func compareReleaseYearAsc(_ lhs: VinylRecord, _ rhs: VinylRecord) -> Bool {
-        if let result = compareYearAsc(lhs.year, rhs.year) { return result }
+        if let result = compareYearAsc(lhs.displayYear, rhs.displayYear) { return result }
         if let result = compareDateAsc(lhs.createdAt, rhs.createdAt) { return result }
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
         return compareIDAsc(lhs.id, rhs.id) ?? false
@@ -224,7 +224,7 @@ extension Array where Element == VinylRecord {
     private func compareTitleGroup(_ lhs: VinylRecord, _ rhs: VinylRecord) -> Bool {
         if let result = compareStringAsc(lhs.title, rhs.title) { return result }
         if let result = compareArtistNameAsc(lhs.artist, rhs.artist) { return result }
-        if let result = compareYearAsc(lhs.year, rhs.year) { return result }
+        if let result = compareYearAsc(lhs.displayYear, rhs.displayYear) { return result }
         return compareIDAsc(lhs.id, rhs.id) ?? false
     }
 
@@ -303,7 +303,7 @@ extension Array where Element == VinylRecord {
         case .title:
             return initialGroup(for: record.title, prefix: "title", unknown: "Untitled")
         case .year:
-            guard let year = record.year else { return ("year:unknown", "Unknown year") }
+            guard let year = record.displayYear else { return ("year:unknown", "Unknown year") }
             return ("year:\(year)", String(year))
         case .price:
             return priceGroup(for: record.estimatedPriceCents)
@@ -369,7 +369,8 @@ extension Array where Element == VinylRecord {
 
     private func artistSortKey(_ artist: String) -> String {
         let trimmed = artist.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.localizedCaseInsensitiveHasPrefix("the ") else { return trimmed }
+        let prefixRange = trimmed.startIndex..<trimmed.index(trimmed.startIndex, offsetBy: Swift.min(4, trimmed.count))
+        guard trimmed.range(of: "the ", options: [.caseInsensitive], range: prefixRange) != nil else { return trimmed }
         return String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -486,7 +487,7 @@ extension Array where Element == VinylRecord {
         return filter { record in
             if !f.statuses.isEmpty && !f.statuses.contains(record.status) { return false }
             if let range = f.yearRange {
-                guard let year = record.year, range.contains(year) else { return false }
+                guard let year = record.displayYear, range.contains(year) else { return false }
             }
             if let needle = f.colourwayContains, !needle.isEmpty {
                 guard let cw = record.colourway,

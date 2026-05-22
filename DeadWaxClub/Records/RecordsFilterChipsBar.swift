@@ -34,11 +34,11 @@ struct RecordsFilterChipsBar: View {
 
     private func yearChipLabel(for range: ClosedRange<Int>) -> String {
         switch (range.lowerBound, range.upperBound) {
-        case (.min, .max):       return "Any year"
-        case (.min, let upper):  return "Up to \(upper)"
-        case (let lower, .max):  return "\(lower)+"
-        case (let lower, let upper) where lower == upper: return "Year \(lower)"
-        case (let lower, let upper): return "Year \(lower)–\(upper)"
+        case (.min, .max):       return "Any album year"
+        case (.min, let upper):  return "Albums up to \(upper)"
+        case (let lower, .max):  return "Albums \(lower)+"
+        case (let lower, let upper) where lower == upper: return "Album year \(lower)"
+        case (let lower, let upper): return "Albums \(lower)–\(upper)"
         }
     }
 

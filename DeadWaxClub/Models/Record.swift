@@ -20,6 +20,7 @@ struct VinylRecord: Identifiable, Hashable {
     var title: String
     var artist: String
     var year: Int?
+    var albumYear: Int?
     var colourway: String?
     var coverArtSourceURL: String?
     var coverArtStoragePath: String?
@@ -46,6 +47,7 @@ extension VinylRecord {
                 title: try cursor.getString(name: "title"),
                 artist: try cursor.getString(name: "artist"),
                 year: try cursor.getIntOptional(name: "year"),
+                albumYear: try cursor.getIntOptional(name: "album_year"),
                 colourway: try cursor.getStringOptional(name: "colourway"),
                 coverArtSourceURL: try cursor.getStringOptional(name: "cover_art_source_url"),
                 coverArtStoragePath: try cursor.getStringOptional(name: "cover_art_storage_path"),
@@ -62,6 +64,10 @@ extension VinylRecord {
         } catch {
             return nil
         }
+    }
+
+    var displayYear: Int? {
+        albumYear ?? year
     }
 }
 
