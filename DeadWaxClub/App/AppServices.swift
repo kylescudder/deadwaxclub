@@ -141,6 +141,7 @@ final class AppServices: ObservableObject {
     /// but no storage_path yet. Safe to call repeatedly. Detail screens call
     /// this on appear to catch any rows that weren't mirrored at save time.
     func mirrorPendingImages(forRecord recordID: String) async {
+        guard let record = await records.findByID(recordID) else { return }
         let rows: [RecordImage]
         do {
             let raw: [RecordImage?] = try await sync.database.getAll(
@@ -162,7 +163,7 @@ final class AppServices: ObservableObject {
         }
 
         for image in rows {
-            await coverArt.mirrorIfNeeded(image: image) { [weak self] newPath in
+            await coverArt.mirrorIfNeeded(image: image, record: record) { [weak self] newPath in
                 Task { @MainActor [weak self] in
                     await self?.recordImages.updateStoragePath(
                         imageID: image.id,
