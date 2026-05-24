@@ -94,9 +94,10 @@ final class NotificationsRepository: ObservableObject {
             let placeholders = Array(repeating: "?", count: recordIDs.count).joined(separator: ", ")
             let wishlistRecords = try await database.getAll(
                 sql: """
-                select id, cover_art_storage_path, cover_art_source_url
-                from records
-                where id in (\(placeholders)) and status = 'wishlist' and deleted_at is null
+                select r.id, rp.cover_art_storage_path, rp.cover_art_source_url
+                from records r
+                join record_pressings rp on rp.id = r.record_pressing_id
+                where r.id in (\(placeholders)) and r.status = 'wishlist' and r.deleted_at is null
                 """,
                 parameters: recordIDs,
                 mapper: { cursor -> WidgetWishlistRecord? in

@@ -8,17 +8,46 @@ enum IntentBridge {
     /// Set by `DeadWaxClubApp` shortly after launch.
     @MainActor static weak var services: AppServices?
 
+    private static var recordSelectSQL: String {
+        """
+        select
+          r.id,
+          r.record_pressing_id,
+          r.collection_id,
+          r.status,
+          a.title,
+          a.artist,
+          rp.year,
+          a.album_year,
+          rp.colourway,
+          rp.cover_art_source_url,
+          rp.cover_art_storage_path,
+          rp.discogs_release_id,
+          rp.barcode,
+          r.notes,
+          rp.estimated_price_cents,
+          rp.estimated_price_currency,
+          rp.estimated_price_updated_at,
+          r.created_at,
+          r.updated_at,
+          r.deleted_at
+        from records r
+        join record_pressings rp on rp.id = r.record_pressing_id
+        join albums a on a.id = rp.album_id
+        """
+    }
+
     @MainActor
     static func searchRecords(query: String) async throws -> [VinylRecordEntity] {
         guard let services else { return [] }
         let q = "%\(query.lowercased())%"
         let rows = try await services.sync.database.getAll(
             sql: """
-            select * from records
-            where deleted_at is null
-              and status = 'owned'
-              and (lower(title) like ? or lower(artist) like ? or lower(colourway) like ?)
-            order by updated_at desc
+            \(recordSelectSQL)
+            where r.deleted_at is null
+              and r.status = 'owned'
+              and (lower(a.title) like ? or lower(a.artist) like ? or lower(coalesce(rp.colourway, '')) like ?)
+            order by r.updated_at desc
             limit 25
             """,
             parameters: [q, q, q],
@@ -32,7 +61,7 @@ enum IntentBridge {
         guard let services, !ids.isEmpty else { return [] }
         let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ", ")
         let rows = try await services.sync.database.getAll(
-            sql: "select * from records where id in (\(placeholders)) and deleted_at is null",
+            sql: "\(recordSelectSQL) where r.id in (\(placeholders)) and r.deleted_at is null",
             parameters: ids,
             mapper: { VinylRecord.from(cursor: $0) }
         )
@@ -44,10 +73,10 @@ enum IntentBridge {
         guard let services else { return [] }
         let rows = try await services.sync.database.getAll(
             sql: """
-            select * from records
-            where deleted_at is null
-              and status = 'owned'
-            order by updated_at desc limit ?
+            \(recordSelectSQL)
+            where r.deleted_at is null
+              and r.status = 'owned'
+            order by r.updated_at desc limit ?
             """,
             parameters: [limit],
             mapper: { VinylRecord.from(cursor: $0) }

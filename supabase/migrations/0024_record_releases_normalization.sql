@@ -1,12 +1,3 @@
--- Normalize album-level facts and pressing-level facts away from
--- collection-scoped records.
---
--- `records` remains the per-Collection owned/wishlist row used by lists,
--- prices, notifications, and deep links.
--- `albums` stores one album title/artist/album year.
--- `record_pressings` stores each physical release/variant: colourway,
--- pressing year, Discogs release, barcode, cover art, and market estimate.
-
 create extension if not exists pgcrypto;
 
 create or replace function public.normalized_artist_sort_name(p_artist text)
@@ -142,7 +133,6 @@ with album_candidates as (
     created_at,
     updated_at
   from public.records
-  where deleted_at is null
 ),
 canonical_albums as (
   select distinct on (dedupe_key)
@@ -178,7 +168,6 @@ with pressing_candidates as (
   from public.records r
   join public.albums a
     on a.dedupe_key = public.album_dedupe_key(r.title, r.artist, r.album_year)
-  where r.deleted_at is null
 ),
 canonical_pressings as (
   select distinct on (dedupe_key)
@@ -244,7 +233,49 @@ drop policy if exists "record pressings authenticated update" on public.record_p
 create policy "record pressings authenticated update" on public.record_pressings
   for update using (auth.uid() is not null) with check (auth.uid() is not null);
 
--- Refresh PowerSync publication to include the new canonical catalog tables.
+create or replace function public.get_shared_list_records(token text)
+returns table (
+  id uuid,
+  title text,
+  artist text,
+  year int,
+  colourway text,
+  cover_art_storage_path text,
+  cover_art_source_url text,
+  "position" int
+) language sql stable security definer set search_path = public as $$
+  select r.id, a.title, a.artist, rp.year, rp.colourway,
+         rp.cover_art_storage_path, rp.cover_art_source_url, li.position
+  from public.lists l
+  join public.list_items li on li.list_id = l.id
+  join public.records r on r.id = li.record_id
+  join public.record_pressings rp on rp.id = r.record_pressing_id
+  join public.albums a on a.id = rp.album_id
+  where l.share_token = token
+    and l.share_mode = 'link_public'
+    and l.deleted_at is null
+    and r.deleted_at is null
+  order by li.position asc, li.created_at asc;
+$$;
+
+grant execute on function public.get_shared_list_records(text) to anon, authenticated;
+
+drop index if exists public.records_barcode_idx;
+
+alter table public.records
+  drop column if exists title,
+  drop column if exists artist,
+  drop column if exists year,
+  drop column if exists album_year,
+  drop column if exists colourway,
+  drop column if exists cover_art_source_url,
+  drop column if exists cover_art_storage_path,
+  drop column if exists discogs_release_id,
+  drop column if exists barcode,
+  drop column if exists estimated_price_cents,
+  drop column if exists estimated_price_currency,
+  drop column if exists estimated_price_updated_at;
+
 drop publication if exists powersync;
 
 create publication powersync for table
