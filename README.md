@@ -105,7 +105,20 @@ For lowest-price alerts:
 
 The function only sends when `is_new_low` is true (set by a `BEFORE INSERT` trigger), so you won't get spammed.
 
-### 6. Public list web viewer (optional)
+### 6. In-app subscriptions
+
+Deadwax Club uses StoreKit for the `club.deadwax.supporter.monthly` auto-renewable subscription. The bundled StoreKit configuration file lets simulator builds load the product locally; App Store Connect is still the source for TestFlight/App Store pricing.
+
+1. In App Store Connect, create an auto-renewable subscription with product ID `club.deadwax.supporter.monthly`.
+2. Set the UK monthly price to £1.99 or the nearest App Store pricing equivalent.
+3. Deploy the entitlement mirror functions:
+   ```sh
+   supabase functions deploy iap-sync-transaction
+   supabase functions deploy iap-app-store-notifications
+   ```
+4. Configure App Store Server Notifications V2 to `https://<project>.supabase.co/functions/v1/iap-app-store-notifications`.
+
+### 7. Public list web viewer (optional)
 
 A small static site under `web/` renders public-link lists in any browser and serves the Universal Links manifest. Drop it onto Netlify (or any static host) at `deadwaxclub.app`:
 
@@ -119,11 +132,11 @@ Edit `web/.well-known/apple-app-site-association` and replace `TEAMID.com.deadwa
 
 See `web/README.md` for full deployment notes.
 
-### 7. Discogs token
+### 8. Discogs token
 
 In the running app: **Settings → Discogs API**, paste a personal token from <https://www.discogs.com/settings/developers>. Stored in the keychain. The onboarding sheet prompts for this on first launch.
 
-### 8. Generate the Xcode project
+### 9. Generate the Xcode project
 
 ```sh
 xcodegen generate
@@ -136,7 +149,7 @@ In Xcode:
 - Set your Development Team under **Signing & Capabilities**.
 - Confirm the **Sign in with Apple**, **Push Notifications**, and **Associated Domains** capabilities are present (XcodeGen wires them via `DeadWaxClub.entitlements`).
 
-### 9. Build
+### 10. Build
 
 ```sh
 xcodebuild build \

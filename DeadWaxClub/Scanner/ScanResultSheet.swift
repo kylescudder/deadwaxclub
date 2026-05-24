@@ -18,6 +18,7 @@ struct ScanResultSheet: View {
     @State private var errorCount = 0
     @State private var selectionCount = 0
     @State private var celebrationCount = 0
+    @State private var showPaywall = false
 
     init(lookup: DiscogsLookup, barcode: String, existing: VinylRecord?, initialStatus: RecordStatus) {
         self.lookup = lookup
@@ -117,6 +118,9 @@ struct ScanResultSheet: View {
                     }
                 )
             }
+            .sheet(isPresented: $showPaywall) {
+                SubscriptionPaywallView()
+            }
         }
     }
 
@@ -169,6 +173,11 @@ struct ScanResultSheet: View {
             return
         }
 
+        if existing == nil, !(await services.canCreateNewRecord()) {
+            showPaywall = true
+            return
+        }
+
         let recordID = existing?.id ?? UUID().lowerUUID
         let albumDedupeKey = AlbumIdentity.dedupeKey(
             title: lookup.title,
@@ -188,6 +197,7 @@ struct ScanResultSheet: View {
             id: recordID,
             recordPressingID: recordPressingID,
             collectionID: collectionID,
+            createdBy: existing?.createdBy ?? ownerID,
             status: status,
             title: lookup.title,
             artist: normalizedArtist,

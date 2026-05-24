@@ -18,6 +18,7 @@ struct VinylRecord: Identifiable, Hashable {
     let id: String
     var recordPressingID: String?
     var collectionID: String
+    var createdBy: String?
     var status: RecordStatus
     var title: String
     var artist: String
@@ -46,6 +47,7 @@ extension VinylRecord {
                 id: try cursor.getString(name: "id"),
                 recordPressingID: try cursor.getStringOptional(name: "record_pressing_id"),
                 collectionID: try cursor.getString(name: "collection_id"),
+                createdBy: try cursor.getStringOptional(name: "created_by"),
                 status: status,
                 title: try cursor.getString(name: "title"),
                 artist: try cursor.getString(name: "artist"),

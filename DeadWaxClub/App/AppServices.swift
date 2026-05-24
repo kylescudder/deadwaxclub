@@ -4,8 +4,11 @@ import Combine
 
 @MainActor
 final class AppServices: ObservableObject {
+    static let freeRecordLimit = 5
+
     let auth: AuthClient
     let sync: PowerSyncManager
+    let billing: BillingRepository
     let discogs: DiscogsClient
     let coverArt: CoverArtCache
     let records: RecordsRepository
@@ -31,11 +34,13 @@ final class AppServices: ObservableObject {
     init() {
         let auth = AuthClient()
         let sync = PowerSyncManager(authClient: auth)
+        let billing = BillingRepository(auth: auth)
         let discogs = DiscogsClient()
         let coverArt = CoverArtCache(authClient: auth)
 
         self.auth = auth
         self.sync = sync
+        self.billing = billing
         self.discogs = discogs
         self.coverArt = coverArt
         self.records = RecordsRepository(database: sync.database)
@@ -47,13 +52,14 @@ final class AppServices: ObservableObject {
         self.notifications = NotificationsRepository(database: sync.database)
         self.onboarding = OnboardingCoordinator()
 
-        for child: any ObservableObject in [auth, sync, discogs, records, prices, recordImages, profile, lists, collections, notifications, onboarding] {
+        for child: any ObservableObject in [auth, sync, billing, discogs, records, prices, recordImages, profile, lists, collections, notifications, onboarding] {
             (child.objectWillChange as? ObservableObjectPublisher)?
                 .sink { [weak self] in self?.objectWillChange.send() }
                 .store(in: &cancellables)
         }
 
         PushManager.shared.bind(auth: auth)
+        billing.start()
         Task { await sync.startObservingAuth() }
 
         NotificationCenter.default.publisher(for: .openRecord)
@@ -86,6 +92,7 @@ final class AppServices: ObservableObject {
     private func applyAuth(state: AuthClient.State) {
         guard case let .signedIn(userID, _) = state else {
             onboarding.resetForSignOut()
+            billing.resetForSignOut()
             collections.stopWatching()
             notifications.stopWatching()
             return
@@ -95,8 +102,16 @@ final class AppServices: ObservableObject {
         lists.startWatching(userID: id)
         collections.startWatching(userID: id)
         notifications.startWatching(userID: id)
+        Task { await billing.syncEntitlements() }
         evaluateOnboarding()
         Task { await PushManager.shared.registerIfAuthorized() }
+    }
+
+    func canCreateNewRecord() async -> Bool {
+        guard !billing.isSubscribed else { return true }
+        guard let userID = auth.currentUserID?.lowerUUID else { return false }
+        let count = await records.createdRecordCount(userID: userID)
+        return count < Self.freeRecordLimit
     }
 
     private func openRecordByID(_ recordID: String) async {

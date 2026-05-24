@@ -26,6 +26,13 @@ streams:
     auto_subscribe: true
     query: select * from notifications where user_id = auth.user_id()
 
+  user_iap_entitlement:
+    auto_subscribe: true
+    query: |
+      select user_id as id, product_id, original_transaction_id, status, expires_at, revoked_at, environment, updated_at
+      from iap_entitlements
+      where user_id = auth.user_id()
+
   # --- collections (replaces single-owner user_records / user_prices) ----
   # A user belongs to one or more collections via collection_members. The
   # Records tab shows the union; an attribution chip surfaces which
