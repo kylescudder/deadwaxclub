@@ -429,8 +429,7 @@ struct AddRecordView: View {
                 do {
                     let path = try await services.coverArt.uploadUserImage(
                         bytes: data,
-                        collectionID: record.collectionID,
-                        recordID: record.id,
+                        record: record,
                         imageID: imageID
                     )
                     await services.recordImages.insertUserUpload(

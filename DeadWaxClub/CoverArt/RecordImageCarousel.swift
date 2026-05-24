@@ -33,7 +33,7 @@ struct RecordImageCarousel: View {
                             .onTapGesture { presentFullScreen(at: 0) }
                             .tag(0)
                         ForEach(Array(secondaries.enumerated()), id: \.element.id) { offset, image in
-                            SecondaryImageSlide(image: image)
+                            SecondaryImageSlide(image: image, record: record)
                                 .contentShape(Rectangle())
                                 .onTapGesture { presentFullScreen(at: offset + 1) }
                                 .tag(offset + 1)
@@ -99,6 +99,7 @@ struct RecordImageCarousel: View {
 /// source resolves.
 private struct SecondaryImageSlide: View {
     let image: RecordImage
+    let record: VinylRecord
     @EnvironmentObject private var services: AppServices
 
     @State private var phaseFailed: Bool = false
@@ -126,7 +127,7 @@ private struct SecondaryImageSlide: View {
         .task(id: image.id) {
             // First sight mirrors upstream bytes into Supabase Storage so
             // every other device fetches them without hitting Discogs.
-            await services.coverArt.mirrorIfNeeded(image: image) { newPath in
+            await services.coverArt.mirrorIfNeeded(image: image, record: record) { newPath in
                 Task { @MainActor in
                     await services.recordImages.updateStoragePath(
                         imageID: image.id, storagePath: newPath

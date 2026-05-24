@@ -3,8 +3,9 @@ import CryptoKit
 
 /// Two-tier cover art cache:
 /// 1. Local file at `<Caches>/covers/<recordID>.jpg` — read first, available fully offline.
-/// 2. Supabase Storage `covers` bucket — populated on first sight by any device, so other
-///    devices that have synced the row can pull the bytes via HTTP without hitting Discogs.
+/// 2. Supabase Storage `covers` bucket — populated on first sight under
+///    `<artist>/<record>/<pressing-id>/...`, so other devices that have synced
+///    the row can pull the bytes via HTTP without hitting Discogs.
 ///
 /// Flow on first display of a record without a local file:
 ///   - download bytes from `cover_art_storage_path` (if set) or `cover_art_source_url`
@@ -147,6 +148,7 @@ final class CoverArtCache: ObservableObject {
     /// upstream / Discogs CDN).
     func mirrorIfNeeded(
         image: RecordImage,
+        record: VinylRecord,
         onStoragePathPersisted: @escaping (String) -> Void
     ) async {
         guard image.storagePath == nil, let source = image.sourceURL else { return }
@@ -156,7 +158,7 @@ final class CoverArtCache: ObservableObject {
 
         guard let bytes = await fetchBytes(fromURL: source) else { return }
         do {
-            let path = recordImagePath(image: image)
+            let path = recordImagePath(image: image, record: record)
             try await uploadToSupabase(bytes: bytes, path: path)
             onStoragePathPersisted(path)
         } catch {
@@ -169,58 +171,50 @@ final class CoverArtCache: ObservableObject {
     /// onto the row.
     func uploadUserImage(
         bytes: Data,
-        collectionID: String,
-        recordID: String,
+        record: VinylRecord,
         imageID: String
     ) async throws -> String {
-        let path = "user/\(collectionID)/\(recordID)/\(imageID).jpg"
+        let path = "\(catalogPrefix(for: record))/user/\(imageID).jpg"
         try await uploadToSupabase(bytes: bytes, path: path)
         return path
     }
 
-    private func recordImagePath(image: RecordImage) -> String {
+    private func recordImagePath(image: RecordImage, record: VinylRecord) -> String {
         if let sourceURL = image.sourceURL {
-            return "discogs/images/\(Self.stableHash(sourceURL)).jpg"
+            return "\(catalogPrefix(for: record))/images/\(Self.stableHash(sourceURL)).jpg"
         }
-        return "user/\(image.collectionID)/\(image.recordID)/\(image.id).jpg"
+        return "\(catalogPrefix(for: record))/user/\(image.id).jpg"
     }
 
     private func primaryCoverPath(for record: VinylRecord) -> String {
-        if let pressingID = record.recordPressingID {
-            return "pressings/\(pressingID)/primary.jpg"
-        }
+        "\(catalogPrefix(for: record))/primary.jpg"
+    }
 
-        if let releaseID = record.discogsReleaseID {
-            return "discogs/releases/\(releaseID)/primary.jpg"
-        }
+    private func catalogPrefix(for record: VinylRecord) -> String {
+        let pressingID = record.recordPressingID ?? RecordPressingIdentity.stableID(for: record.pressingDedupeKey)
+        return [
+            Self.pathSlug(for: record.artist),
+            Self.pathSlug(for: record.title),
+            pressingID,
+        ].joined(separator: "/")
+    }
 
-        let key = [
-            record.artist,
-            record.title,
-            record.displayYear.map(String.init),
-            record.colourway,
-        ]
-            .compactMap { $0 }
-            .joined(separator: "|")
-        return "manual/\(Self.storageSlug(for: key))/primary.jpg"
+    private nonisolated static func pathSlug(for value: String) -> String {
+        let folded = value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        let scalars = folded.unicodeScalars.map { scalar -> Character in
+            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "_"
+        }
+        let slug = String(scalars)
+            .split(separator: "_")
+            .joined(separator: "_")
+        return slug.isEmpty ? "unknown" : slug
     }
 
     private nonisolated static func stableHash(_ value: String) -> String {
         let digest = SHA256.hash(data: Data(value.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
-    }
-
-    private nonisolated static func storageSlug(for value: String) -> String {
-        let folded = value
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
-        let scalars = folded.unicodeScalars.map { scalar -> Character in
-            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "-"
-        }
-        let slug = String(scalars)
-            .split(separator: "-")
-            .joined(separator: "-")
-        return slug.isEmpty ? stableHash(value) : slug
     }
 
     private func fetchBytes(fromURL urlString: String) async -> Data? {
