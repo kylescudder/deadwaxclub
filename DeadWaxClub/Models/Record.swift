@@ -16,7 +16,7 @@ enum RecordStatus: String, CaseIterable, Codable, Identifiable {
 
 struct VinylRecord: Identifiable, Hashable {
     let id: String
-    var recordReleaseID: String?
+    var recordPressingID: String?
     var collectionID: String
     var status: RecordStatus
     var title: String
@@ -44,7 +44,7 @@ extension VinylRecord {
             guard let status = RecordStatus(rawValue: statusRaw) else { return nil }
             return VinylRecord(
                 id: try cursor.getString(name: "id"),
-                recordReleaseID: try cursor.getStringOptional(name: "record_release_id"),
+                recordPressingID: try cursor.getStringOptional(name: "record_pressing_id"),
                 collectionID: try cursor.getString(name: "collection_id"),
                 status: status,
                 title: try cursor.getString(name: "title"),
@@ -74,14 +74,22 @@ extension VinylRecord {
     }
 
     var coverCacheID: String {
-        recordReleaseID ?? id
+        recordPressingID ?? id
     }
 
-    var releaseDedupeKey: String {
-        RecordReleaseIdentity.dedupeKey(
+    var albumDedupeKey: String {
+        AlbumIdentity.dedupeKey(
             title: title,
             artist: artist,
-            displayYear: displayYear,
+            albumYear: albumYear
+        )
+    }
+
+    var pressingDedupeKey: String {
+        let albumID = AlbumIdentity.stableID(for: albumDedupeKey)
+        return RecordPressingIdentity.dedupeKey(
+            albumID: albumID,
+            year: year,
             colourway: colourway,
             discogsReleaseID: discogsReleaseID,
             barcode: barcode
@@ -89,11 +97,29 @@ extension VinylRecord {
     }
 }
 
-enum RecordReleaseIdentity {
+enum AlbumIdentity {
     static func dedupeKey(
         title: String,
         artist: String,
-        displayYear: Int?,
+        albumYear: Int?
+    ) -> String {
+        [
+            "album",
+            normalize(title),
+            normalizeArtist(artist),
+            albumYear.map(String.init) ?? "",
+        ].joined(separator: ":")
+    }
+
+    static func stableID(for dedupeKey: String) -> String {
+        StableCatalogIdentity.stableID(for: dedupeKey)
+    }
+}
+
+enum RecordPressingIdentity {
+    static func dedupeKey(
+        albumID: String,
+        year: Int?,
         colourway: String?,
         discogsReleaseID: Int64?,
         barcode: String?
@@ -108,14 +134,19 @@ enum RecordReleaseIdentity {
         }
 
         return [
-            "manual",
-            normalize(title),
-            normalizeArtist(artist),
+            "pressing",
+            albumID,
             normalize(colourway),
-            displayYear.map(String.init) ?? "",
+            year.map(String.init) ?? "",
         ].joined(separator: ":")
     }
 
+    static func stableID(for dedupeKey: String) -> String {
+        StableCatalogIdentity.stableID(for: dedupeKey)
+    }
+}
+
+private enum StableCatalogIdentity {
     static func stableID(for dedupeKey: String) -> String {
         let digest = SHA256.hash(data: Data(dedupeKey.utf8))
         var bytes = Array(digest.prefix(16))
@@ -131,19 +162,19 @@ enum RecordReleaseIdentity {
             bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
         )
     }
+}
 
-    private static func normalize(_ value: String?) -> String {
-        (value ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
-    }
+private func normalize(_ value: String?) -> String {
+    (value ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        .lowercased()
+}
 
-    private static func normalizeArtist(_ value: String?) -> String {
-        ArtistNameNormalizer.discogsSortName(value ?? "")
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
-    }
+private func normalizeArtist(_ value: String?) -> String {
+    ArtistNameNormalizer.discogsSortName(value ?? "")
+        .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        .lowercased()
 }
 
 enum ArtistNameNormalizer {

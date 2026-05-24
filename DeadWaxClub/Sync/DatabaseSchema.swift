@@ -17,7 +17,7 @@ enum DatabaseSchema {
     static let records = Table(
         name: "records",
         columns: [
-            Column.text("record_release_id"),
+            Column.text("record_pressing_id"),
             Column.text("collection_id"),
             Column.text("status"),
             Column.text("title"),
@@ -45,14 +45,28 @@ enum DatabaseSchema {
         ]
     )
 
-    static let recordReleases = Table(
-        name: "record_releases",
+    static let albums = Table(
+        name: "albums",
         columns: [
             Column.text("dedupe_key"),
             Column.text("title"),
             Column.text("artist"),
-            Column.integer("year"),
             Column.integer("album_year"),
+            Column.text("created_at"),
+            Column.text("updated_at"),
+        ],
+        indexes: [
+            Index(name: "albums_dedupe",
+                  columns: [IndexedColumn.ascending("dedupe_key")]),
+        ]
+    )
+
+    static let recordPressings = Table(
+        name: "record_pressings",
+        columns: [
+            Column.text("album_id"),
+            Column.text("dedupe_key"),
+            Column.integer("year"),
             Column.text("colourway"),
             Column.text("cover_art_source_url"),
             Column.text("cover_art_storage_path"),
@@ -65,8 +79,10 @@ enum DatabaseSchema {
             Column.text("updated_at"),
         ],
         indexes: [
-            Index(name: "record_releases_dedupe",
+            Index(name: "record_pressings_dedupe",
                   columns: [IndexedColumn.ascending("dedupe_key")]),
+            Index(name: "record_pressings_album",
+                  columns: [IndexedColumn.ascending("album_id")]),
         ]
     )
 
@@ -246,7 +262,7 @@ enum DatabaseSchema {
     )
 
     static let schema = Schema(tables: [
-        profiles, records, recordReleases, priceEntries, recordImages,
+        profiles, records, albums, recordPressings, priceEntries, recordImages,
         collections, collectionMembers, collectionPendingInvites,
         notifications,
         lists, listItems, listMembers, pendingInvites,

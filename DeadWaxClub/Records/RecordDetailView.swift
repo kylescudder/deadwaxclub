@@ -504,7 +504,7 @@ struct RecordDetailView: View {
         if let cover = lookup.coverArtURL { updated.coverArtSourceURL = cover }
         if let bc = lookup.barcode { updated.barcode = bc }
         updated.discogsReleaseID = lookup.releaseID
-        updated.recordReleaseID = nil
+        updated.recordPressingID = nil
         updated.coverArtStoragePath = nil
         if let cents = lookup.estimatedPriceCents {
             updated.estimatedPriceCents = cents

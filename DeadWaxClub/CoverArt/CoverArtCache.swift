@@ -186,8 +186,8 @@ final class CoverArtCache: ObservableObject {
     }
 
     private func primaryCoverPath(for record: VinylRecord) -> String {
-        if let releaseID = record.recordReleaseID {
-            return "releases/\(releaseID)/primary.jpg"
+        if let pressingID = record.recordPressingID {
+            return "pressings/\(pressingID)/primary.jpg"
         }
 
         if let releaseID = record.discogsReleaseID {

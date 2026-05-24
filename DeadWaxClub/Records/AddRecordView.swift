@@ -322,15 +322,20 @@ struct AddRecordView: View {
         let resolvedBarcode = trimmedBarcode.isEmpty ? enrichment?.barcode : trimmedBarcode
         let resolvedReleaseID = attachedReleaseID ?? enrichment?.releaseID ?? existing?.discogsReleaseID
         let resolvedDisplayYear = resolvedAlbumYear ?? resolvedYear
-        let resolvedDedupeKey = RecordReleaseIdentity.dedupeKey(
+        let resolvedAlbumDedupeKey = AlbumIdentity.dedupeKey(
             title: resolvedTitle,
             artist: resolvedArtist,
-            displayYear: resolvedDisplayYear,
+            albumYear: resolvedAlbumYear
+        )
+        let resolvedAlbumID = AlbumIdentity.stableID(for: resolvedAlbumDedupeKey)
+        let resolvedPressingDedupeKey = RecordPressingIdentity.dedupeKey(
+            albumID: resolvedAlbumID,
+            year: resolvedYear,
             colourway: resolvedColourway,
             discogsReleaseID: resolvedReleaseID,
             barcode: resolvedBarcode
         )
-        let resolvedRecordReleaseID = existing?.releaseDedupeKey == resolvedDedupeKey ? existing?.recordReleaseID : nil
+        let resolvedRecordPressingID = existing?.pressingDedupeKey == resolvedPressingDedupeKey ? existing?.recordPressingID : nil
         let resolvedEstimateCents = attachedEstimateCents ?? enrichment?.estimatedPriceCents ?? existing?.estimatedPriceCents
         let resolvedEstimateCurrency = attachedEstimateCurrency ?? enrichment?.estimatedCurrency ?? existing?.estimatedPriceCurrency
         let resolvedEstimateUpdatedAt: Date? = {
@@ -378,7 +383,7 @@ struct AddRecordView: View {
 
         let record = VinylRecord(
             id: existing?.id ?? UUID().lowerUUID,
-            recordReleaseID: resolvedRecordReleaseID,
+            recordPressingID: resolvedRecordPressingID,
             collectionID: collectionID,
             status: status,
             title: resolvedTitle,

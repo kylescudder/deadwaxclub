@@ -170,18 +170,23 @@ struct ScanResultSheet: View {
         }
 
         let recordID = existing?.id ?? UUID().lowerUUID
-        let dedupeKey = RecordReleaseIdentity.dedupeKey(
+        let albumDedupeKey = AlbumIdentity.dedupeKey(
             title: lookup.title,
             artist: normalizedArtist,
-            displayYear: lookup.albumYear ?? lookup.year,
+            albumYear: lookup.albumYear
+        )
+        let albumID = AlbumIdentity.stableID(for: albumDedupeKey)
+        let pressingDedupeKey = RecordPressingIdentity.dedupeKey(
+            albumID: albumID,
+            year: lookup.year,
             colourway: lookup.colourway,
             discogsReleaseID: lookup.releaseID,
             barcode: lookup.barcode ?? barcode
         )
-        let recordReleaseID = existing?.releaseDedupeKey == dedupeKey ? existing?.recordReleaseID : nil
+        let recordPressingID = existing?.pressingDedupeKey == pressingDedupeKey ? existing?.recordPressingID : nil
         let record = VinylRecord(
             id: recordID,
-            recordReleaseID: recordReleaseID,
+            recordPressingID: recordPressingID,
             collectionID: collectionID,
             status: status,
             title: lookup.title,

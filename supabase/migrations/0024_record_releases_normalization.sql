@@ -1,16 +1,64 @@
--- Normalize release-level facts away from collection-scoped records.
+-- Normalize album-level facts and pressing-level facts away from
+-- collection-scoped records.
 --
 -- `records` remains the per-Collection owned/wishlist row used by lists,
--- prices, notifications, and deep links. `record_releases` becomes the
--- canonical release/value row shared by those collection entries.
+-- prices, notifications, and deep links.
+-- `albums` stores one album title/artist/album year.
+-- `record_pressings` stores each physical release/variant: colourway,
+-- pressing year, Discogs release, barcode, cover art, and market estimate.
 
 create extension if not exists pgcrypto;
 
-create or replace function public.record_release_dedupe_key(
+create or replace function public.normalized_artist_sort_name(p_artist text)
+returns text
+language sql
+immutable
+as $$
+  select regexp_replace(
+    regexp_replace(lower(btrim(coalesce(p_artist, ''))), '\s+\([0-9]+\)$', ''),
+    '^the\s+',
+    ''
+  );
+$$;
+
+create or replace function public.stable_catalog_uuid(p_key text)
+returns uuid
+language sql
+immutable
+as $$
+  with h as (
+    select encode(digest(p_key, 'sha256'), 'hex') as value
+  )
+  select (
+    substr(value, 1, 8) || '-' ||
+    substr(value, 9, 4) || '-' ||
+    '5' || substr(value, 14, 3) || '-' ||
+    '8' || substr(value, 18, 3) || '-' ||
+    substr(value, 21, 12)
+  )::uuid
+  from h;
+$$;
+
+create or replace function public.album_dedupe_key(
   p_title text,
   p_artist text,
-  p_album_year int,
-  p_year int,
+  p_album_year int
+) returns text
+language sql
+immutable
+as $$
+  select concat_ws(
+    ':',
+    'album',
+    lower(btrim(coalesce(p_title, ''))),
+    public.normalized_artist_sort_name(p_artist),
+    coalesce(p_album_year::text, '')
+  );
+$$;
+
+create or replace function public.record_pressing_dedupe_key(
+  p_album_id uuid,
+  p_record_year int,
   p_colourway text,
   p_discogs_release_id bigint,
   p_barcode text
@@ -23,44 +71,37 @@ as $$
     when nullif(btrim(coalesce(p_barcode, '')), '') is not null then 'barcode:' || lower(btrim(p_barcode))
     else concat_ws(
       ':',
-      'manual',
-      lower(btrim(coalesce(p_title, ''))),
-      regexp_replace(
-        regexp_replace(lower(btrim(coalesce(p_artist, ''))), '\s+\([0-9]+\)$', ''),
-        '^the\s+',
-        ''
-      ),
+      'pressing',
+      p_album_id::text,
       lower(btrim(coalesce(p_colourway, ''))),
-      coalesce(coalesce(p_album_year, p_year)::text, '')
+      coalesce(p_record_year::text, '')
     )
   end;
 $$;
 
-create or replace function public.record_release_uuid(p_dedupe_key text)
-returns uuid
-language sql
-immutable
-as $$
-  with h as (
-    select encode(digest(p_dedupe_key, 'sha256'), 'hex') as value
-  )
-  select (
-    substr(value, 1, 8) || '-' ||
-    substr(value, 9, 4) || '-' ||
-    '5' || substr(value, 14, 3) || '-' ||
-    '8' || substr(value, 18, 3) || '-' ||
-    substr(value, 21, 12)
-  )::uuid
-  from h;
-$$;
-
-create table if not exists public.record_releases (
+create table if not exists public.albums (
   id uuid primary key default gen_random_uuid(),
   dedupe_key text not null unique,
   title text not null,
   artist text not null,
-  year int,
   album_year int,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists albums_artist_title_idx
+  on public.albums (artist, title);
+
+drop trigger if exists albums_touch_updated_at on public.albums;
+create trigger albums_touch_updated_at
+  before update on public.albums
+  for each row execute function public.touch_updated_at();
+
+create table if not exists public.record_pressings (
+  id uuid primary key default gen_random_uuid(),
+  album_id uuid not null references public.albums(id) on delete restrict,
+  dedupe_key text not null unique,
+  year int,
   colourway text,
   cover_art_source_url text,
   cover_art_storage_path text,
@@ -73,100 +114,144 @@ create table if not exists public.record_releases (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists record_releases_discogs_release_idx
-  on public.record_releases (discogs_release_id)
+create index if not exists record_pressings_album_idx
+  on public.record_pressings (album_id);
+
+create index if not exists record_pressings_discogs_release_idx
+  on public.record_pressings (discogs_release_id)
   where discogs_release_id is not null;
 
-create index if not exists record_releases_barcode_idx
-  on public.record_releases (barcode)
+create index if not exists record_pressings_barcode_idx
+  on public.record_pressings (barcode)
   where barcode is not null;
 
-drop trigger if exists record_releases_touch_updated_at on public.record_releases;
-create trigger record_releases_touch_updated_at
-  before update on public.record_releases
+drop trigger if exists record_pressings_touch_updated_at on public.record_pressings;
+create trigger record_pressings_touch_updated_at
+  before update on public.record_pressings
   for each row execute function public.touch_updated_at();
 
 alter table public.records
-  add column if not exists record_release_id uuid references public.record_releases(id) on delete restrict;
+  add column if not exists record_pressing_id uuid references public.record_pressings(id) on delete restrict;
 
-with candidates as (
+with album_candidates as (
   select
-    public.record_release_dedupe_key(
-      title, artist, album_year, year, colourway, discogs_release_id, barcode
-    ) as dedupe_key,
+    public.album_dedupe_key(title, artist, album_year) as dedupe_key,
     title,
-    artist,
-    year,
+    regexp_replace(artist, '\s+\([0-9]+\)$', '') as artist,
     album_year,
-    colourway,
-    cover_art_source_url,
-    cover_art_storage_path,
-    discogs_release_id,
-    barcode,
-    estimated_price_cents,
-    estimated_price_currency,
-    estimated_price_updated_at,
     created_at,
     updated_at
   from public.records
   where deleted_at is null
 ),
-canonical as (
+canonical_albums as (
   select distinct on (dedupe_key)
-    public.record_release_uuid(dedupe_key) as id,
+    public.stable_catalog_uuid(dedupe_key) as id,
     *
-  from candidates
+  from album_candidates
   order by dedupe_key, updated_at desc
 )
-insert into public.record_releases (
-  id, dedupe_key, title, artist, year, album_year, colourway,
+insert into public.albums (
+  id, dedupe_key, title, artist, album_year, created_at, updated_at
+)
+select id, dedupe_key, title, artist, album_year, created_at, updated_at
+from canonical_albums
+on conflict (dedupe_key) do nothing;
+
+with pressing_candidates as (
+  select
+    a.id as album_id,
+    public.record_pressing_dedupe_key(
+      a.id, r.year, r.colourway, r.discogs_release_id, r.barcode
+    ) as dedupe_key,
+    r.year,
+    r.colourway,
+    r.cover_art_source_url,
+    r.cover_art_storage_path,
+    r.discogs_release_id,
+    r.barcode,
+    r.estimated_price_cents,
+    r.estimated_price_currency,
+    r.estimated_price_updated_at,
+    r.created_at,
+    r.updated_at
+  from public.records r
+  join public.albums a
+    on a.dedupe_key = public.album_dedupe_key(r.title, r.artist, r.album_year)
+  where r.deleted_at is null
+),
+canonical_pressings as (
+  select distinct on (dedupe_key)
+    public.stable_catalog_uuid(dedupe_key) as id,
+    *
+  from pressing_candidates
+  order by dedupe_key, updated_at desc
+)
+insert into public.record_pressings (
+  id, album_id, dedupe_key, year, colourway,
   cover_art_source_url, cover_art_storage_path,
   discogs_release_id, barcode,
   estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
   created_at, updated_at
 )
 select
-  id, dedupe_key, title, artist, year, album_year, colourway,
+  id, album_id, dedupe_key, year, colourway,
   cover_art_source_url, cover_art_storage_path,
   discogs_release_id, barcode,
   estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
   created_at, updated_at
-from canonical
+from canonical_pressings
 on conflict (dedupe_key) do nothing;
 
 update public.records r
-set record_release_id = rr.id
-from public.record_releases rr
-where r.record_release_id is null
-  and rr.dedupe_key = public.record_release_dedupe_key(
-    r.title, r.artist, r.album_year, r.year, r.colourway, r.discogs_release_id, r.barcode
+set record_pressing_id = rp.id
+from public.albums a
+join public.record_pressings rp on rp.album_id = a.id
+where r.record_pressing_id is null
+  and a.dedupe_key = public.album_dedupe_key(r.title, r.artist, r.album_year)
+  and rp.dedupe_key = public.record_pressing_dedupe_key(
+    a.id, r.year, r.colourway, r.discogs_release_id, r.barcode
   );
 
-create index if not exists records_record_release_idx
-  on public.records (record_release_id)
+create index if not exists records_record_pressing_idx
+  on public.records (record_pressing_id)
   where deleted_at is null;
 
-alter table public.record_releases enable row level security;
+alter table public.albums enable row level security;
+alter table public.record_pressings enable row level security;
 
-drop policy if exists "record releases authenticated read" on public.record_releases;
-create policy "record releases authenticated read" on public.record_releases
+drop policy if exists "albums authenticated read" on public.albums;
+create policy "albums authenticated read" on public.albums
   for select using (auth.uid() is not null);
 
-drop policy if exists "record releases authenticated insert" on public.record_releases;
-create policy "record releases authenticated insert" on public.record_releases
+drop policy if exists "albums authenticated insert" on public.albums;
+create policy "albums authenticated insert" on public.albums
   for insert with check (auth.uid() is not null);
 
-drop policy if exists "record releases authenticated update" on public.record_releases;
-create policy "record releases authenticated update" on public.record_releases
+drop policy if exists "albums authenticated update" on public.albums;
+create policy "albums authenticated update" on public.albums
   for update using (auth.uid() is not null) with check (auth.uid() is not null);
 
--- Refresh PowerSync publication to include the new canonical table.
+drop policy if exists "record pressings authenticated read" on public.record_pressings;
+create policy "record pressings authenticated read" on public.record_pressings
+  for select using (auth.uid() is not null);
+
+drop policy if exists "record pressings authenticated insert" on public.record_pressings;
+create policy "record pressings authenticated insert" on public.record_pressings
+  for insert with check (auth.uid() is not null);
+
+drop policy if exists "record pressings authenticated update" on public.record_pressings;
+create policy "record pressings authenticated update" on public.record_pressings
+  for update using (auth.uid() is not null) with check (auth.uid() is not null);
+
+-- Refresh PowerSync publication to include the new canonical catalog tables.
 drop publication if exists powersync;
 
 create publication powersync for table
   public.profiles,
   public.records,
-  public.record_releases,
+  public.albums,
+  public.record_pressings,
   public.price_entries,
   public.lists,
   public.list_items,
