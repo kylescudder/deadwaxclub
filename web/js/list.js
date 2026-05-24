@@ -62,7 +62,7 @@ function renderList(info, records) {
         ? `Shared by ${escape(info.owner_display_name)}`
         : "";
     const description = info.description
-        ? `<p class="muted" style="margin-top:6px;">${escape(info.description)}</p>`
+        ? `<p class="list-copy">${escape(info.description)}</p>`
         : "";
     const tiles = records
         .map((r) => {
@@ -87,23 +87,23 @@ function renderList(info, records) {
         .join("");
 
     main.innerHTML = `
-        <div class="card">
-            <div class="card-header">
-                <h2>${escape(info.name)}</h2>
-                <span class="muted">${records.length} record${records.length === 1 ? "" : "s"}</span>
+        <section class="list-hero">
+            <p class="list-kicker">${owner ? owner : "Shared list"}</p>
+            <div class="list-title-row">
+                <h1>${escape(info.name)}</h1>
+                <span class="record-count">${records.length} record${records.length === 1 ? "" : "s"}</span>
             </div>
-            ${owner ? `<p class="muted">${owner}</p>` : ""}
             ${description}
-            <div class="button-row" style="justify-content:flex-start;margin-top:16px;">
+            <div class="button-row list-actions">
                 <a class="button button-primary" href="deadwaxclub://list/${encodeURIComponent(token)}">Open in Deadwax Club</a>
                 <a class="button button-secondary" href="/">Get the app</a>
             </div>
-        </div>
+        </section>
 
         ${
             records.length === 0
                 ? `<div class="state"><h2>Empty list</h2><p>The owner hasn't added any records yet.</p></div>`
-                : `<div class="records" style="margin-top:24px;">${tiles}</div>`
+                : `<section class="records">${tiles}</section>`
         }
     `;
 }
