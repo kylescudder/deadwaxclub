@@ -497,13 +497,14 @@ struct RecordDetailView: View {
     private func applyDiscogsLookup(_ lookup: DiscogsLookup) async {
         var updated = currentRecord
         updated.title = lookup.title
-        updated.artist = lookup.artist
+        updated.artist = ArtistNameNormalizer.displayName(lookup.artist)
         if let y = lookup.year { updated.year = y }
         if let y = lookup.albumYear { updated.albumYear = y }
         if let cw = lookup.colourway { updated.colourway = cw }
         if let cover = lookup.coverArtURL { updated.coverArtSourceURL = cover }
         if let bc = lookup.barcode { updated.barcode = bc }
         updated.discogsReleaseID = lookup.releaseID
+        updated.recordReleaseID = nil
         updated.coverArtStoragePath = nil
         if let cents = lookup.estimatedPriceCents {
             updated.estimatedPriceCents = cents

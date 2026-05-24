@@ -269,7 +269,7 @@ struct AddRecordView: View {
     /// they explicitly chose this release; preserves notes/status.
     private func applyLookup(_ lookup: DiscogsLookup) {
         title = lookup.title
-        artist = lookup.artist
+        artist = ArtistNameNormalizer.displayName(lookup.artist)
         if let y = lookup.year { year = String(y) }
         if let y = lookup.albumYear { albumYear = String(y) }
         if let cw = lookup.colourway { colourway = cw }
@@ -312,7 +312,9 @@ struct AddRecordView: View {
         let trimmedArtist = artist.trimmingCharacters(in: .whitespaces)
 
         let resolvedTitle = trimmedTitle.isEmpty ? (enrichment?.title ?? "") : trimmedTitle
-        let resolvedArtist = trimmedArtist.isEmpty ? (enrichment?.artist ?? "") : trimmedArtist
+        let resolvedArtist = ArtistNameNormalizer.displayName(
+            trimmedArtist.isEmpty ? (enrichment?.artist ?? "") : trimmedArtist
+        )
         let resolvedYear = Int(year) ?? enrichment?.year
         let resolvedAlbumYear = Int(albumYear) ?? enrichment?.albumYear
         let resolvedColourway = colourway.isEmpty ? enrichment?.colourway : colourway
@@ -320,6 +322,15 @@ struct AddRecordView: View {
         let resolvedBarcode = trimmedBarcode.isEmpty ? enrichment?.barcode : trimmedBarcode
         let resolvedReleaseID = attachedReleaseID ?? enrichment?.releaseID ?? existing?.discogsReleaseID
         let resolvedDisplayYear = resolvedAlbumYear ?? resolvedYear
+        let resolvedDedupeKey = RecordReleaseIdentity.dedupeKey(
+            title: resolvedTitle,
+            artist: resolvedArtist,
+            displayYear: resolvedDisplayYear,
+            colourway: resolvedColourway,
+            discogsReleaseID: resolvedReleaseID,
+            barcode: resolvedBarcode
+        )
+        let resolvedRecordReleaseID = existing?.releaseDedupeKey == resolvedDedupeKey ? existing?.recordReleaseID : nil
         let resolvedEstimateCents = attachedEstimateCents ?? enrichment?.estimatedPriceCents ?? existing?.estimatedPriceCents
         let resolvedEstimateCurrency = attachedEstimateCurrency ?? enrichment?.estimatedCurrency ?? existing?.estimatedPriceCurrency
         let resolvedEstimateUpdatedAt: Date? = {
@@ -367,6 +378,7 @@ struct AddRecordView: View {
 
         let record = VinylRecord(
             id: existing?.id ?? UUID().lowerUUID,
+            recordReleaseID: resolvedRecordReleaseID,
             collectionID: collectionID,
             status: status,
             title: resolvedTitle,

@@ -3,6 +3,7 @@ import SwiftUI
 struct ConfettiBurst: View {
     let trigger: Int
     @State private var isActive = false
+    @State private var isVisible = false
 
     private let pieces: [ConfettiPiece] = (0..<34).map { index in
         ConfettiPiece(index: index)
@@ -20,7 +21,7 @@ struct ConfettiBurst: View {
                             x: isActive ? piece.xTravel(in: proxy.size.width) : 0,
                             y: isActive ? piece.yTravel(in: proxy.size.height) : -40
                         )
-                        .opacity(isActive ? 0 : 1)
+                        .opacity(isVisible ? (isActive ? 0 : 1) : 0)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -30,8 +31,13 @@ struct ConfettiBurst: View {
         .onChange(of: trigger) { _, _ in
             guard trigger > 0 else { return }
             isActive = false
+            isVisible = true
             withAnimation(.easeOut(duration: 0.9)) {
                 isActive = true
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(0.95))
+                isVisible = false
             }
         }
     }

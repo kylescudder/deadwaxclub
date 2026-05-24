@@ -33,7 +33,7 @@ final class CoverArtCache: ObservableObject {
     ///   2. Supabase Storage public URL if `cover_art_storage_path` is set
     ///   3. original Discogs URL
     func displayURL(for record: VinylRecord) -> URL? {
-        let local = Self.localFile(for: record.id)
+        let local = Self.localFile(for: record.coverCacheID)
         if fileManager.fileExists(atPath: local.path) {
             return local
         }
@@ -52,7 +52,7 @@ final class CoverArtCache: ObservableObject {
         inFlight.insert(record.id)
         defer { inFlight.remove(record.id) }
 
-        let localFile = Self.localFile(for: record.id)
+        let localFile = Self.localFile(for: record.coverCacheID)
         let needsLocal = !fileManager.fileExists(atPath: localFile.path)
         let needsRemote = record.coverArtStoragePath == nil
 
@@ -186,6 +186,10 @@ final class CoverArtCache: ObservableObject {
     }
 
     private func primaryCoverPath(for record: VinylRecord) -> String {
+        if let releaseID = record.recordReleaseID {
+            return "releases/\(releaseID)/primary.jpg"
+        }
+
         if let releaseID = record.discogsReleaseID {
             return "discogs/releases/\(releaseID)/primary.jpg"
         }

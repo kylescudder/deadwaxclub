@@ -57,6 +57,12 @@ streams:
       select * from records
       where collection_id in (select collection_id from collection_members where user_id = auth.user_id())
 
+  # Canonical release facts are not user-specific. Syncing the catalog avoids
+  # edition-3 nested subqueries while keeping collection ownership on `records`.
+  record_releases:
+    auto_subscribe: true
+    query: select * from record_releases
+
   member_prices:
     auto_subscribe: true
     query: |

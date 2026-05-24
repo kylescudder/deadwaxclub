@@ -1,5 +1,6 @@
 import Foundation
 import PowerSync
+import CryptoKit
 
 enum RecordStatus: String, CaseIterable, Codable, Identifiable {
     case owned, wishlist
@@ -15,6 +16,7 @@ enum RecordStatus: String, CaseIterable, Codable, Identifiable {
 
 struct VinylRecord: Identifiable, Hashable {
     let id: String
+    var recordReleaseID: String?
     var collectionID: String
     var status: RecordStatus
     var title: String
@@ -42,6 +44,7 @@ extension VinylRecord {
             guard let status = RecordStatus(rawValue: statusRaw) else { return nil }
             return VinylRecord(
                 id: try cursor.getString(name: "id"),
+                recordReleaseID: try cursor.getStringOptional(name: "record_release_id"),
                 collectionID: try cursor.getString(name: "collection_id"),
                 status: status,
                 title: try cursor.getString(name: "title"),
@@ -68,6 +71,109 @@ extension VinylRecord {
 
     var displayYear: Int? {
         albumYear ?? year
+    }
+
+    var coverCacheID: String {
+        recordReleaseID ?? id
+    }
+
+    var releaseDedupeKey: String {
+        RecordReleaseIdentity.dedupeKey(
+            title: title,
+            artist: artist,
+            displayYear: displayYear,
+            colourway: colourway,
+            discogsReleaseID: discogsReleaseID,
+            barcode: barcode
+        )
+    }
+}
+
+enum RecordReleaseIdentity {
+    static func dedupeKey(
+        title: String,
+        artist: String,
+        displayYear: Int?,
+        colourway: String?,
+        discogsReleaseID: Int64?,
+        barcode: String?
+    ) -> String {
+        if let discogsReleaseID {
+            return "discogs:\(discogsReleaseID)"
+        }
+
+        let normalizedBarcode = normalize(barcode)
+        if !normalizedBarcode.isEmpty {
+            return "barcode:\(normalizedBarcode)"
+        }
+
+        return [
+            "manual",
+            normalize(title),
+            normalizeArtist(artist),
+            normalize(colourway),
+            displayYear.map(String.init) ?? "",
+        ].joined(separator: ":")
+    }
+
+    static func stableID(for dedupeKey: String) -> String {
+        let digest = SHA256.hash(data: Data(dedupeKey.utf8))
+        var bytes = Array(digest.prefix(16))
+        bytes[6] = (bytes[6] & 0x0f) | 0x50
+        bytes[8] = (bytes[8] & 0x0f) | 0x80
+
+        return String(
+            format: "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5],
+            bytes[6], bytes[7],
+            bytes[8], bytes[9],
+            bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        )
+    }
+
+    private static func normalize(_ value: String?) -> String {
+        (value ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+    }
+
+    private static func normalizeArtist(_ value: String?) -> String {
+        ArtistNameNormalizer.discogsSortName(value ?? "")
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+    }
+}
+
+enum ArtistNameNormalizer {
+    static func discogsSortName(_ artist: String) -> String {
+        let withoutNumericSuffix = stripTrailingDiscogsNumericSuffix(from: artist)
+        let trimmed = withoutNumericSuffix.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefixRange = trimmed.startIndex..<trimmed.index(trimmed.startIndex, offsetBy: Swift.min(4, trimmed.count))
+        guard trimmed.range(of: "the ", options: [.caseInsensitive], range: prefixRange) != nil else {
+            return trimmed
+        }
+        return String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func displayName(_ artist: String) -> String {
+        stripTrailingDiscogsNumericSuffix(from: artist)
+    }
+
+    private static func stripTrailingDiscogsNumericSuffix(from artist: String) -> String {
+        var trimmed = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.last == ")",
+              let openParen = trimmed.lastIndex(of: "(") {
+            let suffixStart = trimmed.index(after: openParen)
+            let suffixEnd = trimmed.index(before: trimmed.endIndex)
+            let suffix = trimmed[suffixStart..<suffixEnd]
+            guard !suffix.isEmpty, suffix.allSatisfy(\.isNumber) else { break }
+            let beforeSuffix = trimmed[..<openParen].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !beforeSuffix.isEmpty else { break }
+            trimmed = beforeSuffix
+        }
+        return trimmed
     }
 }
 

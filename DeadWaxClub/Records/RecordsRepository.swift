@@ -15,6 +15,34 @@ final class RecordsRepository: ObservableObject {
 
     deinit { watchTask?.cancel() }
 
+    private var recordSelectSQL: String {
+        """
+        select
+          r.id,
+          r.record_release_id,
+          r.collection_id,
+          r.status,
+          coalesce(rr.title, r.title) as title,
+          coalesce(rr.artist, r.artist) as artist,
+          coalesce(rr.year, r.year) as year,
+          coalesce(rr.album_year, r.album_year) as album_year,
+          coalesce(rr.colourway, r.colourway) as colourway,
+          coalesce(rr.cover_art_source_url, r.cover_art_source_url) as cover_art_source_url,
+          coalesce(rr.cover_art_storage_path, r.cover_art_storage_path) as cover_art_storage_path,
+          coalesce(rr.discogs_release_id, r.discogs_release_id) as discogs_release_id,
+          coalesce(rr.barcode, r.barcode) as barcode,
+          r.notes,
+          coalesce(rr.estimated_price_cents, r.estimated_price_cents) as estimated_price_cents,
+          coalesce(rr.estimated_price_currency, r.estimated_price_currency) as estimated_price_currency,
+          coalesce(rr.estimated_price_updated_at, r.estimated_price_updated_at) as estimated_price_updated_at,
+          r.created_at,
+          r.updated_at,
+          r.deleted_at
+        from records r
+        left join record_releases rr on rr.id = r.record_release_id
+        """
+    }
+
     /// Watch records the user can see — the union across every Collection
     /// they belong to (`collection_members.user_id = ?`). When `collectionID`
     /// is set, narrow further to that single Collection.
@@ -27,18 +55,18 @@ final class RecordsRepository: ObservableObject {
             let params: [Any?]
             if let collectionID {
                 sql = """
-                    select * from records
-                    where collection_id = ?
-                      and collection_id in (select collection_id from collection_members where user_id = ?)
-                      and status = ? and deleted_at is null
+                    \(recordSelectSQL)
+                    where r.collection_id = ?
+                      and r.collection_id in (select collection_id from collection_members where user_id = ?)
+                      and r.status = ? and r.deleted_at is null
                     order by updated_at desc
                 """
                 params = [collectionID, userID, status.rawValue]
             } else {
                 sql = """
-                    select * from records
-                    where collection_id in (select collection_id from collection_members where user_id = ?)
-                      and status = ? and deleted_at is null
+                    \(recordSelectSQL)
+                    where r.collection_id in (select collection_id from collection_members where user_id = ?)
+                      and r.status = ? and r.deleted_at is null
                     order by updated_at desc
                 """
                 params = [userID, status.rawValue]
@@ -68,21 +96,25 @@ final class RecordsRepository: ObservableObject {
         let updatedAt = Date().iso8601
         let createdAt = record.createdAt.iso8601
         let estimatedAt = record.estimatedPriceUpdatedAt?.iso8601
+        let releaseID = record.recordReleaseID ?? RecordReleaseIdentity.stableID(for: record.releaseDedupeKey)
         do {
+            try await upsertRelease(record, releaseID: releaseID, updatedAt: updatedAt, estimatedAt: estimatedAt)
+
             // PowerSync exposes tables as views — ON CONFLICT … DO UPDATE is
             // not supported. Insert-or-ignore then update covers both cases.
             try await database.execute(
                 sql: """
                 insert or ignore into records
-                  (id, collection_id, status, title, artist, year, album_year, colourway,
+                  (id, record_release_id, collection_id, status, title, artist, year, album_year, colourway,
                    cover_art_source_url, cover_art_storage_path,
                    discogs_release_id, barcode, notes,
                    estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
                    created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 parameters: [
                     record.id,
+                    releaseID,
                     record.collectionID,
                     record.status.rawValue,
                     record.title,
@@ -105,6 +137,7 @@ final class RecordsRepository: ObservableObject {
             try await database.execute(
                 sql: """
                 update records set
+                  record_release_id = ?,
                   collection_id = ?,
                   status = ?,
                   title = ?,
@@ -124,6 +157,7 @@ final class RecordsRepository: ObservableObject {
                 where id = ?
                 """,
                 parameters: [
+                    releaseID,
                     record.collectionID,
                     record.status.rawValue,
                     record.title,
@@ -148,9 +182,81 @@ final class RecordsRepository: ObservableObject {
         }
     }
 
+    private func upsertRelease(_ record: VinylRecord, releaseID: String, updatedAt: String, estimatedAt: String?) async throws {
+        try await database.execute(
+            sql: """
+            insert or ignore into record_releases
+              (id, dedupe_key, title, artist, year, album_year, colourway,
+               cover_art_source_url, cover_art_storage_path,
+               discogs_release_id, barcode,
+               estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
+               created_at, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            parameters: [
+                releaseID,
+                record.releaseDedupeKey,
+                record.title,
+                record.artist,
+                record.year,
+                record.albumYear,
+                record.colourway,
+                record.coverArtSourceURL,
+                record.coverArtStoragePath,
+                record.discogsReleaseID,
+                record.barcode,
+                record.estimatedPriceCents,
+                record.estimatedPriceCurrency,
+                estimatedAt,
+                record.createdAt.iso8601,
+                updatedAt,
+            ]
+        )
+        try await database.execute(
+            sql: """
+            update record_releases set
+              title = ?,
+              artist = ?,
+              year = ?,
+              album_year = ?,
+              colourway = ?,
+              cover_art_source_url = ?,
+              cover_art_storage_path = coalesce(?, cover_art_storage_path),
+              discogs_release_id = ?,
+              barcode = ?,
+              estimated_price_cents = coalesce(?, estimated_price_cents),
+              estimated_price_currency = coalesce(?, estimated_price_currency),
+              estimated_price_updated_at = coalesce(?, estimated_price_updated_at),
+              updated_at = ?
+            where id = ?
+            """,
+            parameters: [
+                record.title,
+                record.artist,
+                record.year,
+                record.albumYear,
+                record.colourway,
+                record.coverArtSourceURL,
+                record.coverArtStoragePath,
+                record.discogsReleaseID,
+                record.barcode,
+                record.estimatedPriceCents,
+                record.estimatedPriceCurrency,
+                estimatedAt,
+                updatedAt,
+                releaseID,
+            ]
+        )
+    }
+
     func updateEstimate(recordID: String, cents: Int, currency: String) async {
         do {
             let now = Date().iso8601
+            let releaseID = try await database.getOptional(
+                sql: "select record_release_id from records where id = ?",
+                parameters: [recordID],
+                mapper: { try $0.getStringOptional(name: "record_release_id") }
+            ) ?? nil
             try await database.execute(
                 sql: """
                 update records set
@@ -162,6 +268,19 @@ final class RecordsRepository: ObservableObject {
                 """,
                 parameters: [cents, currency, now, now, recordID]
             )
+            if let releaseID {
+                try await database.execute(
+                    sql: """
+                    update record_releases set
+                      estimated_price_cents = ?,
+                      estimated_price_currency = ?,
+                      estimated_price_updated_at = ?,
+                      updated_at = ?
+                    where id = ?
+                    """,
+                    parameters: [cents, currency, now, now, releaseID]
+                )
+            }
         } catch {
             Log.error(error, category: "records.updateEstimate")
         }
@@ -181,10 +300,21 @@ final class RecordsRepository: ObservableObject {
 
     func updateStoragePath(recordID: String, storagePath: String) async {
         do {
+            let releaseID = try await database.getOptional(
+                sql: "select record_release_id from records where id = ?",
+                parameters: [recordID],
+                mapper: { try $0.getStringOptional(name: "record_release_id") }
+            ) ?? nil
             try await database.execute(
                 sql: "update records set cover_art_storage_path = ?, updated_at = ? where id = ?",
                 parameters: [storagePath, Date().iso8601, recordID]
             )
+            if let releaseID {
+                try await database.execute(
+                    sql: "update record_releases set cover_art_storage_path = ?, updated_at = ? where id = ?",
+                    parameters: [storagePath, Date().iso8601, releaseID]
+                )
+            }
         } catch {
             Log.error(error, category: "records.updateStoragePath")
         }
@@ -210,9 +340,9 @@ final class RecordsRepository: ObservableObject {
         do {
             let rows = try await database.getAll(
                 sql: """
-                select * from records
-                where collection_id in (select collection_id from collection_members where user_id = ?)
-                  and barcode = ? and deleted_at is null
+                \(recordSelectSQL)
+                where r.collection_id in (select collection_id from collection_members where user_id = ?)
+                  and coalesce(rr.barcode, r.barcode) = ? and r.deleted_at is null
                 limit 1
                 """,
                 parameters: [userID, barcode],
@@ -221,6 +351,20 @@ final class RecordsRepository: ObservableObject {
             return rows.compactMap { $0 }.first
         } catch {
             Log.error(error, category: "records.findByBarcode")
+            return nil
+        }
+    }
+
+    func findByID(_ recordID: String) async -> VinylRecord? {
+        do {
+            let rows = try await database.getAll(
+                sql: "\(recordSelectSQL) where r.id = ? and r.deleted_at is null limit 1",
+                parameters: [recordID],
+                mapper: { VinylRecord.from(cursor: $0) }
+            )
+            return rows.compactMap { $0 }.first
+        } catch {
+            Log.error(error, category: "records.findByID")
             return nil
         }
     }
@@ -238,7 +382,7 @@ final class RecordsRepository: ObservableObject {
     ) async -> VinylRecord? {
         if let discogsReleaseID,
            let match = await firstDuplicate(
-            whereSQL: "discogs_release_id = ?",
+            whereSQL: "coalesce(rr.discogs_release_id, r.discogs_release_id) = ?",
             parameters: [discogsReleaseID],
             userID: userID,
             collectionID: collectionID,
@@ -250,7 +394,7 @@ final class RecordsRepository: ObservableObject {
         let trimmedBarcode = barcode?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let trimmedBarcode, !trimmedBarcode.isEmpty,
            let match = await firstDuplicate(
-            whereSQL: "barcode = ?",
+            whereSQL: "coalesce(rr.barcode, r.barcode) = ?",
             parameters: [trimmedBarcode],
             userID: userID,
             collectionID: collectionID,
@@ -264,9 +408,9 @@ final class RecordsRepository: ObservableObject {
         guard !normalizedTitle.isEmpty, !normalizedArtist.isEmpty else { return nil }
 
         let titleArtistColourwaySQL = """
-        lower(trim(title)) = ?
-          and lower(trim(artist)) = ?
-          and lower(trim(coalesce(colourway, ''))) = ?
+        lower(trim(coalesce(rr.title, r.title))) = ?
+          and lower(trim(coalesce(rr.artist, r.artist))) = ?
+          and lower(trim(coalesce(rr.colourway, r.colourway, ''))) = ?
         """
         let titleArtistColourwayParameters: [Any?] = [
             normalizedTitle,
@@ -277,10 +421,10 @@ final class RecordsRepository: ObservableObject {
         var whereSQL = titleArtistColourwaySQL
         var parameters = titleArtistColourwayParameters
         if let displayYear {
-            whereSQL += " and coalesce(album_year, year) = ?"
+            whereSQL += " and coalesce(rr.album_year, r.album_year, rr.year, r.year) = ?"
             parameters.append(displayYear)
         } else {
-            whereSQL += " and coalesce(album_year, year) is null"
+            whereSQL += " and coalesce(rr.album_year, r.album_year, rr.year, r.year) is null"
         }
 
         if let match = await firstDuplicate(
@@ -311,10 +455,10 @@ final class RecordsRepository: ObservableObject {
     ) async -> VinylRecord? {
         do {
             var sql = """
-            select * from records
-            where collection_id = ?
-              and collection_id in (select collection_id from collection_members where user_id = ?)
-              and deleted_at is null
+            \(recordSelectSQL)
+            where r.collection_id = ?
+              and r.collection_id in (select collection_id from collection_members where user_id = ?)
+              and r.deleted_at is null
               and \(whereSQL)
             """
             var params: [Any?] = [collectionID, userID]

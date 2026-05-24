@@ -101,17 +101,8 @@ final class AppServices: ObservableObject {
 
     private func openRecordByID(_ recordID: String) async {
         // Find from local SQLite — works offline because PowerSync syncs.
-        do {
-            let rows = try await sync.database.getAll(
-                sql: "select * from records where id = ? limit 1",
-                parameters: [recordID],
-                mapper: { VinylRecord.from(cursor: $0) }
-            )
-            if let r = rows.compactMap({ $0 }).first {
-                await MainActor.run { self.pendingDeepLinkRecord = r }
-            }
-        } catch {
-            Log.error(error, category: "deeplink")
+        if let record = await records.findByID(recordID) {
+            await MainActor.run { self.pendingDeepLinkRecord = record }
         }
     }
 
