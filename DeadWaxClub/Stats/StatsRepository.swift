@@ -169,10 +169,11 @@ final class StatsRepository: ObservableObject {
         let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
-            select coalesce(sum(estimated_price_cents), 0) as total
-            from records
-            where \(where_) and status = 'owned' and deleted_at is null
-              and estimated_price_cents is not null
+            select coalesce(sum(rp.estimated_price_cents), 0) as total
+            from records r
+            join record_pressings rp on rp.id = r.record_pressing_id
+            where r.\(where_) and r.status = 'owned' and r.deleted_at is null
+              and rp.estimated_price_cents is not null
             """,
             parameters: [param],
             mapper: { cursor in (try? cursor.getInt(name: "total")) ?? 0 }
@@ -184,10 +185,12 @@ final class StatsRepository: ObservableObject {
         let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
-            select (coalesce(album_year, year)/10)*10 as decade_start, count(*) as c
-            from records
-            where \(where_) and status = 'owned' and deleted_at is null
-              and coalesce(album_year, year) is not null
+            select (coalesce(a.album_year, rp.year)/10)*10 as decade_start, count(*) as c
+            from records r
+            join record_pressings rp on rp.id = r.record_pressing_id
+            join albums a on a.id = rp.album_id
+            where r.\(where_) and r.status = 'owned' and r.deleted_at is null
+              and coalesce(a.album_year, rp.year) is not null
             group by decade_start
             order by decade_start asc
             """,
@@ -205,11 +208,12 @@ final class StatsRepository: ObservableObject {
         let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
-            select colourway, count(*) as c
-            from records
-            where \(where_) and status = 'owned' and deleted_at is null
-              and colourway is not null and colourway <> ''
-            group by colourway
+            select rp.colourway, count(*) as c
+            from records r
+            join record_pressings rp on rp.id = r.record_pressing_id
+            where r.\(where_) and r.status = 'owned' and r.deleted_at is null
+              and rp.colourway is not null and rp.colourway <> ''
+            group by rp.colourway
             order by c desc
             limit 8
             """,
@@ -232,14 +236,16 @@ final class StatsRepository: ObservableObject {
         // excluded.
         let rows = try await database.getAll(
             sql: """
-            select r.id, r.title, r.artist,
+            select r.id, a.title, a.artist,
                    max(pe.price_cents) as price_cents,
                    max(pe.currency) as currency
             from records r
+            join record_pressings rp on rp.id = r.record_pressing_id
+            join albums a on a.id = rp.album_id
             join price_entries pe on pe.record_id = r.id
             where r.\(where_) and r.status = 'owned' and r.deleted_at is null
               and pe.deleted_at is null
-            group by r.id, r.title, r.artist
+            group by r.id, a.title, a.artist
             order by price_cents desc
             limit ?
             """,
@@ -260,12 +266,14 @@ final class StatsRepository: ObservableObject {
         let (where_, param) = scopeClause(scope)
         let rows = try await database.getAll(
             sql: """
-            select r.id, r.title, r.artist, min(pe.price_cents) as low, max(pe.currency) as currency
+            select r.id, a.title, a.artist, min(pe.price_cents) as low, max(pe.currency) as currency
             from records r
+            join record_pressings rp on rp.id = r.record_pressing_id
+            join albums a on a.id = rp.album_id
             join price_entries pe on pe.record_id = r.id
             where r.\(where_) and r.status = 'wishlist' and r.deleted_at is null
               and pe.deleted_at is null
-            group by r.id, r.title, r.artist
+            group by r.id, a.title, a.artist
             order by low asc
             limit ?
             """,

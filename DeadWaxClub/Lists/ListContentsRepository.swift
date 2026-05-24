@@ -30,7 +30,33 @@ final class ListContentsRepository: ObservableObject {
     private func fetchRecords(ids: [String]) async -> [VinylRecord] {
         guard !ids.isEmpty else { return [] }
         let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
-        let sql = "select * from records where id in (\(placeholders)) and deleted_at is null"
+        let sql = """
+        select
+          r.id,
+          r.record_pressing_id,
+          r.collection_id,
+          r.status,
+          a.title,
+          a.artist,
+          rp.year,
+          a.album_year,
+          rp.colourway,
+          rp.cover_art_source_url,
+          rp.cover_art_storage_path,
+          rp.discogs_release_id,
+          rp.barcode,
+          r.notes,
+          rp.estimated_price_cents,
+          rp.estimated_price_currency,
+          rp.estimated_price_updated_at,
+          r.created_at,
+          r.updated_at,
+          r.deleted_at
+        from records r
+        join record_pressings rp on rp.id = r.record_pressing_id
+        join albums a on a.id = rp.album_id
+        where r.id in (\(placeholders)) and r.deleted_at is null
+        """
         do {
             let rows = try await database.getAll(
                 sql: sql,

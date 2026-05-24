@@ -368,10 +368,7 @@ extension Array where Element == VinylRecord {
     }
 
     private func artistSortKey(_ artist: String) -> String {
-        let trimmed = artist.trimmingCharacters(in: .whitespacesAndNewlines)
-        let prefixRange = trimmed.startIndex..<trimmed.index(trimmed.startIndex, offsetBy: Swift.min(4, trimmed.count))
-        guard trimmed.range(of: "the ", options: [.caseInsensitive], range: prefixRange) != nil else { return trimmed }
-        return String(trimmed.dropFirst(4)).trimmingCharacters(in: .whitespacesAndNewlines)
+        ArtistNameNormalizer.discogsSortName(artist)
     }
 
     private func compareDateDesc(_ lhs: Date, _ rhs: Date) -> Bool? {
@@ -456,7 +453,7 @@ extension Array where Element == VinylRecord {
             .mapValues(\.count)
 
         for record in self {
-            let title = subsectionTitle(for: record.artist, fallback: "Unknown artist")
+            let title = subsectionTitle(for: ArtistNameNormalizer.displayName(record.artist), fallback: "Unknown artist")
             let artistID = subsectionIDComponent(for: artistSortKey(record.artist))
             let id = "\(sectionID):artist:\(artistID)"
             let groupTitle = (countsByArtistID[artistID] ?? 0) > 2 ? title : nil

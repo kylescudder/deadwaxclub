@@ -130,10 +130,11 @@ struct ScanResultSheet: View {
         defer { isSaving = false }
 
         let now = Date()
+        let normalizedArtist = ArtistNameNormalizer.displayName(lookup.artist)
         if existing == nil,
            let duplicate = await services.records.findDuplicate(
             title: lookup.title,
-            artist: lookup.artist,
+            artist: normalizedArtist,
             displayYear: lookup.albumYear ?? lookup.year,
             colourway: lookup.colourway,
             discogsReleaseID: lookup.releaseID,
@@ -169,12 +170,27 @@ struct ScanResultSheet: View {
         }
 
         let recordID = existing?.id ?? UUID().lowerUUID
+        let albumDedupeKey = AlbumIdentity.dedupeKey(
+            title: lookup.title,
+            artist: normalizedArtist,
+            albumYear: lookup.albumYear
+        )
+        let albumID = AlbumIdentity.stableID(for: albumDedupeKey)
+        let pressingDedupeKey = RecordPressingIdentity.dedupeKey(
+            albumID: albumID,
+            year: lookup.year,
+            colourway: lookup.colourway,
+            discogsReleaseID: lookup.releaseID,
+            barcode: lookup.barcode ?? barcode
+        )
+        let recordPressingID = existing?.pressingDedupeKey == pressingDedupeKey ? existing?.recordPressingID : nil
         let record = VinylRecord(
             id: recordID,
+            recordPressingID: recordPressingID,
             collectionID: collectionID,
             status: status,
             title: lookup.title,
-            artist: lookup.artist,
+            artist: normalizedArtist,
             year: lookup.year,
             albumYear: lookup.albumYear,
             colourway: lookup.colourway,

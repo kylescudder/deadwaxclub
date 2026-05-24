@@ -56,7 +56,7 @@ struct RecordImageCarousel: View {
 
     private var secondaryImages: [RecordImage] {
         // Skip position 0 — that's the primary cover, already rendered via
-        // CoverArtImage off `records.cover_art_*` (with local-file caching).
+        // CoverArtImage off the normalized pressing fields.
         services.recordImages.images.filter { $0.position > 0 }
     }
 
