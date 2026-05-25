@@ -9,9 +9,9 @@
     <key>provisioningProfiles</key>
     <dict>
         <key>com.deadwaxclub.app</key>
-        <string>DeadWaxClub App Store</string>
+        <string>DeadwaxClub App Store</string>
         <key>com.deadwaxclub.app.widgets</key>
-        <string>DeadWaxClub Widgets App Store</string>
+        <string>DeadwaxClub Widgets App Store</string>
     </dict>
     <key>uploadSymbols</key>
     <true/>

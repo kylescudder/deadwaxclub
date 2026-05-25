@@ -41,8 +41,8 @@ Developer Certificates, Identifiers & Profiles that:
 2. The App Groups capability is enabled on both bundle IDs.
 3. `group.com.deadwaxclub.app` exists and is assigned to both bundle IDs.
 4. App Store provisioning profiles exist with these exact names:
-   - `DeadWaxClub App Store` for `com.deadwaxclub.app`
-   - `DeadWaxClub Widgets App Store` for `com.deadwaxclub.app.widgets`
+   - `DeadwaxClub App Store` for `com.deadwaxclub.app`
+   - `DeadwaxClub Widgets App Store` for `com.deadwaxclub.app.widgets`
 
 The workflow uses reusable manual signing assets, matching Diald's setup: a
 shared Apple Distribution certificate plus per-bundle provisioning profiles.
@@ -61,8 +61,8 @@ Repo → Settings → Secrets and variables → Actions → New repository secre
 | `APPLE_TEAM_ID` | 10-char team ID |
 | `IOS_DISTRIBUTION_CERTIFICATE_BASE64` | Base64-encoded `.p12` Apple Distribution certificate; can be reused across apps on the same team |
 | `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12` certificate |
-| `IOS_DEADWAXCLUB_PROFILE_BASE64` | Base64-encoded App Store provisioning profile named `DeadWaxClub App Store` |
-| `IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64` | Base64-encoded App Store provisioning profile named `DeadWaxClub Widgets App Store` |
+| `IOS_DEADWAXCLUB_PROFILE_BASE64` | Base64-encoded App Store provisioning profile named `DeadwaxClub App Store` |
+| `IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64` | Base64-encoded App Store provisioning profile named `DeadwaxClub Widgets App Store` |
 | `IOS_KEYCHAIN_PASSWORD` | Temporary CI keychain password; any strong random value |
 | `IOS_SECRETS_XCCONFIG` | Full contents of `Config/Secrets.xcconfig` (the file is git-ignored locally; paste the whole thing here including the `//` value-quoting hack noted in `CLAUDE.md`) |
 
@@ -75,7 +75,9 @@ Repo → Actions → **iOS · TestFlight** → Run workflow → choose `main`.
 Watch the **Install signing certificate and profiles** and **Archive** steps
 closely on the first run. CI does not create profiles automatically; it installs
 the reusable `.p12` distribution certificate and the two uploaded
-`.mobileprovision` files, then archives with manual Release signing.
+`.mobileprovision` files by their embedded UUIDs, then archives with manual
+Release signing. The install step validates the embedded profile names before
+archive so a wrong uploaded profile fails early.
 
 Once the first manual run succeeds and a build lands in TestFlight, future
 pushes to `main` that touch the iOS source will trigger uploads automatically.
@@ -121,7 +123,7 @@ changes.
 - **Rotating the distribution certificate or profiles**: export a new `.p12`
   and/or download fresh `.mobileprovision` files, base64-encode them, then
   update the corresponding `IOS_*_BASE64` secrets. Keep the provisioning profile
-  display names as `DeadWaxClub App Store` and `DeadWaxClub Widgets App Store`
+  display names as `DeadwaxClub App Store` and `DeadwaxClub Widgets App Store`
   unless you also update `project.yml` and `Scripts/ci/ExportOptions.plist`.
 - **Adding a new Supabase / Discogs / Sentry secret to `Secrets.xcconfig`**:
   add the line locally, copy the full file contents, paste into the
@@ -134,8 +136,9 @@ changes.
 |---|---|
 | `Authentication failed: Make sure a bearer token was provided...` on Upload | The App Store Connect API key secrets are invalid. Check `APP_STORE_CONNECT_API_KEY_P8`, `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_API_KEY_ISSUER_ID`, and that the key has App Manager access. |
 | `IOS_DISTRIBUTION_CERTIFICATE_BASE64 is empty` or similar | The reusable signing secret has not been added to GitHub Actions secrets, or the secret name does not match the workflow. |
-| `No profiles for 'com.deadwaxclub.app.widgets' were found` on Archive | The widget profile secret is missing/invalid, the profile is not named `DeadWaxClub Widgets App Store`, or the profile does not include the App Group entitlement. |
-| `No profiles for 'com.deadwaxclub.app' were found` on Archive after adding widgets | The app profile secret is missing/invalid, the profile is not named `DeadWaxClub App Store`, or the app's profile does not include the App Group entitlement. |
+| `Expected provisioning profile ... but secret contains ...` | The secret contains a different `.mobileprovision` than the profile expected by `project.yml` and `ExportOptions.plist`. Upload the DeadWaxClub profile or update the checked-in profile name consistently. |
+| `No profiles for 'com.deadwaxclub.app.widgets' were found` on Archive | The widget profile secret is missing/invalid, the profile is not named `DeadwaxClub Widgets App Store`, or the profile does not include the App Group entitlement. |
+| `No profiles for 'com.deadwaxclub.app' were found` on Archive after adding widgets | The app profile secret is missing/invalid, the profile is not named `DeadwaxClub App Store`, or the app's profile does not include the App Group entitlement. |
 | `error: Bundle identifier is missing` | `PRODUCT_BUNDLE_IDENTIFIER` not making it through xcodegen — check `project.yml`. |
 | Upload step says "Redundant Binary Upload" | TestFlight already has a build with that `CFBundleVersion`. Re-run the workflow — `GITHUB_RUN_NUMBER` will bump. |
 | `Cannot find module 'Sentry'` (or any SPM module) | Package resolution step failed. Check the resolve step's log; usually a transient network issue with `github.com`. |
