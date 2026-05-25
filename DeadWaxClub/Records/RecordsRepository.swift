@@ -152,8 +152,22 @@ final class RecordsRepository: ObservableObject {
     func createdRecordCount(userID: String) async -> Int {
         do {
             return try await database.getOptional(
-                sql: "select count(*) as count from records where created_by = ? and deleted_at is null",
-                parameters: [userID],
+                sql: """
+                select count(*) as count
+                from records
+                where deleted_at is null
+                  and (
+                    created_by = ?
+                    or (
+                      created_by is null
+                      and collection_id in (
+                        select collection_id from collection_members
+                        where user_id = ? and role = 'owner'
+                      )
+                    )
+                  )
+                """,
+                parameters: [userID, userID],
                 mapper: { try $0.getInt(name: "count") }
             ) ?? 0
         } catch {

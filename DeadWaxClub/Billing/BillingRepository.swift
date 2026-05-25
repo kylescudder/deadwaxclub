@@ -1,5 +1,6 @@
 import Foundation
 import StoreKit
+import UIKit
 
 @MainActor
 final class BillingRepository: ObservableObject {
@@ -93,6 +94,22 @@ final class BillingRepository: ObservableObject {
             lastError = error.localizedDescription
             Log.error(error, category: "billing.restore")
             return false
+        }
+    }
+
+    func manageSubscriptions() async {
+        do {
+            guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive })
+                ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+                return
+            }
+            try await AppStore.showManageSubscriptions(in: scene)
+            await syncEntitlements()
+        } catch {
+            lastError = error.localizedDescription
+            Log.error(error, category: "billing.manageSubscriptions")
         }
     }
 
