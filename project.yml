@@ -97,7 +97,7 @@ targets:
         Release:
           CODE_SIGN_IDENTITY: Apple Distribution
           CODE_SIGN_STYLE: Manual
-          PROVISIONING_PROFILE_SPECIFIER: DeadWaxClub App Store
+          PROVISIONING_PROFILE_SPECIFIER: DeadwaxClub App Store
     configFiles:
       Debug: Config/Secrets.xcconfig
       Release: Config/Secrets.xcconfig
@@ -139,4 +139,4 @@ targets:
         Release:
           CODE_SIGN_IDENTITY: Apple Distribution
           CODE_SIGN_STYLE: Manual
-          PROVISIONING_PROFILE_SPECIFIER: DeadWaxClub Widgets App Store
+          PROVISIONING_PROFILE_SPECIFIER: DeadwaxClub Widgets App Store

@@ -104,8 +104,31 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$IOS_KEYCHAIN_PASSWORD" "$keychain_path"
 
           mkdir -p "$profiles_dir"
-          printf '%s' "$IOS_DEADWAXCLUB_PROFILE_BASE64" | base64 --decode > "$profiles_dir/DeadWaxClub_App_Store.mobileprovision"
-          printf '%s' "$IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64" | base64 --decode > "$profiles_dir/DeadWaxClub_Widgets_App_Store.mobileprovision"
+          install_profile() {
+            local secret_value="$1"
+            local expected_name="$2"
+            local output_path="$RUNNER_TEMP/${expected_name// /_}.mobileprovision"
+            local plist_path="$RUNNER_TEMP/${expected_name// /_}.plist"
+
+            printf '%s' "$secret_value" | base64 --decode > "$output_path"
+            security cms -D -i "$output_path" > "$plist_path"
+
+            local profile_name
+            local profile_uuid
+            profile_name=$(/usr/libexec/PlistBuddy -c "Print :Name" "$plist_path")
+            profile_uuid=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$plist_path")
+
+            if [ "$profile_name" != "$expected_name" ]; then
+              echo "::error::Expected provisioning profile '$expected_name' but secret contains '$profile_name'"
+              exit 1
+            fi
+
+            cp "$output_path" "$profiles_dir/$profile_uuid.mobileprovision"
+            echo "Installed provisioning profile '$profile_name' as $profile_uuid.mobileprovision"
+          }
+
+          install_profile "$IOS_DEADWAXCLUB_PROFILE_BASE64" "DeadwaxClub App Store"
+          install_profile "$IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64" "DeadwaxClub Widgets App Store"
 
       - name: Set CURRENT_PROJECT_VERSION to run number
         run: |
