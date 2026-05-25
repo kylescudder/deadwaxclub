@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths:
       - 'DeadWaxClub/**'
+      - 'DeadWaxClubWidgets/**'
       - 'project.yml'
       - 'Config/Secrets.xcconfig.example'
       - 'Scripts/ci/**'
@@ -35,6 +36,11 @@ jobs:
       APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
       APP_STORE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+      IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+      IOS_DEADWAXCLUB_PROFILE_BASE64: ${{ secrets.IOS_DEADWAXCLUB_PROFILE_BASE64 }}
+      IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64: ${{ secrets.IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64 }}
+      IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -76,6 +82,31 @@ jobs:
           printf '%s\n' "$API_KEY_P8" > "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8"
           chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8"
 
+      - name: Install signing certificate and profiles
+        run: |
+          test -n "${IOS_DISTRIBUTION_CERTIFICATE_BASE64}" || (echo "::error::IOS_DISTRIBUTION_CERTIFICATE_BASE64 is empty" && exit 1)
+          test -n "${IOS_DISTRIBUTION_CERTIFICATE_PASSWORD}" || (echo "::error::IOS_DISTRIBUTION_CERTIFICATE_PASSWORD is empty" && exit 1)
+          test -n "${IOS_DEADWAXCLUB_PROFILE_BASE64}" || (echo "::error::IOS_DEADWAXCLUB_PROFILE_BASE64 is empty" && exit 1)
+          test -n "${IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64}" || (echo "::error::IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64 is empty" && exit 1)
+          test -n "${IOS_KEYCHAIN_PASSWORD}" || (echo "::error::IOS_KEYCHAIN_PASSWORD is empty" && exit 1)
+
+          certificate_path="$RUNNER_TEMP/deadwaxclub-distribution.p12"
+          keychain_path="$RUNNER_TEMP/deadwaxclub-signing.keychain-db"
+          profiles_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+
+          printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_BASE64" | base64 --decode > "$certificate_path"
+
+          security create-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$IOS_KEYCHAIN_PASSWORD" "$keychain_path"
+
+          mkdir -p "$profiles_dir"
+          printf '%s' "$IOS_DEADWAXCLUB_PROFILE_BASE64" | base64 --decode > "$profiles_dir/DeadWaxClub_App_Store.mobileprovision"
+          printf '%s' "$IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64" | base64 --decode > "$profiles_dir/DeadWaxClub_Widgets_App_Store.mobileprovision"
+
       - name: Set CURRENT_PROJECT_VERSION to run number
         run: |
           sed -i '' "s/CURRENT_PROJECT_VERSION: \"1\"/CURRENT_PROJECT_VERSION: \"${GITHUB_RUN_NUMBER}\"/" project.yml
@@ -102,22 +133,14 @@ jobs:
             -scheme "$SCHEME" \
             -configuration Release \
             -destination "generic/platform=iOS" \
-            -archivePath "$ARCHIVE_PATH" \
-            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8" \
-            -authenticationKeyID "$APP_STORE_KEY_ID" \
-            -authenticationKeyIssuerID "$APP_STORE_ISSUER_ID" \
-            -allowProvisioningUpdates
+            -archivePath "$ARCHIVE_PATH"
 
       - name: Export IPA
         run: |
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportPath "$EXPORT_PATH" \
-            -exportOptionsPlist "$EXPORT_OPTIONS" \
-            -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8" \
-            -authenticationKeyID "$APP_STORE_KEY_ID" \
-            -authenticationKeyIssuerID "$APP_STORE_ISSUER_ID" \
-            -allowProvisioningUpdates
+            -exportOptionsPlist "$EXPORT_OPTIONS"
 
       - name: Upload to TestFlight
         run: |
