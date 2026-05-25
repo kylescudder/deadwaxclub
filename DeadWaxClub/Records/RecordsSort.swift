@@ -81,6 +81,8 @@ struct RecordsSubsection: Identifiable {
 }
 
 struct RecordsFilter: Equatable {
+    /// nil means every collection the user belongs to.
+    var collectionID: String?
     var yearRange: ClosedRange<Int>?
     var colourwayContains: String?
     var hasPriceOnly: Bool
@@ -92,6 +94,7 @@ struct RecordsFilter: Equatable {
     var statuses: Set<RecordStatus>
 
     static let none = RecordsFilter(
+        collectionID: nil,
         yearRange: nil,
         colourwayContains: nil,
         hasPriceOnly: false,
@@ -100,7 +103,8 @@ struct RecordsFilter: Equatable {
     )
 
     var isActive: Bool {
-        yearRange != nil
+        collectionID != nil
+            || yearRange != nil
             || (colourwayContains?.isEmpty == false)
             || hasPriceOnly
             || hasNoPriceOnly
@@ -482,6 +486,7 @@ extension Array where Element == VinylRecord {
     func filtered(by f: RecordsFilter) -> [VinylRecord] {
         guard f.isActive else { return self }
         return filter { record in
+            if let collectionID = f.collectionID, record.collectionID != collectionID { return false }
             if !f.statuses.isEmpty && !f.statuses.contains(record.status) { return false }
             if let range = f.yearRange {
                 guard let year = record.displayYear, range.contains(year) else { return false }

@@ -5,10 +5,14 @@ import SwiftUI
 /// that adopts `RecordsFilter` (e.g. add-to-list).
 struct RecordsFilterChipsBar: View {
     @Binding var filter: RecordsFilter
+    var collections: [VinylCollection] = []
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Theme.Spacing.xs) {
+                if let collectionID = filter.collectionID {
+                    chip("Collection: \(collectionName(collectionID))") { filter.collectionID = nil }
+                }
                 if filter.statuses == [.owned] {
                     chip("Owned only") { filter.statuses = [] }
                 } else if filter.statuses == [.wishlist] {
@@ -40,6 +44,10 @@ struct RecordsFilterChipsBar: View {
         case (let lower, let upper) where lower == upper: return "Album year \(lower)"
         case (let lower, let upper): return "Albums \(lower)–\(upper)"
         }
+    }
+
+    private func collectionName(_ collectionID: String) -> String {
+        collections.first(where: { $0.id == collectionID })?.name ?? "Selected"
     }
 
     private func chip(_ text: String, onClose: @escaping () -> Void) -> some View {
