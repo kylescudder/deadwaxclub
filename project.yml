@@ -37,6 +37,7 @@ schemes:
     run:
       config: Debug
       executable: DeadWaxClub
+      storeKitConfiguration: DeadWaxClub/Resources/StoreKit/DeadWaxClub.storekit
 
 targets:
   DeadWaxClub:

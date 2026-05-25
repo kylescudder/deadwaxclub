@@ -26,7 +26,7 @@ struct AddRecordsToListSheet: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if filter.isActive {
-                    RecordsFilterChipsBar(filter: $filter)
+                    RecordsFilterChipsBar(filter: $filter, collections: services.collections.collections)
                         .padding(.horizontal, Theme.Spacing.lg)
                         .padding(.vertical, Theme.Spacing.sm)
                 }
@@ -63,7 +63,11 @@ struct AddRecordsToListSheet: View {
                 }
             }
             .sheet(isPresented: $showFilterSheet) {
-                RecordsFilterSheet(filter: $filter, showStatusFilter: true)
+                RecordsFilterSheet(
+                    filter: $filter,
+                    collections: services.collections.collections,
+                    showStatusFilter: true
+                )
             }
             .sheet(isPresented: $showAddRecord, onDismiss: { Task { await loadAll() } }) {
                 NavigationStack { AddRecordView(initialStatus: .owned) }

@@ -30,7 +30,7 @@ struct RecordsListView: View {
             .padding(.vertical, Theme.Spacing.sm)
 
             if filter.isActive {
-                RecordsFilterChipsBar(filter: $filter)
+                RecordsFilterChipsBar(filter: $filter, collections: services.collections.collections)
                     .padding(.horizontal, Theme.Spacing.lg)
                     .padding(.bottom, Theme.Spacing.sm)
             }
@@ -77,7 +77,7 @@ struct RecordsListView: View {
             NavigationStack { AddRecordView(initialStatus: status) }
         }
         .sheet(isPresented: $showFilterSheet) {
-            RecordsFilterSheet(filter: $filter)
+            RecordsFilterSheet(filter: $filter, collections: services.collections.collections)
         }
         .sheet(isPresented: $showNotificationInbox) {
             NotificationInboxView()

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RecordsFilterSheet: View {
     @Binding var filter: RecordsFilter
+    var collections: [VinylCollection] = []
     /// Show the owned/wishlist segmented filter. Off by default — the Records
     /// tab already has a status segmented control at the top, so this is only
     /// surfaced from sheets that show records of all statuses (e.g. the
@@ -15,6 +16,7 @@ struct RecordsFilterSheet: View {
     @State private var hasPriceOnly = false
     @State private var hasNoPriceOnly = false
     @State private var statusSelection: StatusSelection = .any
+    @State private var selectedCollectionID: String?
     @State private var applyCount = 0
 
     private enum StatusSelection: String, CaseIterable, Identifiable {
@@ -47,6 +49,16 @@ struct RecordsFilterSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if collections.count > 1 {
+                    Section("Collection") {
+                        Picker("Collection", selection: $selectedCollectionID) {
+                            Text("All my Collections").tag(String?.none)
+                            ForEach(collections) { collection in
+                                Text(collection.name).tag(Optional(collection.id))
+                            }
+                        }
+                    }
+                }
                 if showStatusFilter {
                     Section("Status") {
                         Picker("Status", selection: $statusSelection) {
@@ -109,6 +121,7 @@ struct RecordsFilterSheet: View {
                         hasPriceOnly = false
                         hasNoPriceOnly = false
                         statusSelection = .any
+                        selectedCollectionID = nil
                     }
                 }
             }
@@ -145,6 +158,9 @@ struct RecordsFilterSheet: View {
         hasPriceOnly = filter.hasPriceOnly
         hasNoPriceOnly = filter.hasNoPriceOnly
         statusSelection = StatusSelection.from(filter.statuses)
+        selectedCollectionID = collections.contains(where: { $0.id == filter.collectionID })
+            ? filter.collectionID
+            : nil
     }
 
     private func apply() {
@@ -156,6 +172,7 @@ struct RecordsFilterSheet: View {
         default:                       range = nil
         }
         filter = RecordsFilter(
+            collectionID: selectedCollectionID,
             yearRange: range,
             colourwayContains: colourwayText.trimmingCharacters(in: .whitespaces).isEmpty ? nil : colourwayText,
             hasPriceOnly: hasPriceOnly,

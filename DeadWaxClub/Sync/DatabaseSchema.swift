@@ -19,6 +19,7 @@ enum DatabaseSchema {
         columns: [
             Column.text("record_pressing_id"),
             Column.text("collection_id"),
+            Column.text("created_by"),
             Column.text("status"),
             Column.text("notes"),
             Column.text("created_at"),
@@ -247,11 +248,24 @@ enum DatabaseSchema {
         ]
     )
 
+    static let iapEntitlements = Table(
+        name: "iap_entitlements",
+        columns: [
+            Column.text("product_id"),
+            Column.text("original_transaction_id"),
+            Column.text("status"),
+            Column.text("expires_at"),
+            Column.text("revoked_at"),
+            Column.text("environment"),
+            Column.text("updated_at"),
+        ]
+    )
+
     static let schema = Schema(tables: [
         profiles, records, albums, recordPressings, priceEntries, recordImages,
         collections, collectionMembers, collectionPendingInvites,
         notifications,
         lists, listItems, listMembers, pendingInvites,
-        deviceTokens,
+        deviceTokens, iapEntitlements,
     ])
 }

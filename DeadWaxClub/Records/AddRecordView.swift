@@ -42,6 +42,7 @@ struct AddRecordView: View {
     @State private var selectionCount = 0
     @State private var celebrationCount = 0
     @State private var removePhotoCount = 0
+    @State private var showPaywall = false
 
     init(initialStatus: RecordStatus, existing: VinylRecord? = nil) {
         self.initialStatus = initialStatus
@@ -142,6 +143,9 @@ struct AddRecordView: View {
                 }
             }
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showPaywall) {
+            SubscriptionPaywallView()
         }
         .onChange(of: photoPickerSelection) { _, newItem in
             guard let newItem else { return }
@@ -284,6 +288,7 @@ struct AddRecordView: View {
     }
 
     private func save() async {
+        guard let ownerID = services.auth.currentUserID?.lowerUUID else { return }
         // Picker selection wins; otherwise stay in the existing record's
         // Collection (when editing) or default to the user's primary.
         let resolvedCollectionID: String? = selectedCollectionID
@@ -344,7 +349,6 @@ struct AddRecordView: View {
         }()
 
         if existing == nil,
-           let userID = services.auth.currentUserID?.lowerUUID,
            let duplicate = await services.records.findDuplicate(
             title: resolvedTitle,
             artist: resolvedArtist,
@@ -352,7 +356,7 @@ struct AddRecordView: View {
             colourway: resolvedColourway,
             discogsReleaseID: resolvedReleaseID,
             barcode: resolvedBarcode,
-            userID: userID,
+            userID: ownerID,
             collectionID: collectionID
            ) {
             let destinationName = collectionName(collectionID)
@@ -381,10 +385,16 @@ struct AddRecordView: View {
             return
         }
 
+        if existing == nil, !(await services.canCreateNewRecord()) {
+            showPaywall = true
+            return
+        }
+
         let record = VinylRecord(
             id: existing?.id ?? UUID().lowerUUID,
             recordPressingID: resolvedRecordPressingID,
             collectionID: collectionID,
+            createdBy: existing?.createdBy ?? ownerID,
             status: status,
             title: resolvedTitle,
             artist: resolvedArtist,
@@ -422,8 +432,7 @@ struct AddRecordView: View {
         }
         // Upload any photos the user picked / shot in this form. They append
         // to whatever Discogs already supplied (so position 0 stays the cover).
-        if !pendingPhotos.isEmpty,
-           let userID = services.auth.currentUserID?.lowerUUID {
+        if !pendingPhotos.isEmpty {
             for data in pendingPhotos {
                 let imageID = UUID().lowerUUID
                 do {
@@ -436,7 +445,7 @@ struct AddRecordView: View {
                         recordID: record.id,
                         collectionID: record.collectionID,
                         storagePath: path,
-                        uploadedBy: userID,
+                        uploadedBy: ownerID,
                         imageID: imageID
                     )
                 } catch {

@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var discogsToken: String = ""
     @State private var savedDiscogsBanner = false
     @State private var showSignOutConfirm = false
+    @State private var showPaywall = false
     @State private var showDeleteConfirm = false
     @State private var showFinalDeleteConfirm = false
     @State private var deleteError: String?
@@ -75,6 +76,34 @@ struct SettingsView: View {
             }
 
             Section {
+                LabeledContent(
+                    "Plan",
+                    value: services.billing.isSubscribed ? "Supporter Monthly" : "Free"
+                )
+                if services.billing.isSubscribed {
+                    Button("Manage subscription") {
+                        Task { await services.billing.manageSubscriptions() }
+                    }
+                } else {
+                    Button("Subscribe") {
+                        showPaywall = true
+                    }
+                }
+                Button("Restore purchases") {
+                    Task { await services.billing.restorePurchases() }
+                }
+                if let message = services.billing.lastError {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+            } header: {
+                Text("Subscription")
+            } footer: {
+                Text("Free accounts can add up to \(AppServices.freeRecordLimit) records. Manage subscription opens Apple's system sheet, where you can cancel or change the subscription.")
+            }
+
+            Section {
                 SecureField("Personal access token", text: $discogsToken)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -122,6 +151,9 @@ struct SettingsView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Discogs token stored securely in the keychain.")
+        }
+        .sheet(isPresented: $showPaywall) {
+            SubscriptionPaywallView()
         }
         .alert("Sign out of Deadwax Club?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {

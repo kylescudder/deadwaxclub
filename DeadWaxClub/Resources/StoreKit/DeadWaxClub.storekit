@@ -1,0 +1,64 @@
+{
+  "identifier" : "F9F69B64-4463-4F96-8C42-2F7E02DC5660",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_applicationInternalID" : "0",
+    "_developerTeamID" : "TEAMID",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 0,
+    "_locale" : "en_GB",
+    "_storefront" : "GBR",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "2147483647",
+      "localizations" : [
+        {
+          "description" : "Deadwax Club Supporter",
+          "displayName" : "Supporter Monthly",
+          "locale" : "en_GB"
+        }
+      ],
+      "name" : "Deadwax Club Supporter",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "1.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "2147483646",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Add unlimited records to Deadwax Club.",
+              "displayName" : "Supporter Monthly",
+              "locale" : "en_GB"
+            }
+          ],
+          "productID" : "club.deadwax.supporter.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Supporter Monthly",
+          "subscriptionGroupID" : "2147483647",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

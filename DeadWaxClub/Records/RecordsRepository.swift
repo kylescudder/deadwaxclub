@@ -21,6 +21,7 @@ final class RecordsRepository: ObservableObject {
           r.id,
           r.record_pressing_id,
           r.collection_id,
+          r.created_by,
           r.status,
           a.title,
           a.artist,
@@ -108,13 +109,14 @@ final class RecordsRepository: ObservableObject {
             try await database.execute(
                 sql: """
                 insert or ignore into records
-                  (id, record_pressing_id, collection_id, status, notes, created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?)
+                  (id, record_pressing_id, collection_id, created_by, status, notes, created_at, updated_at)
+                values (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 parameters: [
                     record.id,
                     pressingID,
                     record.collectionID,
+                    record.createdBy,
                     record.status.rawValue,
                     record.notes,
                     createdAt,
@@ -126,6 +128,7 @@ final class RecordsRepository: ObservableObject {
                 update records set
                   record_pressing_id = ?,
                   collection_id = ?,
+                  created_by = coalesce(created_by, ?),
                   status = ?,
                   notes = ?,
                   updated_at = ?
@@ -134,6 +137,7 @@ final class RecordsRepository: ObservableObject {
                 parameters: [
                     pressingID,
                     record.collectionID,
+                    record.createdBy,
                     record.status.rawValue,
                     record.notes,
                     updatedAt,
@@ -142,6 +146,33 @@ final class RecordsRepository: ObservableObject {
             )
         } catch {
             Log.error(error, category: "records.upsert")
+        }
+    }
+
+    func createdRecordCount(userID: String) async -> Int {
+        do {
+            return try await database.getOptional(
+                sql: """
+                select count(*) as count
+                from records
+                where deleted_at is null
+                  and (
+                    created_by = ?
+                    or (
+                      created_by is null
+                      and collection_id in (
+                        select collection_id from collection_members
+                        where user_id = ? and role = 'owner'
+                      )
+                    )
+                  )
+                """,
+                parameters: [userID, userID],
+                mapper: { try $0.getInt(name: "count") }
+            ) ?? 0
+        } catch {
+            Log.error(error, category: "records.createdRecordCount")
+            return 0
         }
     }
 
