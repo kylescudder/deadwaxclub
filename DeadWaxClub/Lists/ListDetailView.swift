@@ -9,6 +9,8 @@ struct ListDetailView: View {
     @StateObject private var contents: ListContentsHolder = ListContentsHolder()
     @State private var showShareSheet = false
     @State private var showAddRecordSheet = false
+    @State private var recordPendingRemoval: VinylRecord?
+    @State private var showRemoveConfirm = false
 
     var body: some View {
         Group {
@@ -37,6 +39,18 @@ struct ListDetailView: View {
         }
         .sheet(isPresented: $showAddRecordSheet) {
             AddRecordsToListSheet(listID: list.id)
+        }
+        .alert("Remove from this list?", isPresented: $showRemoveConfirm) {
+            Button("Remove", role: .destructive) {
+                if let record = recordPendingRemoval {
+                    Task { await remove(record) }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                recordPendingRemoval = nil
+            }
+        } message: {
+            Text(removeConfirmationMessage)
         }
         .onAppear {
             contents.attach(database: services.sync.database, listID: list.id)
@@ -75,9 +89,8 @@ struct ListDetailView: View {
                         // testers misread as destructive.
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             Button {
-                                Task {
-                                    await services.lists.removeRecord(record.id, from: list.id)
-                                }
+                                recordPendingRemoval = record
+                                showRemoveConfirm = true
                             } label: {
                                 Label("Remove", systemImage: "minus.circle")
                             }
@@ -97,6 +110,18 @@ struct ListDetailView: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
         }
+    }
+
+    private var removeConfirmationMessage: String {
+        guard let record = recordPendingRemoval else {
+            return "This record will only be removed from \(list.name)."
+        }
+        return "\"\(record.title)\" will only be removed from \(list.name)."
+    }
+
+    private func remove(_ record: VinylRecord) async {
+        recordPendingRemoval = nil
+        await services.lists.removeRecord(record.id, from: list.id)
     }
 }
 

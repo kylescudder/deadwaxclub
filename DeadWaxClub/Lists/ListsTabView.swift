@@ -6,6 +6,8 @@ struct ListsTabView: View {
     /// Set by CreateListView's onCreated callback to push the user straight
     /// into the new list rather than dropping them back at the lists list.
     @State private var navTarget: VinylList?
+    @State private var listPendingDeletion: VinylList?
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         Group {
@@ -32,7 +34,8 @@ struct ListsTabView: View {
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             if isOwner(of: list) {
                                 Button(role: .destructive) {
-                                    Task { await services.lists.softDelete(listID: list.id) }
+                                    listPendingDeletion = list
+                                    showDeleteConfirm = true
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -59,6 +62,18 @@ struct ListsTabView: View {
                 }
             }
         }
+        .alert("Delete this list?", isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                if let list = listPendingDeletion {
+                    Task { await delete(list) }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                listPendingDeletion = nil
+            }
+        } message: {
+            Text(deleteConfirmationMessage)
+        }
         // Programmatic push for the post-create flow. Inline NavigationLink
         // above handles taps; declaring both an inline destination and a
         // `navigationDestination(for: VinylList.self)` makes SwiftUI warn
@@ -76,6 +91,18 @@ struct ListsTabView: View {
     private func isOwner(of list: VinylList) -> Bool {
         guard let userID = services.auth.currentUserID?.lowerUUID else { return false }
         return list.ownerID == userID
+    }
+
+    private var deleteConfirmationMessage: String {
+        guard let list = listPendingDeletion else {
+            return "This list will be deleted. Records in it will stay in your collection."
+        }
+        return "\"\(list.name)\" will be deleted. Records in it will stay in your collection."
+    }
+
+    private func delete(_ list: VinylList) async {
+        listPendingDeletion = nil
+        await services.lists.softDelete(listID: list.id)
     }
 }
 

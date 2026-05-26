@@ -14,6 +14,8 @@ struct RecordsListView: View {
     @State private var showNotificationInbox = false
     @State private var showLogPricePicker = false
     @State private var logPriceRecord: VinylRecord?
+    @State private var recordsPendingDeletion: [VinylRecord] = []
+    @State private var showDeleteConfirm = false
     @State private var refreshCount = 0
 
     private var sort: RecordsSort {
@@ -118,6 +120,16 @@ struct RecordsListView: View {
         }
         .sheet(item: $logPriceRecord) { record in
             LogPriceSheet(record: record)
+        }
+        .alert(deleteConfirmationTitle, isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                Task { await deletePendingRecords() }
+            }
+            Button("Cancel", role: .cancel) {
+                recordsPendingDeletion = []
+            }
+        } message: {
+            Text(deleteConfirmationMessage)
         }
         .onChange(of: addRecordRequest) { _, request in
             if request != nil {
@@ -242,8 +254,27 @@ struct RecordsListView: View {
     }
 
     private func delete(at offsets: IndexSet, in records: [VinylRecord]) {
-        let toRemove = offsets.map { records[$0] }
-        Task { for r in toRemove { await services.records.softDelete(recordID: r.id) } }
+        recordsPendingDeletion = offsets.map { records[$0] }
+        showDeleteConfirm = !recordsPendingDeletion.isEmpty
+    }
+
+    private var deleteConfirmationTitle: String {
+        recordsPendingDeletion.count == 1 ? "Delete this record?" : "Delete these records?"
+    }
+
+    private var deleteConfirmationMessage: String {
+        if let record = recordsPendingDeletion.first, recordsPendingDeletion.count == 1 {
+            return "\"\(record.title)\" will be removed from your collection and lists."
+        }
+        return "\(recordsPendingDeletion.count) records will be removed from your collection and lists."
+    }
+
+    private func deletePendingRecords() async {
+        let toRemove = recordsPendingDeletion
+        recordsPendingDeletion = []
+        for record in toRemove {
+            await services.records.softDelete(recordID: record.id)
+        }
     }
 }
 

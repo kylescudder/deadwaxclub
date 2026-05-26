@@ -24,6 +24,8 @@ struct RecordDetailView: View {
     @State private var successCount = 0
     @State private var errorCount = 0
     @State private var isDismissing = false
+    @State private var showDeleteConfirm = false
+    @State private var showRemoveFromListConfirm = false
 
     init(record: VinylRecord, removeFromList: VinylList? = nil) {
         self.record = record
@@ -103,13 +105,13 @@ struct RecordDetailView: View {
                     }
                     if let list = removeFromList {
                         Button(role: .destructive) {
-                            Task { await removeFromListAndDismiss(list) }
+                            showRemoveFromListConfirm = true
                         } label: {
                             Label("Remove from \(list.name)", systemImage: "minus.circle")
                         }
                     } else {
                         Button(role: .destructive) {
-                            Task { await deleteAndDismiss() }
+                            showDeleteConfirm = true
                         } label: { Label("Delete", systemImage: "trash") }
                     }
                 } label: {
@@ -130,6 +132,24 @@ struct RecordDetailView: View {
         }
         .sheet(isPresented: $showAddToListSheet) {
             AddRecordToListsSheet(record: currentRecord)
+        }
+        .alert("Delete this record?", isPresented: $showDeleteConfirm) {
+            Button("Delete", role: .destructive) {
+                Task { await deleteAndDismiss() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("\"\(currentRecord.title)\" will be removed from your collection and lists.")
+        }
+        .alert("Remove from this list?", isPresented: $showRemoveFromListConfirm) {
+            Button("Remove", role: .destructive) {
+                if let list = removeFromList {
+                    Task { await removeFromListAndDismiss(list) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("\"\(currentRecord.title)\" will only be removed from \(removeFromList?.name ?? "this list").")
         }
         .sheet(isPresented: $showDiscogsPicker) {
             DiscogsPickerView(
