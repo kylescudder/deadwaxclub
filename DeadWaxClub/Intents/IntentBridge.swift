@@ -14,6 +14,7 @@ enum IntentBridge {
           r.id,
           r.record_pressing_id,
           r.collection_id,
+          r.created_by,
           r.status,
           a.title,
           a.artist,
