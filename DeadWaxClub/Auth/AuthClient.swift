@@ -126,6 +126,22 @@ final class AuthClient: ObservableObject {
         }
     }
 
+    func resendSignupConfirmation(email: String) async -> Bool {
+        lastError = nil
+        do {
+            try await supabase.auth.resend(
+                email: email,
+                type: .signup,
+                emailRedirectTo: AppSecrets.authRedirectURL
+            )
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            Log.error(error, category: "auth.resendConfirmation")
+            return false
+        }
+    }
+
     func signIn(email: String, password: String) async {
         lastError = nil
         do {
