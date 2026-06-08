@@ -31,12 +31,14 @@ final class CollectionsRepository: ObservableObject {
     }
 
     func startWatching(userID: String) {
+        Log.breadcrumb("collections watch starting", category: "collections.watch")
         watchCollections(userID: userID)
         watchMembers(userID: userID)
         watchPendingInvites(userID: userID)
     }
 
     func stopWatching() {
+        Log.breadcrumb("collections watch stopping", category: "collections.watch")
         collectionsTask?.cancel(); collectionsTask = nil
         membersTask?.cancel(); membersTask = nil
         invitesTask?.cancel(); invitesTask = nil
@@ -82,6 +84,7 @@ final class CollectionsRepository: ObservableObject {
                 )
                 for try await rows in stream {
                     let mapped = rows.compactMap { $0 }
+                    Log.event("collections watch emitted", category: "collections.watch", metadata: ["count": mapped.count])
                     await MainActor.run { self.collections = mapped }
                 }
             } catch {
@@ -108,6 +111,7 @@ final class CollectionsRepository: ObservableObject {
                 )
                 for try await rows in stream {
                     let mapped = rows.compactMap { $0 }
+                    Log.event("collection members watch emitted", category: "collections.members.watch", metadata: ["count": mapped.count])
                     await MainActor.run { self.members = mapped }
                     let collectionIDs = Set(mapped.map(\.collectionID))
                     for collectionID in collectionIDs where !self.refreshedProfileCollectionIDs.contains(collectionID) {
@@ -140,6 +144,7 @@ final class CollectionsRepository: ObservableObject {
                 )
                 for try await rows in stream {
                     let mapped = rows.compactMap { $0 }
+                    Log.event("collection invites watch emitted", category: "collections.invites.watch", metadata: ["count": mapped.count])
                     await MainActor.run { self.pendingInvites = mapped }
                 }
             } catch {
@@ -152,6 +157,7 @@ final class CollectionsRepository: ObservableObject {
     /// Membership creation goes via REST because `collection_members` syncs
     /// read-only (composite PK + synthetic `id`).
     func create(name: String) async -> VinylCollection? {
+        Log.breadcrumb("collection create started", category: "collections.create")
         guard let createdBy = auth.currentUserID?.lowerUUID else { return nil }
         let id = UUID().lowerUUID
         let now = Date()
@@ -175,6 +181,7 @@ final class CollectionsRepository: ObservableObject {
                     "invited_by": createdBy,
                 ])
                 .execute()
+            Log.event("collection create completed", category: "collections.create", metadata: ["collectionID": id])
             return VinylCollection(
                 id: id, name: name, createdBy: createdBy,
                 createdAt: now, updatedAt: now, deletedAt: nil
@@ -216,6 +223,10 @@ final class CollectionsRepository: ObservableObject {
     }
 
     func invite(collectionID: String, email: String, role: CollectionMemberRole) async throws -> InviteOutcome {
+        Log.event("collection invite started", category: "collections.invite", metadata: [
+            "collectionID": collectionID,
+            "role": role.rawValue,
+        ])
         struct InviteResult: Decodable { let status: String }
         let result: InviteResult = try await auth.supabase
             .rpc("invite_to_collection", params: [
@@ -225,6 +236,10 @@ final class CollectionsRepository: ObservableObject {
             ])
             .execute()
             .value
+        Log.event("collection invite completed", category: "collections.invite", metadata: [
+            "collectionID": collectionID,
+            "status": result.status,
+        ])
         switch result.status {
         case "added":   return .added
         case "pending": return .pending

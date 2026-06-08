@@ -30,6 +30,7 @@ final class PowerSyncManager: ObservableObject {
     }
 
     func startObservingAuth() async {
+        Log.breadcrumb("powersync auth observer starting", category: "sync")
         auth.$state
             .removeDuplicates()
             .sink { [weak self] state in
@@ -40,6 +41,7 @@ final class PowerSyncManager: ObservableObject {
     }
 
     private func reconcile(state: AuthClient.State) async {
+        Log.breadcrumb("powersync reconciling auth state", category: "sync")
         switch state {
         case .signedIn:
             await connectIfNeeded()
@@ -56,7 +58,11 @@ final class PowerSyncManager: ObservableObject {
     }
 
     private func connectIfNeeded() async {
-        guard connector == nil else { return }
+        guard connector == nil else {
+            Log.breadcrumb("powersync connect skipped; connector already exists", category: "sync")
+            return
+        }
+        Log.breadcrumb("powersync connecting", category: "sync")
         status = .connecting
         let connector = SupabaseConnector(auth: auth)
         self.connector = connector
@@ -71,6 +77,7 @@ final class PowerSyncManager: ObservableObject {
     }
 
     private func disconnect() async {
+        Log.breadcrumb("powersync disconnect requested", category: "sync")
         // Use the non-clearing disconnect so transient .signedOut states
         // emitted during session refresh don't wipe the local DB and the
         // CRUD upload queue. To wipe on actual sign-out, call wipe()
@@ -88,6 +95,7 @@ final class PowerSyncManager: ObservableObject {
     /// Tear down PowerSync's local SQLite + pending uploads. Call only when
     /// the user has explicitly signed out via the Settings UI.
     func wipe() async {
+        Log.breadcrumb("powersync wipe requested", category: "sync")
         do {
             try await database.disconnectAndClear()
             connector = nil

@@ -9,6 +9,7 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
     let onScan: (String) -> Void
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
+        Log.breadcrumb("barcode scanner controller created", category: "scanner.camera")
         let controller = DataScannerViewController(
             recognizedDataTypes: [.barcode(symbologies: [.ean13, .ean8, .upce, .code128, .code39])],
             qualityLevel: .balanced,
@@ -24,12 +25,18 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: DataScannerViewController, context: Context) {
         if !controller.isScanning {
-            try? controller.startScanning()
+            do {
+                try controller.startScanning()
+                Log.breadcrumb("barcode scanner started", category: "scanner.camera")
+            } catch {
+                Log.error(error, category: "scanner.camera")
+            }
         }
     }
 
     static func dismantleUIViewController(_ controller: DataScannerViewController, coordinator: Coordinator) {
         controller.stopScanning()
+        Log.breadcrumb("barcode scanner stopped", category: "scanner.camera")
     }
 
     func makeCoordinator() -> Coordinator {
@@ -49,6 +56,7 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
             for item in added {
                 if case let .barcode(barcode) = item, let payload = barcode.payloadStringValue {
                     didScan = true
+                    Log.event("barcode payload detected", category: "scanner.camera", metadata: ["payloadLength": payload.count])
                     dataScanner.stopScanning()
                     onScan(payload)
                     return
@@ -89,8 +97,12 @@ struct BarcodeScannerHost: View {
                 case .notDetermined:
                     PermissionPromptView {
                         Task {
-                            _ = await AVCaptureDevice.requestAccess(for: .video)
+                            let granted = await AVCaptureDevice.requestAccess(for: .video)
                             cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+                            Log.event("camera permission resolved", category: "scanner.camera", metadata: [
+                                "granted": granted,
+                                "cameraStatus": String(describing: cameraStatus),
+                            ])
                         }
                     }
                 case .denied, .restricted:
@@ -102,6 +114,11 @@ struct BarcodeScannerHost: View {
         }
         .onAppear {
             cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+            Log.event("scanner host appeared", category: "scanner.camera", metadata: [
+                "cameraStatus": String(describing: cameraStatus),
+                "isSupported": DataScannerViewController.isSupported,
+                "isAvailable": DataScannerViewController.isAvailable,
+            ])
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: scanCount)
     }

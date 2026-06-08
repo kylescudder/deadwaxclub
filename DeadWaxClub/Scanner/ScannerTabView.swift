@@ -55,7 +55,11 @@ struct ScannerTabView: View {
     }
 
     private func handle(barcode: String) async {
-        guard scannedBarcode == nil else { return }
+        guard scannedBarcode == nil else {
+            Log.breadcrumb("barcode ignored because scan is already in progress", category: "scanner")
+            return
+        }
+        Log.event("barcode scan handling started", category: "scanner", metadata: ["barcodeLength": barcode.count])
         scannedBarcode = barcode
         isLooking = true
         defer { isLooking = false }
@@ -63,18 +67,25 @@ struct ScannerTabView: View {
         if let userID = services.auth.currentUserID?.lowerUUID,
            let local = await services.records.findByBarcode(barcode, userID: userID) {
             existing = local
+            Log.event("barcode matched local record", category: "scanner", metadata: ["recordID": local.id])
         }
 
         do {
             let result = try await services.discogs.lookup(barcode: barcode)
             lookup = result
             showResultSheet = true
+            Log.event("barcode scan lookup succeeded", category: "scanner", metadata: [
+                "releaseID": result.releaseID,
+                "alreadyInCollection": existing != nil,
+            ])
         } catch {
             lookupError = error.localizedDescription
+            Log.error(error, category: "scanner.lookup")
         }
     }
 
     private func reset() {
+        Log.breadcrumb("scanner reset", category: "scanner")
         scannedBarcode = nil
         lookup = nil
         existing = nil

@@ -15,6 +15,7 @@ final class PriceEntriesRepository: ObservableObject {
     deinit { watchTask?.cancel() }
 
     func startWatching(recordID: String) {
+        Log.event("price watch starting", category: "prices.watch", metadata: ["recordID": recordID])
         watchTask?.cancel()
         watchTask = Task { [weak self, database] in
             guard let self else { return }
@@ -31,6 +32,10 @@ final class PriceEntriesRepository: ObservableObject {
                 )
                 for try await rows in stream {
                     let mapped = rows.compactMap { $0 }
+                    Log.event("price watch emitted", category: "prices.watch", metadata: [
+                        "recordID": recordID,
+                        "count": mapped.count,
+                    ])
                     await MainActor.run { self.entries = mapped }
                 }
             } catch {
@@ -40,6 +45,13 @@ final class PriceEntriesRepository: ObservableObject {
     }
 
     func add(_ entry: PriceEntry) async {
+        Log.event("price add started", category: "prices.add", metadata: [
+            "entryID": entry.id,
+            "recordID": entry.recordID,
+            "collectionID": entry.collectionID,
+            "currency": entry.currency,
+            "hasShopName": entry.shopName?.isEmpty == false,
+        ])
         do {
             let now = Date().iso8601
             try await database.execute(
@@ -61,12 +73,18 @@ final class PriceEntriesRepository: ObservableObject {
                     now,
                 ]
             )
+            Log.event("price add completed", category: "prices.add", metadata: ["entryID": entry.id, "recordID": entry.recordID])
         } catch {
             Log.error(error, category: "prices.add")
         }
     }
 
     func update(_ entry: PriceEntry) async {
+        Log.event("price update started", category: "prices.update", metadata: [
+            "entryID": entry.id,
+            "recordID": entry.recordID,
+            "currency": entry.currency,
+        ])
         do {
             try await database.execute(
                 sql: """
@@ -87,18 +105,21 @@ final class PriceEntriesRepository: ObservableObject {
                     entry.id,
                 ]
             )
+            Log.event("price update completed", category: "prices.update", metadata: ["entryID": entry.id])
         } catch {
             Log.error(error, category: "prices.update")
         }
     }
 
     func delete(entryID: String) async {
+        Log.event("price delete started", category: "prices.delete", metadata: ["entryID": entryID])
         do {
             let now = Date().iso8601
             try await database.execute(
                 sql: "update price_entries set deleted_at = ?, updated_at = ? where id = ?",
                 parameters: [now, now, entryID]
             )
+            Log.event("price delete completed", category: "prices.delete", metadata: ["entryID": entryID])
         } catch {
             Log.error(error, category: "prices.delete")
         }

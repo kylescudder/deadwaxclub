@@ -32,6 +32,7 @@ final class AppServices: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
 
     init() {
+        Log.breadcrumb("app services initializing", category: "app.lifecycle")
         let auth = AuthClient()
         let sync = PowerSyncManager(authClient: auth)
         let billing = BillingRepository(auth: auth)
@@ -65,6 +66,7 @@ final class AppServices: ObservableObject {
         NotificationCenter.default.publisher(for: .openRecord)
             .compactMap { $0.userInfo?["record_id"] as? String }
             .sink { [weak self] recordID in
+                Log.event("record deeplink received", category: "app.deeplink", metadata: ["recordID": recordID])
                 Task { [weak self] in await self?.openRecordByID(recordID) }
             }
             .store(in: &cancellables)
@@ -73,6 +75,7 @@ final class AppServices: ObservableObject {
             .compactMap { $0.userInfo?["collection_id"] as? String }
             .sink { [weak self] collectionID in
                 Task { @MainActor [weak self] in
+                    Log.event("collection deeplink received", category: "app.deeplink", metadata: ["collectionID": collectionID])
                     self?.pendingDeepLinkCollectionID = collectionID
                 }
             }
@@ -90,6 +93,7 @@ final class AppServices: ObservableObject {
     }
 
     private func applyAuth(state: AuthClient.State) {
+        Log.event("app services applying auth state", category: "app.auth", metadata: ["state": state.loggingDescription])
         guard case let .signedIn(userID, _) = state else {
             onboarding.resetForSignOut()
             billing.resetForSignOut()
@@ -108,27 +112,50 @@ final class AppServices: ObservableObject {
     }
 
     func canCreateNewRecord() async -> Bool {
-        guard !billing.isSubscribed else { return true }
-        guard let userID = auth.currentUserID?.lowerUUID else { return false }
+        guard !billing.isSubscribed else {
+            Log.breadcrumb("record creation allowed by subscription", category: "billing.limit")
+            return true
+        }
+        guard let userID = auth.currentUserID?.lowerUUID else {
+            Log.warning("record creation limit check failed: no authenticated user", category: "billing.limit")
+            return false
+        }
         let count = await records.createdRecordCount(userID: userID)
-        return count < Self.freeRecordLimit
+        let allowed = count < Self.freeRecordLimit
+        Log.event("record creation limit checked", category: "billing.limit", metadata: [
+            "count": count,
+            "limit": Self.freeRecordLimit,
+            "allowed": allowed,
+        ])
+        return allowed
     }
 
     private func openRecordByID(_ recordID: String) async {
         // Find from local SQLite — works offline because PowerSync syncs.
         if let record = await records.findByID(recordID) {
+            Log.event("record deeplink resolved", category: "app.deeplink", metadata: ["recordID": recordID])
             await MainActor.run { self.pendingDeepLinkRecord = record }
+        } else {
+            Log.warning("record deeplink could not be resolved", category: "app.deeplink")
         }
     }
 
     func evaluateOnboarding() {
+        Log.breadcrumb("onboarding evaluation scheduled", category: "onboarding")
         Task { @MainActor in
             await PushManager.shared.refreshAuthorizationStatus()
+            let notificationsAuthorized = PushManager.shared.authorizationStatus == .authorized
+            Log.event("onboarding evaluation running", category: "onboarding", metadata: [
+                "profileLoaded": profile.hasLoadedFromLocal,
+                "hasDisplayName": profile.profile?.displayName?.isEmpty == false,
+                "hasDiscogsToken": discogs.hasToken,
+                "notificationsAuthorized": notificationsAuthorized,
+            ])
             onboarding.reconcile(
                 profileLoaded: profile.hasLoadedFromLocal,
                 profileDisplayName: profile.profile?.displayName,
                 hasDiscogsToken: discogs.hasToken,
-                notificationsAuthorized: PushManager.shared.authorizationStatus == .authorized
+                notificationsAuthorized: notificationsAuthorized
             )
         }
     }
@@ -144,19 +171,29 @@ final class AppServices: ObservableObject {
     /// carousel slide (which may never happen).
     func ingestDiscogsImages(recordID: String, collectionID: String, sourceURLs: [String]) async {
         guard !sourceURLs.isEmpty else { return }
+        Log.event("discogs image ingestion started", category: "images.ingest", metadata: [
+            "recordID": recordID,
+            "collectionID": collectionID,
+            "sourceCount": sourceURLs.count,
+        ])
         await recordImages.bulkInsertFromDiscogs(
             recordID: recordID,
             collectionID: collectionID,
             sourceURLs: sourceURLs
         )
         await mirrorPendingImages(forRecord: recordID)
+        Log.event("discogs image ingestion completed", category: "images.ingest", metadata: ["recordID": recordID])
     }
 
     /// Mirror every record_images row for this record that has a source_url
     /// but no storage_path yet. Safe to call repeatedly. Detail screens call
     /// this on appear to catch any rows that weren't mirrored at save time.
     func mirrorPendingImages(forRecord recordID: String) async {
-        guard let record = await records.findByID(recordID) else { return }
+        Log.event("pending image mirror started", category: "images.mirror", metadata: ["recordID": recordID])
+        guard let record = await records.findByID(recordID) else {
+            Log.warning("pending image mirror skipped: record not found", category: "images.mirror")
+            return
+        }
         let rows: [RecordImage]
         do {
             let raw: [RecordImage?] = try await sync.database.getAll(
@@ -172,6 +209,10 @@ final class AppServices: ObservableObject {
                 mapper: { RecordImage.from(cursor: $0) }
             )
             rows = raw.compactMap { $0 }
+            Log.event("pending image mirror rows loaded", category: "images.mirror", metadata: [
+                "recordID": recordID,
+                "count": rows.count,
+            ])
         } catch {
             Log.error(error, category: "appServices.mirrorPending")
             return
@@ -179,6 +220,10 @@ final class AppServices: ObservableObject {
 
         for image in rows {
             await coverArt.mirrorIfNeeded(image: image, record: record) { [weak self] newPath in
+                Log.event("pending image mirrored", category: "images.mirror", metadata: [
+                    "recordID": recordID,
+                    "imageID": image.id,
+                ])
                 Task { @MainActor [weak self] in
                     await self?.recordImages.updateStoragePath(
                         imageID: image.id,
@@ -195,4 +240,17 @@ extension Notification.Name {
     /// or when a deep link routes to a specific Collection. UserInfo contains
     /// `collection_id`.
     static let openCollection = Notification.Name("dwc.openCollection")
+}
+
+private extension AuthClient.State {
+    var loggingDescription: String {
+        switch self {
+        case .unknown:
+            return "unknown"
+        case .signedOut:
+            return "signedOut"
+        case .signedIn:
+            return "signedIn"
+        }
+    }
 }

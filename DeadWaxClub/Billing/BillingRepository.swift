@@ -21,6 +21,7 @@ final class BillingRepository: ObservableObject {
     deinit { transactionTask?.cancel() }
 
     func start() {
+        Log.breadcrumb("billing observer starting", category: "billing")
         transactionTask?.cancel()
         transactionTask = Task { [weak self] in
             guard let self else { return }
@@ -35,16 +36,19 @@ final class BillingRepository: ObservableObject {
     }
 
     func resetForSignOut() {
+        Log.breadcrumb("billing state reset for sign out", category: "billing")
         isSubscribed = false
         lastError = nil
     }
 
     func loadProducts() async {
+        Log.breadcrumb("billing products load started", category: "billing.products")
         isLoadingProducts = true
         defer { isLoadingProducts = false }
         do {
             let products = try await Product.products(for: [Self.supporterMonthlyProductID])
             subscriptionProduct = products.first
+            Log.event("billing products load completed", category: "billing.products", metadata: ["count": products.count])
         } catch {
             lastError = error.localizedDescription
             Log.error(error, category: "billing.products")
@@ -53,6 +57,7 @@ final class BillingRepository: ObservableObject {
 
     @discardableResult
     func purchase() async -> Bool {
+        Log.breadcrumb("purchase started", category: "billing.purchase")
         guard let product = subscriptionProduct else {
             await loadProducts()
             guard subscriptionProduct != nil else { return false }
@@ -71,8 +76,10 @@ final class BillingRepository: ObservableObject {
                 await sync(transaction, jwsRepresentation: verification.jwsRepresentation)
                 await transaction.finish()
                 await syncEntitlements()
+                Log.event("purchase completed", category: "billing.purchase", metadata: ["isSubscribed": isSubscribed])
                 return isSubscribed
             case .userCancelled, .pending:
+                Log.breadcrumb("purchase cancelled or pending", category: "billing.purchase")
                 return false
             @unknown default:
                 return false
@@ -86,9 +93,11 @@ final class BillingRepository: ObservableObject {
 
     @discardableResult
     func restorePurchases() async -> Bool {
+        Log.breadcrumb("purchase restore started", category: "billing.restore")
         do {
             try await AppStore.sync()
             await syncEntitlements()
+            Log.event("purchase restore completed", category: "billing.restore", metadata: ["isSubscribed": isSubscribed])
             return isSubscribed
         } catch {
             lastError = error.localizedDescription
@@ -114,6 +123,7 @@ final class BillingRepository: ObservableObject {
     }
 
     func syncEntitlements() async {
+        Log.breadcrumb("billing entitlement sync started", category: "billing.entitlements")
         var active = false
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result,
@@ -124,9 +134,11 @@ final class BillingRepository: ObservableObject {
             }
         }
         isSubscribed = active
+        Log.event("billing entitlement sync completed", category: "billing.entitlements", metadata: ["isSubscribed": isSubscribed])
     }
 
     private func handle(_ result: VerificationResult<Transaction>) async {
+        Log.breadcrumb("billing transaction update received", category: "billing.transactions")
         guard case .verified(let transaction) = result else { return }
         guard transaction.productID == Self.supporterMonthlyProductID else { return }
         await sync(transaction, jwsRepresentation: result.jwsRepresentation)
@@ -135,6 +147,7 @@ final class BillingRepository: ObservableObject {
     }
 
     private func sync(_ transaction: Transaction, jwsRepresentation: String) async {
+        Log.event("billing transaction sync started", category: "billing.syncTransaction", metadata: ["productID": transaction.productID])
         guard let token = await auth.currentAccessToken() else { return }
         do {
             let url = AppSecrets.supabaseURL
@@ -155,6 +168,7 @@ final class BillingRepository: ObservableObject {
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 throw BillingSyncError.badStatus(http.statusCode)
             }
+            Log.event("billing transaction sync completed", category: "billing.syncTransaction", metadata: ["productID": transaction.productID])
         } catch {
             Log.error(error, category: "billing.syncTransaction")
         }

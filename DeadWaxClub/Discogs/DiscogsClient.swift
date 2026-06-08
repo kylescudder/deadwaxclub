@@ -28,10 +28,12 @@ final class DiscogsClient: ObservableObject {
 
     func setToken(_ token: String) {
         try? Keychain.write(key: "discogs.token", value: token)
+        Log.event("discogs token saved", category: "discogs.auth", metadata: ["tokenLength": token.count])
     }
 
     func clearToken() {
         try? Keychain.delete(key: "discogs.token")
+        Log.breadcrumb("discogs token cleared", category: "discogs.auth")
     }
 
     private func token() throws -> String {
@@ -43,6 +45,7 @@ final class DiscogsClient: ObservableObject {
 
     /// Look up a release by EAN/UPC barcode.
     func lookup(barcode: String) async throws -> DiscogsLookup {
+        Log.event("discogs barcode lookup started", category: "discogs.lookup", metadata: ["barcodeLength": barcode.count])
         let token = try token()
 
         var components = URLComponents(url: base.appendingPathComponent("database/search"), resolvingAgainstBaseURL: false)!
@@ -54,9 +57,16 @@ final class DiscogsClient: ObservableObject {
         ]
 
         let search: DiscogsModels.SearchResponse = try await get(url: components.url!, token: token)
+        Log.event("discogs barcode search completed", category: "discogs.lookup", metadata: ["resultCount": search.results.count])
         guard let first = search.results.first else { throw LookupError.noResults }
 
-        return try await lookup(releaseID: first.id, token: token, fallbackBarcode: barcode)
+        let result = try await lookup(releaseID: first.id, token: token, fallbackBarcode: barcode)
+        Log.event("discogs barcode lookup completed", category: "discogs.lookup", metadata: [
+            "releaseID": result.releaseID,
+            "imageCount": result.imageURLs.count,
+            "hasEstimate": result.estimatedPriceCents != nil,
+        ])
+        return result
     }
 
     /// Free-text search by title and/or artist for vinyl releases. Returns
@@ -72,6 +82,10 @@ final class DiscogsClient: ObservableObject {
         ]
         let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
         let trimmedArtist = artist.trimmingCharacters(in: .whitespaces)
+        Log.event("discogs text search started", category: "discogs.search", metadata: [
+            "hasTitle": !trimmedTitle.isEmpty,
+            "hasArtist": !trimmedArtist.isEmpty,
+        ])
         if !trimmedTitle.isEmpty {
             items.append(URLQueryItem(name: "release_title", value: trimmedTitle))
         }
@@ -81,6 +95,7 @@ final class DiscogsClient: ObservableObject {
         components.queryItems = items
 
         let resp: DiscogsModels.SearchResponse = try await get(url: components.url!, token: token)
+        Log.event("discogs text search completed", category: "discogs.search", metadata: ["resultCount": resp.results.count])
         return resp.results.map { r in
             DiscogsSearchResult(
                 id: r.id,
@@ -98,19 +113,32 @@ final class DiscogsClient: ObservableObject {
     }
 
     func release(id: Int64) async throws -> DiscogsLookup {
+        Log.event("discogs release lookup started", category: "discogs.release", metadata: ["releaseID": id])
         let token = try token()
-        return try await lookup(releaseID: id, token: token, fallbackBarcode: nil)
+        let lookup = try await lookup(releaseID: id, token: token, fallbackBarcode: nil)
+        Log.event("discogs release lookup completed", category: "discogs.release", metadata: [
+            "releaseID": id,
+            "imageCount": lookup.imageURLs.count,
+            "hasEstimate": lookup.estimatedPriceCents != nil,
+        ])
+        return lookup
     }
 
     /// Fetch only the marketplace stats for an existing release, e.g. to
     /// refresh the estimated value on a record we already have locally.
     func marketplaceStats(releaseID: Int64) async throws -> (cents: Int, currency: String)? {
+        Log.event("discogs marketplace stats started", category: "discogs.marketplace", metadata: ["releaseID": releaseID])
         let token = try token()
         let stats: DiscogsModels.MarketplaceStats? = try await optionalGet(
             url: base.appendingPathComponent("marketplace/stats/\(releaseID)"),
             token: token
         )
-        return Self.estimate(from: stats)
+        let estimate = Self.estimate(from: stats)
+        Log.event("discogs marketplace stats completed", category: "discogs.marketplace", metadata: [
+            "releaseID": releaseID,
+            "hasEstimate": estimate != nil,
+        ])
+        return estimate
     }
 
     /// Like `get` but returns nil on 404 / network error so optional
@@ -127,6 +155,7 @@ final class DiscogsClient: ObservableObject {
     }
 
     private func lookup(releaseID: Int64, token: String, fallbackBarcode: String?) async throws -> DiscogsLookup {
+        Log.event("discogs release fetch started", category: "discogs.lookup", metadata: ["releaseID": releaseID])
         async let releaseTask: DiscogsModels.Release = get(
             url: base.appendingPathComponent("releases/\(releaseID)"),
             token: token
@@ -149,12 +178,18 @@ final class DiscogsClient: ObservableObject {
             masterYear = nil
         }
 
-        return Self.map(
+        let lookup = Self.map(
             release: release,
             stats: stats,
             fallbackBarcode: fallbackBarcode,
             masterYear: masterYear
         )
+        Log.event("discogs release fetch completed", category: "discogs.lookup", metadata: [
+            "releaseID": releaseID,
+            "hasMasterYear": masterYear != nil,
+            "imageCount": lookup.imageURLs.count,
+        ])
+        return lookup
     }
 
     private func get<T: Decodable>(url: URL, token: String) async throws -> T {
@@ -166,11 +201,14 @@ final class DiscogsClient: ObservableObject {
         req.setValue("DeadWaxClub/0.1", forHTTPHeaderField: "User-Agent")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
 
+        Log.event("discogs request started", category: "discogs.network", metadata: ["path": url.path])
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            Log.event("discogs request failed", category: "discogs.network", metadata: ["path": url.path, "statusCode": code])
             throw LookupError.http(code)
         }
+        Log.event("discogs request completed", category: "discogs.network", metadata: ["path": url.path, "statusCode": http.statusCode])
         return try JSONDecoder().decode(T.self, from: data)
     }
 

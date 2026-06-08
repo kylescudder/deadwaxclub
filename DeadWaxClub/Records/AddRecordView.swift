@@ -217,12 +217,17 @@ struct AddRecordView: View {
     }
 
     private func loadPickedPhoto(_ item: PhotosPickerItem) async {
+        Log.breadcrumb("photo picker load started", category: "addrecord.photo")
         defer { photoPickerSelection = nil }
         do {
             if let data = try await item.loadTransferable(type: Data.self) {
                 await MainActor.run {
                     pendingPhotos.append(data)
                     successCount += 1
+                    Log.event("photo picker load completed", category: "addrecord.photo", metadata: [
+                        "photoCount": pendingPhotos.count,
+                        "bytes": data.count,
+                    ])
                 }
             }
         } catch {
@@ -272,6 +277,11 @@ struct AddRecordView: View {
     /// Pulled from the picker. Overwrites the user's typed facts because
     /// they explicitly chose this release; preserves notes/status.
     private func applyLookup(_ lookup: DiscogsLookup) {
+        Log.event("discogs lookup applied to form", category: "addrecord.lookup", metadata: [
+            "releaseID": lookup.releaseID,
+            "imageCount": lookup.imageURLs.count,
+            "hasEstimate": lookup.estimatedPriceCents != nil,
+        ])
         title = lookup.title
         artist = ArtistNameNormalizer.displayName(lookup.artist)
         if let y = lookup.year { year = String(y) }
@@ -288,13 +298,25 @@ struct AddRecordView: View {
     }
 
     private func save() async {
-        guard let ownerID = services.auth.currentUserID?.lowerUUID else { return }
+        Log.event("record save requested", category: "addrecord.save", metadata: [
+            "mode": existing == nil ? "create" : "edit",
+            "status": status.rawValue,
+            "pendingPhotoCount": pendingPhotos.count,
+            "hasAttachedRelease": attachedReleaseID != nil,
+        ])
+        guard let ownerID = services.auth.currentUserID?.lowerUUID else {
+            Log.warning("record save blocked: no authenticated user", category: "addrecord.save")
+            return
+        }
         // Picker selection wins; otherwise stay in the existing record's
         // Collection (when editing) or default to the user's primary.
         let resolvedCollectionID: String? = selectedCollectionID
             ?? existing?.collectionID
             ?? services.profile.profile?.primaryCollectionID
-        guard let collectionID = resolvedCollectionID else { return }
+        guard let collectionID = resolvedCollectionID else {
+            Log.warning("record save blocked: no collection selected", category: "addrecord.save")
+            return
+        }
         isSaving = true
         defer { isSaving = false }
 
@@ -303,9 +325,15 @@ struct AddRecordView: View {
         let trimmedBarcode = barcode.trimmingCharacters(in: .whitespaces)
         var enrichment: DiscogsLookup?
         if !trimmedBarcode.isEmpty && attachedReleaseID == nil {
+            Log.event("save-time barcode enrichment started", category: "addrecord.barcodeLookup", metadata: ["barcodeLength": trimmedBarcode.count])
             do {
                 enrichment = try await services.discogs.lookup(barcode: trimmedBarcode)
+                Log.event("save-time barcode enrichment completed", category: "addrecord.barcodeLookup", metadata: [
+                    "releaseID": enrichment?.releaseID,
+                    "imageCount": enrichment?.imageURLs.count,
+                ])
             } catch DiscogsClient.LookupError.noResults {
+                Log.breadcrumb("save-time barcode enrichment had no results", category: "addrecord.barcodeLookup")
                 // Save anyway — user can attach via the picker later.
             } catch {
                 Log.error(error, category: "addrecord.barcodeLookup")
@@ -360,6 +388,11 @@ struct AddRecordView: View {
             collectionID: collectionID
            ) {
             let destinationName = collectionName(collectionID)
+            Log.event("duplicate record found during save", category: "addrecord.save", metadata: [
+                "duplicateID": duplicate.id,
+                "duplicateStatus": duplicate.status.rawValue,
+                "requestedStatus": status.rawValue,
+            ])
             if duplicate.status == .wishlist && status == .owned {
                 await services.records.updateStatus(recordID: duplicate.id, status: .owned)
                 saveNotice = AddRecordNotice(
@@ -386,6 +419,7 @@ struct AddRecordView: View {
         }
 
         if existing == nil, !(await services.canCreateNewRecord()) {
+            Log.breadcrumb("record save blocked by free record limit", category: "addrecord.save")
             showPaywall = true
             return
         }
@@ -414,6 +448,11 @@ struct AddRecordView: View {
             deletedAt: nil
         )
         await services.records.upsert(record)
+        Log.event("record save persisted", category: "addrecord.save", metadata: [
+            "recordID": record.id,
+            "collectionID": record.collectionID,
+            "mode": existing == nil ? "create" : "edit",
+        ])
         // Persist all Discogs images for the carousel. Priority:
         // 1. Captured array from the Discogs picker (covers all images)
         // 2. Barcode-driven enrichment fetched at save time
@@ -424,6 +463,10 @@ struct AddRecordView: View {
                 ? enrichment!.imageURLs
                 : [resolvedCoverURL].compactMap { $0 })
         if !imageSources.isEmpty {
+            Log.event("record save ingesting discogs images", category: "addrecord.images", metadata: [
+                "recordID": record.id,
+                "sourceCount": imageSources.count,
+            ])
             await services.ingestDiscogsImages(
                 recordID: record.id,
                 collectionID: record.collectionID,
@@ -433,6 +476,10 @@ struct AddRecordView: View {
         // Upload any photos the user picked / shot in this form. They append
         // to whatever Discogs already supplied (so position 0 stays the cover).
         if !pendingPhotos.isEmpty {
+            Log.event("record save uploading user photos", category: "addrecord.images", metadata: [
+                "recordID": record.id,
+                "photoCount": pendingPhotos.count,
+            ])
             for data in pendingPhotos {
                 let imageID = UUID().lowerUUID
                 do {
@@ -448,12 +495,17 @@ struct AddRecordView: View {
                         uploadedBy: ownerID,
                         imageID: imageID
                     )
+                    Log.event("user photo uploaded", category: "addrecord.images", metadata: [
+                        "recordID": record.id,
+                        "imageID": imageID,
+                    ])
                 } catch {
                     Log.error(error, category: "addrecord.uploadUserImage")
                 }
             }
         }
         successCount += 1
+        Log.event("record save completed", category: "addrecord.save", metadata: ["recordID": record.id])
         dismiss()
     }
 }
