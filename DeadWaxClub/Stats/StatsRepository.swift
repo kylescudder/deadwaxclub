@@ -63,6 +63,7 @@ final class StatsRepository: ObservableObject {
     }
 
     func refresh(scope: StatsScope) async {
+        Log.event("stats refresh started", category: "stats.refresh", metadata: ["scope": scope.loggingDescription])
         isLoading = true
         defer { isLoading = false }
         do {
@@ -87,6 +88,13 @@ final class StatsRepository: ObservableObject {
                 topPaid: tp,
                 lowestSeen: lo
             )
+            Log.event("stats refresh completed", category: "stats.refresh", metadata: [
+                "scope": scope.loggingDescription,
+                "owned": c.owned,
+                "wishlist": c.wishlist,
+                "decadeBuckets": d.count,
+                "colourwayBuckets": cw.count,
+            ])
         } catch {
             Log.error(error, category: "stats.refresh")
         }
@@ -288,5 +296,16 @@ final class StatsRepository: ObservableObject {
             }
         )
         return rows.compactMap { $0 }
+    }
+}
+
+private extension StatsScope {
+    var loggingDescription: String {
+        switch self {
+        case .allMyCollections:
+            return "allMyCollections"
+        case .singleCollection(let collectionID):
+            return "singleCollection(\(collectionID))"
+        }
     }
 }

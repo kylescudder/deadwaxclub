@@ -17,6 +17,7 @@ final class ListsRepository: ObservableObject {
     deinit { watchTask?.cancel() }
 
     func startWatching(userID: String) {
+        Log.breadcrumb("lists watch starting", category: "lists.watch")
         watchTask?.cancel()
         watchTask = Task { [weak self, database] in
             guard let self else { return }
@@ -36,6 +37,7 @@ final class ListsRepository: ObservableObject {
                 )
                 for try await rows in stream {
                     let mapped = rows.compactMap { $0 }
+                    Log.event("lists watch emitted", category: "lists.watch", metadata: ["count": mapped.count])
                     await MainActor.run { self.lists = mapped }
                 }
             } catch {
@@ -45,6 +47,7 @@ final class ListsRepository: ObservableObject {
     }
 
     func create(name: String, description: String?, mode: ListShareMode) async -> VinylList? {
+        Log.event("list create started", category: "lists.create", metadata: ["mode": mode.rawValue])
         guard let ownerID = auth.currentUserID?.lowerUUID else { return nil }
         let now = Date()
         let id = UUID().lowerUUID
@@ -62,10 +65,12 @@ final class ListsRepository: ObservableObject {
             deletedAt: nil
         )
         await upsert(list)
+        Log.event("list create completed", category: "lists.create", metadata: ["listID": id, "mode": mode.rawValue])
         return list
     }
 
     func upsert(_ list: VinylList) async {
+        Log.event("list upsert started", category: "lists.upsert", metadata: ["listID": list.id, "mode": list.shareMode.rawValue])
         let createdAt = list.createdAt.iso8601
         let updatedAt = Date().iso8601
         do {
@@ -101,6 +106,7 @@ final class ListsRepository: ObservableObject {
                     list.coverRecordID, updatedAt, list.id,
                 ]
             )
+            Log.event("list upsert completed", category: "lists.upsert", metadata: ["listID": list.id])
         } catch {
             Log.error(error, category: "lists.upsert")
         }
@@ -135,6 +141,7 @@ final class ListsRepository: ObservableObject {
     }
 
     func addRecord(_ recordID: String, to listID: String) async {
+        Log.event("list item add started", category: "lists.items", metadata: ["listID": listID, "recordID": recordID])
         guard let userID = auth.currentUserID?.lowerUUID else { return }
         do {
             // PowerSync's INSTEAD-OF triggers expect plain `INSERT … VALUES`.
@@ -146,7 +153,10 @@ final class ListsRepository: ObservableObject {
                 parameters: [listID, recordID],
                 mapper: { _ in true }
             )
-            if alreadyOnList == true { return }
+            if alreadyOnList == true {
+                Log.event("list item add skipped duplicate", category: "lists.items", metadata: ["listID": listID, "recordID": recordID])
+                return
+            }
 
             let nextPosition: Int = try await database.getOptional(
                 sql: "select coalesce(max(position) + 1, 0) as next_pos from list_items where list_id = ?",
@@ -163,6 +173,7 @@ final class ListsRepository: ObservableObject {
                 """,
                 parameters: [id, listID, recordID, userID, nextPosition, now]
             )
+            Log.event("list item add completed", category: "lists.items", metadata: ["listID": listID, "recordID": recordID])
         } catch {
             Log.error(error, category: "lists.addRecord")
         }

@@ -60,7 +60,7 @@ struct SignInView: View {
                     PrimaryButton(title: "Sign in", isLoading: isWorking) {
                         Task { await signIn() }
                     }
-                    .disabled(!isFormValid)
+                    .disabled(!isFormValid || isWorking)
 
                     HStack {
                         Rectangle().fill(Theme.Colors.separator).frame(height: 1)
@@ -70,6 +70,7 @@ struct SignInView: View {
 
                     AppleSignInButton()
                         .frame(height: 50)
+                        .disabled(isWorking)
 
                     SecondaryButton(
                         title: "Continue with Google",
@@ -77,12 +78,9 @@ struct SignInView: View {
                         iconTextSpacing: 12,
                         titleFont: .custom("Roboto-Medium", size: 17, relativeTo: .body)
                     ) {
-                        Task {
-                            isWorking = true
-                            await services.auth.signInWithGoogle()
-                            isWorking = false
-                        }
+                        Task { await googleSignIn() }
                     }
+                    .disabled(isWorking)
                 }
 
                 Button("Create an account") { showSignUp = true }
@@ -102,12 +100,23 @@ struct SignInView: View {
     }
 
     private var isFormValid: Bool {
-        !email.isEmpty && password.count >= 6
+        !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && password.count >= 6
     }
 
     private func signIn() async {
+        guard !isWorking else { return }
         isWorking = true
         defer { isWorking = false }
-        await services.auth.signIn(email: email, password: password)
+        await services.auth.signIn(
+            email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+            password: password
+        )
+    }
+
+    private func googleSignIn() async {
+        guard !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
+        await services.auth.signInWithGoogle()
     }
 }

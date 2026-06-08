@@ -49,6 +49,10 @@ final class RecordsRepository: ObservableObject {
     /// they belong to (`collection_members.user_id = ?`). When `collectionID`
     /// is set, narrow further to that single Collection.
     func startWatching(status: RecordStatus, userID: String, collectionID: String? = nil) {
+        Log.event("records watch starting", category: "records.watch", metadata: [
+            "status": status.rawValue,
+            "collectionID": collectionID,
+        ])
         watchTask?.cancel()
         isLoading = true
         watchTask = Task { [weak self, database] in
@@ -81,6 +85,10 @@ final class RecordsRepository: ObservableObject {
                 )
                 for try await rows in stream {
                     let mapped = rows.compactMap { $0 }
+                    Log.event("records watch emitted", category: "records.watch", metadata: [
+                        "status": status.rawValue,
+                        "count": mapped.count,
+                    ])
                     await MainActor.run {
                         self.records = mapped
                         self.isLoading = false
@@ -95,6 +103,13 @@ final class RecordsRepository: ObservableObject {
     }
 
     func upsert(_ record: VinylRecord) async {
+        Log.event("record upsert started", category: "records.upsert", metadata: [
+            "recordID": record.id,
+            "collectionID": record.collectionID,
+            "status": record.status.rawValue,
+            "hasDiscogsRelease": record.discogsReleaseID != nil,
+            "hasBarcode": record.barcode?.isEmpty == false,
+        ])
         let updatedAt = Date().iso8601
         let createdAt = record.createdAt.iso8601
         let estimatedAt = record.estimatedPriceUpdatedAt?.iso8601
@@ -144,6 +159,10 @@ final class RecordsRepository: ObservableObject {
                     record.id,
                 ]
             )
+            Log.event("record upsert completed", category: "records.upsert", metadata: [
+                "recordID": record.id,
+                "pressingID": pressingID,
+            ])
         } catch {
             Log.error(error, category: "records.upsert")
         }
@@ -151,7 +170,7 @@ final class RecordsRepository: ObservableObject {
 
     func createdRecordCount(userID: String) async -> Int {
         do {
-            return try await database.getOptional(
+            let count = try await database.getOptional(
                 sql: """
                 select count(*) as count
                 from records
@@ -170,6 +189,8 @@ final class RecordsRepository: ObservableObject {
                 parameters: [userID, userID],
                 mapper: { try $0.getInt(name: "count") }
             ) ?? 0
+            Log.event("created record count fetched", category: "records.createdRecordCount", metadata: ["count": count])
+            return count
         } catch {
             Log.error(error, category: "records.createdRecordCount")
             return 0
@@ -274,6 +295,7 @@ final class RecordsRepository: ObservableObject {
     }
 
     func updateEstimate(recordID: String, cents: Int, currency: String) async {
+        Log.event("record estimate update started", category: "records.updateEstimate", metadata: ["recordID": recordID, "currency": currency])
         do {
             let now = Date().iso8601
             let pressingID = try await database.getOptional(
@@ -304,6 +326,7 @@ final class RecordsRepository: ObservableObject {
     }
 
     func updateStatus(recordID: String, status: RecordStatus) async {
+        Log.event("record status update started", category: "records.updateStatus", metadata: ["recordID": recordID, "status": status.rawValue])
         do {
             let now = Date().iso8601
             try await database.execute(
@@ -316,6 +339,7 @@ final class RecordsRepository: ObservableObject {
     }
 
     func updateStoragePath(recordID: String, storagePath: String) async {
+        Log.event("record cover storage update started", category: "records.updateStoragePath", metadata: ["recordID": recordID])
         do {
             let pressingID = try await database.getOptional(
                 sql: "select record_pressing_id from records where id = ?",
@@ -339,6 +363,7 @@ final class RecordsRepository: ObservableObject {
     }
 
     func softDelete(recordID: String) async {
+        Log.event("record soft delete started", category: "records.softDelete", metadata: ["recordID": recordID])
         do {
             let now = Date().iso8601
             try await database.execute(
@@ -346,6 +371,7 @@ final class RecordsRepository: ObservableObject {
                 parameters: [now, now, recordID]
             )
             SpotlightIndex.remove(recordIDs: [recordID])
+            Log.event("record soft delete completed", category: "records.softDelete", metadata: ["recordID": recordID])
         } catch {
             Log.error(error, category: "records.softDelete")
         }
@@ -355,6 +381,7 @@ final class RecordsRepository: ObservableObject {
     /// can see — prevents the same release being added twice when one member
     /// has it in a personal Collection and another scans it into a shared one.
     func findByBarcode(_ barcode: String, userID: String) async -> VinylRecord? {
+        Log.event("record barcode lookup started", category: "records.findByBarcode", metadata: ["barcodeLength": barcode.count])
         do {
             let rows = try await database.getAll(
                 sql: """
@@ -366,7 +393,9 @@ final class RecordsRepository: ObservableObject {
                 parameters: [userID, barcode],
                 mapper: { VinylRecord.from(cursor: $0) }
             )
-            return rows.compactMap { $0 }.first
+            let match = rows.compactMap { $0 }.first
+            Log.event("record barcode lookup completed", category: "records.findByBarcode", metadata: ["found": match != nil])
+            return match
         } catch {
             Log.error(error, category: "records.findByBarcode")
             return nil
@@ -374,13 +403,16 @@ final class RecordsRepository: ObservableObject {
     }
 
     func findByID(_ recordID: String) async -> VinylRecord? {
+        Log.event("record id lookup started", category: "records.findByID", metadata: ["recordID": recordID])
         do {
             let rows = try await database.getAll(
                 sql: "\(recordSelectSQL) where r.id = ? and r.deleted_at is null limit 1",
                 parameters: [recordID],
                 mapper: { VinylRecord.from(cursor: $0) }
             )
-            return rows.compactMap { $0 }.first
+            let match = rows.compactMap { $0 }.first
+            Log.event("record id lookup completed", category: "records.findByID", metadata: ["recordID": recordID, "found": match != nil])
+            return match
         } catch {
             Log.error(error, category: "records.findByID")
             return nil
@@ -519,6 +551,7 @@ final class RecordsRepository: ObservableObject {
 
     /// Move a record into a different Collection the user has write access to.
     func moveToCollection(recordID: String, collectionID: String) async {
+        Log.event("record move started", category: "records.moveToCollection", metadata: ["recordID": recordID, "collectionID": collectionID])
         do {
             let now = Date().iso8601
             try await database.execute(

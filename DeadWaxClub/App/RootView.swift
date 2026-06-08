@@ -109,30 +109,35 @@ struct RootView: View {
     }
 
     private func handle(url: URL) {
-        Log.breadcrumb("incoming url: \(url.absoluteString)", category: "deeplink")
+        Log.breadcrumb("incoming url: \(Log.redactedURLDescription(url))", category: "deeplink")
         // Public list share link: https://deadwaxclub.app/l/<token> or deadwaxclub://list/<token>
         if url.host == "deadwaxclub.app", url.pathComponents.count >= 3, url.pathComponents[1] == "l" {
+            Log.breadcrumb("deeplink routed to public list", category: "deeplink")
             publicListToken = url.pathComponents[2]
             return
         }
         if url.scheme == "deadwaxclub", url.host == "list", let token = url.pathComponents.last, !token.isEmpty {
+            Log.breadcrumb("deeplink routed to public list", category: "deeplink")
             publicListToken = token
             return
         }
         if url.scheme == "deadwaxclub", url.host == "shortcut",
            let actionName = url.pathComponents.last,
            let action = AppQuickAction(rawValue: actionName) {
+            Log.event("deeplink routed to shortcut", category: "deeplink", metadata: ["action": actionName])
             QuickActionRouter.handle(action)
             return
         }
         if url.scheme == "deadwaxclub", url.host == "record",
            let recordID = url.pathComponents.last, !recordID.isEmpty {
+            Log.event("deeplink routed to record", category: "deeplink", metadata: ["recordID": recordID])
             NotificationCenter.default.post(
                 name: .openRecord, object: nil, userInfo: ["record_id": recordID]
             )
             return
         }
         // Otherwise pass to auth (OAuth callback / email confirmation).
+        Log.breadcrumb("deeplink routed to auth callback", category: "deeplink")
         Task { await services.auth.handle(callbackURL: url) }
     }
 

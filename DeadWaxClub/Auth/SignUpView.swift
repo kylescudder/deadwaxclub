@@ -70,7 +70,7 @@ struct SignUpView: View {
         PrimaryButton(title: "Create account", isLoading: isWorking) {
             Task { await signUp() }
         }
-        .disabled(!isFormValid)
+        .disabled(!isFormValid || isWorking)
     }
 
     private func confirmationCard(email: String) -> some View {
@@ -99,15 +99,16 @@ struct SignUpView: View {
     }
 
     private var isFormValid: Bool {
-        !email.isEmpty && password.count >= 6
+        !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && password.count >= 6
     }
 
     private func signUp() async {
+        guard !isWorking else { return }
         isWorking = true
         defer { isWorking = false }
-        let trimmedDisplayName = displayName.trimmingCharacters(in: .whitespaces)
+        let trimmedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let result = await services.auth.signUp(
-            email: email,
+            email: email.trimmingCharacters(in: .whitespacesAndNewlines),
             password: password,
             displayName: trimmedDisplayName.isEmpty ? nil : trimmedDisplayName
         )

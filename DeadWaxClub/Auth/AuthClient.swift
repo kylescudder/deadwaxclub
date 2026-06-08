@@ -11,6 +11,44 @@ final class AuthClient: ObservableObject {
         case signedIn(userID: UUID, email: String?)
     }
 
+    private enum AuthOperationError: LocalizedError {
+        case timedOut(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .timedOut(let operation):
+                return "\(operation) timed out. Check your connection and try again."
+            }
+        }
+    }
+
+    private final class AuthContinuationGate<T>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<T, Error>?
+
+        init(_ continuation: CheckedContinuation<T, Error>) {
+            self.continuation = continuation
+        }
+
+        func resume(returning value: T) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let continuation else { return }
+            self.continuation = nil
+            continuation.resume(returning: value)
+        }
+
+        func resume(throwing error: Error) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let continuation else { return }
+            self.continuation = nil
+            continuation.resume(throwing: error)
+        }
+    }
+
+    private static let authOperationTimeoutSeconds = 20
+
     @Published private(set) var state: State = .unknown
     @Published var lastError: String?
     /// Set to `true` when Supabase emits a `.passwordRecovery` auth event —
@@ -38,11 +76,17 @@ final class AuthClient: ObservableObject {
     deinit { stateTask?.cancel() }
 
     func bootstrap() async {
+        Log.breadcrumb("auth bootstrap started", category: "auth")
         // Read current session up front so the UI doesn't hang on `.unknown`.
         do {
             let session = try await supabase.auth.session
+            Log.event("auth bootstrap session read", category: "auth", metadata: [
+                "hasSession": true,
+                "isExpired": session.isExpired,
+            ])
             apply(session: session)
         } catch {
+            Log.event("auth bootstrap has no active session", category: "auth", metadata: ["reason": error.localizedDescription])
             apply(session: nil)
         }
 
@@ -51,8 +95,13 @@ final class AuthClient: ObservableObject {
         stateTask = Task { [weak self] in
             guard let self else { return }
             for await (event, session) in supabase.auth.authStateChanges {
+                Log.event("auth state changed", category: "auth", metadata: [
+                    "event": String(describing: event),
+                    "hasSession": session != nil,
+                ])
                 if event == .passwordRecovery {
                     self.isPasswordRecovery = true
+                    Log.breadcrumb("password recovery auth event received", category: "auth")
                 }
                 self.apply(session: session)
             }
@@ -70,7 +119,7 @@ final class AuthClient: ObservableObject {
     }
 
     var currentUserID: UUID? {
-        if case let .signedIn(id, _) = state { return id }
+        if case .signedIn(let id, _) = state { return id }
         return nil
     }
 
@@ -80,6 +129,27 @@ final class AuthClient: ObservableObject {
             return try await supabase.auth.session.accessToken
         } catch {
             return nil
+        }
+    }
+
+    private func withAuthTimeout<T>(
+        operationName: String,
+        operation: @escaping () async throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            let gate = AuthContinuationGate(continuation)
+            let task = Task { @MainActor in
+                do {
+                    gate.resume(returning: try await operation())
+                } catch {
+                    gate.resume(throwing: error)
+                }
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(Self.authOperationTimeoutSeconds)) {
+                task.cancel()
+                gate.resume(throwing: AuthOperationError.timedOut(operationName))
+            }
         }
     }
 
@@ -93,7 +163,9 @@ final class AuthClient: ObservableObject {
     }
 
     func signUp(email: String, password: String, displayName: String?) async -> SignUpResult? {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         lastError = nil
+        Log.event("signup started", category: "auth", metadata: ["hasDisplayName": displayName?.isEmpty == false])
         do {
             // Hand the display name through `raw_user_meta_data` so the
             // `handle_new_user` trigger picks it up at insert time — works
@@ -107,18 +179,26 @@ final class AuthClient: ObservableObject {
             // `redirectTo` is where Supabase sends the user after the email
             // confirmation link is verified — has to land on the app so
             // `session(from:)` can extract the tokens and sign them in.
-            let response = try await supabase.auth.signUp(
-                email: email,
-                password: password,
-                data: metadata,
-                redirectTo: AppSecrets.authRedirectURL
-            )
+            let client = supabase
+            let response = try await withAuthTimeout(operationName: "Sign up") {
+                try await client.auth.signUp(
+                    email: trimmedEmail,
+                    password: password,
+                    data: metadata,
+                    redirectTo: AppSecrets.authRedirectURL
+                )
+            }
             // Either branch means the user took an explicit signup action,
             // so any stashed reset-password intent is stale.
             AuthClient.clearPendingRecoveryFlag()
-            return response.session != nil
+            let result: SignUpResult = response.session != nil
                 ? .signedIn
-                : .needsEmailConfirmation(email: email)
+                : .needsEmailConfirmation(email: trimmedEmail)
+            Log.event("signup completed", category: "auth", metadata: [
+                "createdSession": response.session != nil,
+                "needsEmailConfirmation": response.session == nil,
+            ])
+            return result
         } catch {
             lastError = error.localizedDescription
             Log.error(error, category: "auth")
@@ -127,10 +207,16 @@ final class AuthClient: ObservableObject {
     }
 
     func signIn(email: String, password: String) async {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         lastError = nil
+        Log.breadcrumb("email signin started", category: "auth")
         do {
-            _ = try await supabase.auth.signIn(email: email, password: password)
+            let client = supabase
+            _ = try await withAuthTimeout(operationName: "Sign in") {
+                try await client.auth.signIn(email: trimmedEmail, password: password)
+            }
             AuthClient.clearPendingRecoveryFlag()
+            Log.breadcrumb("email signin completed", category: "auth")
         } catch {
             lastError = error.localizedDescription
             Log.error(error, category: "auth")
@@ -144,12 +230,17 @@ final class AuthClient: ObservableObject {
     /// establishes a recovery session and the auth-state listener flips
     /// `isPasswordRecovery`, prompting RootView to show the reset sheet.
     func sendPasswordReset(email: String) async -> Bool {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         lastError = nil
+        Log.breadcrumb("password reset requested", category: "auth.reset")
         do {
-            try await supabase.auth.resetPasswordForEmail(
-                email,
-                redirectTo: AppSecrets.authRedirectURL
-            )
+            let client = supabase
+            try await withAuthTimeout(operationName: "Password reset") {
+                try await client.auth.resetPasswordForEmail(
+                    trimmedEmail,
+                    redirectTo: AppSecrets.authRedirectURL
+                )
+            }
             // Self-hosted GoTrue's PKCE redirect can omit `type=recovery`, so
             // we record that recovery is pending for this device — the next
             // PKCE callback within an hour is treated as recovery even if the
@@ -158,6 +249,7 @@ final class AuthClient: ObservableObject {
                 Date().addingTimeInterval(3600),
                 forKey: AuthClient.recoveryPendingKey
             )
+            Log.breadcrumb("password reset email sent", category: "auth.reset")
             return true
         } catch {
             lastError = error.localizedDescription
@@ -193,10 +285,15 @@ final class AuthClient: ObservableObject {
     /// downgrade against shoulder-surfing the email link.
     func updatePassword(newPassword: String) async -> Bool {
         lastError = nil
+        Log.breadcrumb("password update started", category: "auth.updatePassword")
         do {
-            _ = try await supabase.auth.update(user: UserAttributes(password: newPassword))
+            let client = supabase
+            _ = try await withAuthTimeout(operationName: "Password update") {
+                try await client.auth.update(user: UserAttributes(password: newPassword))
+            }
             isPasswordRecovery = false
-            try await supabase.auth.signOut()
+            try await client.auth.signOut()
+            Log.breadcrumb("password updated; recovery session signed out", category: "auth.updatePassword")
             return true
         } catch {
             lastError = error.localizedDescription
@@ -212,6 +309,7 @@ final class AuthClient: ObservableObject {
     /// Configures the request — required so we can supply the nonce that
     /// supabase-swift will validate against the returned identity token.
     func beginAppleSignIn(request: ASAuthorizationAppleIDRequest) {
+        Log.breadcrumb("apple signin started", category: "auth.apple")
         let nonce = AppleNonce.random()
         pendingAppleNonce = nonce
         request.requestedScopes = [.fullName, .email]
@@ -222,7 +320,10 @@ final class AuthClient: ObservableObject {
         defer { pendingAppleNonce = nil }
         switch result {
         case .failure(let error):
-            if (error as? ASAuthorizationError)?.code == .canceled { return }
+            if (error as? ASAuthorizationError)?.code == .canceled {
+                Log.breadcrumb("apple signin cancelled", category: "auth.apple")
+                return
+            }
             lastError = error.localizedDescription
             Log.error(error, category: "auth.apple")
         case .success(let authorization):
@@ -234,10 +335,14 @@ final class AuthClient: ObservableObject {
                 return
             }
             do {
-                _ = try await supabase.auth.signInWithIdToken(
-                    credentials: .init(provider: .apple, idToken: token, nonce: nonce)
-                )
+                let client = supabase
+                _ = try await withAuthTimeout(operationName: "Apple sign in") {
+                    try await client.auth.signInWithIdToken(
+                        credentials: .init(provider: .apple, idToken: token, nonce: nonce)
+                    )
+                }
                 AuthClient.clearPendingRecoveryFlag()
+                Log.breadcrumb("apple signin completed", category: "auth.apple")
                 // Apple only returns the name on the very first sign-in.
                 // We prefer the given name alone (matches the in-app casual
                 // handle convention; user can edit from Settings).
@@ -262,6 +367,7 @@ final class AuthClient: ObservableObject {
 
     func signInWithGoogle() async {
         lastError = nil
+        Log.breadcrumb("google signin started", category: "auth.google")
         do {
             // Build the Supabase OAuth URL, then drive the web flow ourselves
             // via ASWebAuthenticationSession so we get full control of the
@@ -272,8 +378,12 @@ final class AuthClient: ObservableObject {
                 redirectTo: AppSecrets.authRedirectURL
             )
             let callback = try await GoogleSignIn.start(authURL: url, callbackScheme: "deadwaxclub")
-            try await supabase.auth.session(from: callback)
+            let client = supabase
+            try await withAuthTimeout(operationName: "Google sign in") {
+                try await client.auth.session(from: callback)
+            }
             AuthClient.clearPendingRecoveryFlag()
+            Log.breadcrumb("google signin completed", category: "auth.google")
         } catch {
             lastError = error.localizedDescription
             Log.error(error, category: "auth.google")
@@ -312,7 +422,7 @@ final class AuthClient: ObservableObject {
         let isRecovery = urlSaysRecovery || flagSaysRecovery
 
         Log.breadcrumb(
-            "auth callback url: \(url.absoluteString) recovery=\(isRecovery) (urlSays=\(urlSaysRecovery) flagSays=\(flagSaysRecovery))",
+            "auth callback url: \(Log.redactedURLDescription(url)) recovery=\(isRecovery) (urlSays=\(urlSaysRecovery) flagSays=\(flagSaysRecovery))",
             category: "auth.callback"
         )
         // Flip the flag *before* session(from:) returns so the state change
@@ -322,7 +432,10 @@ final class AuthClient: ObservableObject {
             self.isPasswordRecovery = true
         }
         do {
-            try await supabase.auth.session(from: url)
+            let client = supabase
+            try await withAuthTimeout(operationName: "Auth callback") {
+                try await client.auth.session(from: url)
+            }
             Log.breadcrumb("auth callback session established", category: "auth.callback")
         } catch {
             if isRecovery {
@@ -356,8 +469,10 @@ final class AuthClient: ObservableObject {
 
     func signOut() async {
         AuthClient.clearPendingRecoveryFlag()
+        Log.breadcrumb("signout started", category: "auth")
         do {
             try await supabase.auth.signOut()
+            Log.breadcrumb("signout completed", category: "auth")
         } catch {
             Log.error(error, category: "auth")
         }
@@ -367,7 +482,9 @@ final class AuthClient: ObservableObject {
     /// auth.users row; cascading FKs handle the rest of the user's data.
     /// Locally any cached cover art is purged after the RPC succeeds.
     func deleteAccount() async throws {
+        Log.breadcrumb("account deletion started", category: "auth.deleteAccount")
         try await supabase.rpc("delete_my_account").execute()
         try await supabase.auth.signOut()
+        Log.breadcrumb("account deletion completed", category: "auth.deleteAccount")
     }
 }
