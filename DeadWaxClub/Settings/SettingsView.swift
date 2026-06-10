@@ -143,6 +143,9 @@ struct SettingsView: View {
 
             Section("About") {
                 LabeledContent("Version", value: appVersion)
+                Link("Support", destination: URL(string: "https://deadwaxclub.app/#support")!)
+                Link("Privacy Policy", destination: URL(string: "https://deadwaxclub.app/privacy")!)
+                Link("Terms of Use", destination: URL(string: "https://deadwaxclub.app/terms")!)
                 Link("View Deadwax Club on GitHub", destination: URL(string: "https://github.com/kylescudder/deadwaxclub")!)
             }
         }
