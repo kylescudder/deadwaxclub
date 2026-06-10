@@ -69,6 +69,8 @@ struct SubscriptionPaywallView: View {
                         .foregroundStyle(Theme.Colors.textTertiary)
                 }
 
+                subscriptionDisclosure
+
                 Spacer(minLength: Theme.Spacing.lg)
             }
             .padding(Theme.Spacing.xl)
@@ -100,6 +102,37 @@ struct SubscriptionPaywallView: View {
         }
         return "Subscribe \(product.displayPrice) / month"
     }
+
+    @ViewBuilder
+    private var subscriptionDisclosure: some View {
+        VStack(spacing: Theme.Spacing.xs) {
+            Text("Supporter Monthly")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.Colors.textSecondary)
+            Text(subscriptionDetailText)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.textTertiary)
+                .multilineTextAlignment(.center)
+            HStack(spacing: Theme.Spacing.sm) {
+                Link("Privacy Policy", destination: Self.privacyPolicyURL)
+                Text("•")
+                    .foregroundStyle(Theme.Colors.textTertiary)
+                Link("Terms of Use", destination: Self.termsOfUseURL)
+            }
+            .font(.footnote.weight(.semibold))
+        }
+        .padding(.top, Theme.Spacing.sm)
+    }
+
+    private var subscriptionDetailText: String {
+        guard let product = services.billing.subscriptionProduct else {
+            return "Monthly auto-renewable subscription. Payment is charged to your Apple ID after purchase confirmation."
+        }
+        return "Monthly auto-renewable subscription: \(product.displayPrice) per month. Payment is charged to your Apple ID after purchase confirmation."
+    }
+
+    private static let privacyPolicyURL = URL(string: "https://deadwaxclub.app/privacy")!
+    private static let termsOfUseURL = URL(string: "https://deadwaxclub.app/terms")!
 
     private func subscribe() async {
         isPurchasing = true
