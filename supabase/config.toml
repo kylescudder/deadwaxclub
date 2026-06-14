@@ -222,10 +222,28 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# Branded auth emails. These templates mirror the public site/app colors and
+# keep using Supabase's generated confirmation URL so app deep links continue
+# to route through AuthClient.handle(callbackURL:).
+[auth.email.template.confirmation]
+subject = "Confirm your Deadwax Club account"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Reset your Deadwax Club password"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.magic_link]
+subject = "Sign in to Deadwax Club"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.email_change]
+subject = "Confirm your new Deadwax Club email"
+content_path = "./supabase/templates/email_change.html"
+
+[auth.email.template.invite]
+subject = "You are invited to Deadwax Club"
+content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]

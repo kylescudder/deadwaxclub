@@ -7,7 +7,9 @@ struct SignUpView: View {
     @State private var password = ""
     @State private var displayName = ""
     @State private var isWorking = false
+    @State private var isResendingConfirmation = false
     @State private var awaitingConfirmation: String?
+    @State private var resendConfirmationMessage: String?
 
     var body: some View {
         ScrollView {
@@ -88,6 +90,21 @@ struct SignUpView: View {
                     .multilineTextAlignment(.center)
             }
 
+            if let resendConfirmationMessage {
+                Text(resendConfirmationMessage)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            SecondaryButton(
+                title: isResendingConfirmation ? "Sending..." : "Resend confirmation email",
+                systemImage: isResendingConfirmation ? nil : "arrow.clockwise"
+            ) {
+                Task { await resendConfirmation(email: email) }
+            }
+            .disabled(isResendingConfirmation)
+
             PrimaryButton(title: "Back to sign in") {
                 dismiss()
             }
@@ -119,6 +136,16 @@ struct SignUpView: View {
             break
         case .needsEmailConfirmation(let pendingEmail):
             awaitingConfirmation = pendingEmail
+            resendConfirmationMessage = nil
         }
+    }
+
+    private func resendConfirmation(email: String) async {
+        isResendingConfirmation = true
+        defer { isResendingConfirmation = false }
+        let sent = await services.auth.resendSignupConfirmation(email: email)
+        resendConfirmationMessage = sent
+            ? "We sent a fresh confirmation link."
+            : services.auth.lastError
     }
 }
