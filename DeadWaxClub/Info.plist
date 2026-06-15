@@ -34,7 +34,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Deadwax Club uses the camera to scan vinyl barcodes and to photograph your records for the cover-art carousel.</string>
+	<string>Deadwax Club uses the camera to scan vinyl barcodes and take photos you choose to add to your records.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Deadwax Club saves cover art for your records.</string>
 	<key>POWERSYNC_URL</key>

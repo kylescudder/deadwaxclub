@@ -95,16 +95,10 @@ struct BarcodeScannerHost: View {
                     }
                         .ignoresSafeArea()
                 case .notDetermined:
-                    PermissionPromptView {
-                        Task {
-                            let granted = await AVCaptureDevice.requestAccess(for: .video)
-                            cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
-                            Log.event("camera permission resolved", category: "scanner.camera", metadata: [
-                                "granted": granted,
-                                "cameraStatus": String(describing: cameraStatus),
-                            ])
+                    CameraPermissionRequestingView()
+                        .task {
+                            await requestCameraAccess()
                         }
-                    }
                 case .denied, .restricted:
                     CameraDeniedView()
                 @unknown default:
@@ -122,6 +116,15 @@ struct BarcodeScannerHost: View {
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: scanCount)
     }
+
+    private func requestCameraAccess() async {
+        let granted = await AVCaptureDevice.requestAccess(for: .video)
+        cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        Log.event("camera permission resolved", category: "scanner.camera", metadata: [
+            "granted": granted,
+            "cameraStatus": String(describing: cameraStatus),
+        ])
+    }
 }
 
 private struct ScannerUnavailableView: View {
@@ -132,15 +135,12 @@ private struct ScannerUnavailableView: View {
     }
 }
 
-private struct PermissionPromptView: View {
-    let onTap: () -> Void
+private struct CameraPermissionRequestingView: View {
     var body: some View {
         EmptyState(
             systemImage: "camera.viewfinder",
-            title: "Allow camera access",
-            message: "Deadwax Club uses the camera to scan vinyl barcodes when you're shopping.",
-            actionTitle: "Continue",
-            action: onTap
+            title: "Camera access",
+            message: "iOS will ask whether Deadwax Club can use the camera for barcode scanning."
         )
     }
 }
