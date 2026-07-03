@@ -6,13 +6,20 @@ A small static site that renders public-link share lists (`https://deadwaxclub.a
 web/
 ├── index.html         landing page
 ├── l/index.html       public list viewer (any /l/<token> URL)
-├── styles.css         shared theme — CSS variables match the iOS app
+├── landing.css        promotional landing page theme
+├── styles.css         shared legal/list theme — CSS variables match the iOS app
 ├── js/
 │   ├── list.js        fetches via Supabase REST RPCs and renders the list
 │   └── config.example.js   template for Supabase URL + anon key
 ├── .well-known/
 │   └── apple-app-site-association   Universal Links manifest (template)
 └── _redirects         Netlify rewrite for /l/<token> → l/index.html
+```
+
+Run the static site locally from the repo root:
+
+```sh
+npm run site
 ```
 
 ## Deploying to Netlify
