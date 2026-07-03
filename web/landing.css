@@ -278,6 +278,12 @@ h1 {
     }
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .record-orbit {
+        animation: none;
+    }
+}
+
 .stat-strip {
     position: relative;
     z-index: 1;
