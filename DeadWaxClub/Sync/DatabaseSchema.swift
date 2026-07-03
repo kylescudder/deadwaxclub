@@ -9,6 +9,7 @@ enum DatabaseSchema {
         columns: [
             Column.text("display_name"),
             Column.text("primary_collection_id"),
+            Column.integer("is_premium_account"),
             Column.text("created_at"),
             Column.text("updated_at"),
         ]

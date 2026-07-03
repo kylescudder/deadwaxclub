@@ -34,10 +34,17 @@ final class SupabaseConnector: PowerSyncBackendConnectorProtocol, @unchecked Sen
                 // null id and Postgres rejects it (FK or RLS, depending on
                 // the table) with a misleading 42501.
                 var payload = entry.opData ?? [:]
+                if entry.table == "profiles" {
+                    payload.removeValue(forKey: "is_premium_account")
+                }
                 payload["id"] = entry.id
                 try await table.upsert(payload).execute()
             case .patch:
-                guard let payload = entry.opData else { continue }
+                guard var payload = entry.opData else { continue }
+                if entry.table == "profiles" {
+                    payload.removeValue(forKey: "is_premium_account")
+                }
+                guard !payload.isEmpty else { continue }
                 try await table.update(payload).eq("id", value: entry.id).execute()
             case .delete:
                 try await table.delete().eq("id", value: entry.id).execute()

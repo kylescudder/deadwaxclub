@@ -90,6 +90,14 @@ final class AppServices: ObservableObject {
                 Task { @MainActor in self.applyAuth(state: state) }
             }
             .store(in: &cancellables)
+
+        profile.$profile
+            .map { $0?.isPremiumAccount == true }
+            .removeDuplicates()
+            .sink { [weak billing] isPremiumAccount in
+                billing?.setPremiumAccount(isPremiumAccount)
+            }
+            .store(in: &cancellables)
     }
 
     private func applyAuth(state: AuthClient.State) {
@@ -97,6 +105,7 @@ final class AppServices: ObservableObject {
         guard case let .signedIn(userID, _) = state else {
             onboarding.resetForSignOut()
             billing.resetForSignOut()
+            profile.stopWatching()
             collections.stopWatching()
             notifications.stopWatching()
             return
