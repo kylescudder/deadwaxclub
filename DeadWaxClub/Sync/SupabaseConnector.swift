@@ -35,14 +35,14 @@ final class SupabaseConnector: PowerSyncBackendConnectorProtocol, @unchecked Sen
                 // the table) with a misleading 42501.
                 var payload = entry.opData ?? [:]
                 if entry.table == "profiles" {
-                    payload.removeValue(forKey: "is_premium_account")
+                    sanitizeProfilePayload(&payload)
                 }
                 payload["id"] = entry.id
                 try await table.upsert(payload).execute()
             case .patch:
                 guard var payload = entry.opData else { continue }
                 if entry.table == "profiles" {
-                    payload.removeValue(forKey: "is_premium_account")
+                    sanitizeProfilePayload(&payload)
                 }
                 guard !payload.isEmpty else { continue }
                 try await table.update(payload).eq("id", value: entry.id).execute()
@@ -52,5 +52,10 @@ final class SupabaseConnector: PowerSyncBackendConnectorProtocol, @unchecked Sen
         }
 
         try await batch.complete(writeCheckpoint: nil)
+    }
+
+    private func sanitizeProfilePayload(_ payload: inout [String: AnyJSON]) {
+        payload.removeValue(forKey: "created_at")
+        payload.removeValue(forKey: "is_premium_account")
     }
 }
