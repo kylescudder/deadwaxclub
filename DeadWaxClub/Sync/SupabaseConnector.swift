@@ -54,7 +54,7 @@ final class SupabaseConnector: PowerSyncBackendConnectorProtocol, @unchecked Sen
         try await batch.complete(writeCheckpoint: nil)
     }
 
-    private func sanitizeProfilePayload(_ payload: inout [String: AnyJSON]) {
+    private func sanitizeProfilePayload<Value>(_ payload: inout [String: Value]) {
         payload.removeValue(forKey: "created_at")
         payload.removeValue(forKey: "is_premium_account")
     }
