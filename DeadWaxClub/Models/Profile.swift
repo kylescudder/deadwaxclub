@@ -5,6 +5,7 @@ struct Profile: Identifiable, Hashable {
     let id: String
     var displayName: String?
     var primaryCollectionID: String?
+    var isPremiumAccount: Bool
     var createdAt: Date
     var updatedAt: Date
 }
@@ -16,11 +17,24 @@ extension Profile {
                 id: try cursor.getString(name: "id"),
                 displayName: try cursor.getStringOptional(name: "display_name"),
                 primaryCollectionID: try cursor.getStringOptional(name: "primary_collection_id"),
+                isPremiumAccount: cursor.getBoolish(name: "is_premium_account"),
                 createdAt: parseDate(try cursor.getStringOptional(name: "created_at")) ?? Date(),
                 updatedAt: parseDate(try cursor.getStringOptional(name: "updated_at")) ?? Date()
             )
         } catch {
             return nil
         }
+    }
+}
+
+private extension SqlCursor {
+    func getBoolish(name: String) -> Bool {
+        if let intValue = try? getInt(name: name) {
+            return intValue != 0
+        }
+        if let stringValue = try? getStringOptional(name: name)?.lowercased() {
+            return ["true", "t", "yes", "1"].contains(stringValue)
+        }
+        return false
     }
 }

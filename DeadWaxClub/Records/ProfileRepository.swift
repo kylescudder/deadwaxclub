@@ -23,6 +23,7 @@ final class ProfileRepository: ObservableObject {
     func startWatching(userID: String) {
         watchTask?.cancel()
         hasLoadedFromLocal = false
+        profile = nil
         watchTask = Task { [weak self, database] in
             guard let self else { return }
             do {
@@ -42,6 +43,13 @@ final class ProfileRepository: ObservableObject {
                 Log.error(error, category: "profile.watch")
             }
         }
+    }
+
+    func stopWatching() {
+        watchTask?.cancel()
+        watchTask = nil
+        profile = nil
+        hasLoadedFromLocal = false
     }
 
     func updateDisplayName(_ name: String) async {

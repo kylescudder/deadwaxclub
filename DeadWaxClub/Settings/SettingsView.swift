@@ -15,6 +15,12 @@ struct SettingsView: View {
     @State private var successCount = 0
     @State private var errorCount = 0
 
+    private var planName: String {
+        if services.billing.hasStoreKitSubscription { return "Supporter Monthly" }
+        if services.billing.hasPremiumAccount { return "Premium" }
+        return "Free"
+    }
+
     var body: some View {
         Form {
             Section("Appearance") {
@@ -78,13 +84,13 @@ struct SettingsView: View {
             Section {
                 LabeledContent(
                     "Plan",
-                    value: services.billing.isSubscribed ? "Supporter Monthly" : "Free"
+                    value: planName
                 )
-                if services.billing.isSubscribed {
+                if services.billing.hasStoreKitSubscription {
                     Button("Manage subscription") {
                         Task { await services.billing.manageSubscriptions() }
                     }
-                } else {
+                } else if !services.billing.isSubscribed {
                     Button("Subscribe") {
                         showPaywall = true
                     }
