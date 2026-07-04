@@ -60,6 +60,7 @@ jobs:
 
   powersync:
     name: PowerSync sync config
+    needs: supabase
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
