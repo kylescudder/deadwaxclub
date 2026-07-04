@@ -47,7 +47,7 @@ jobs:
 
       - name: Set up Supabase CLI
         if: steps.changes.outputs.deploy == 'true'
-        uses: supabase/setup-cli@v3
+        uses: supabase/setup-cli@v2.1.1
         with:
           version: latest
 
