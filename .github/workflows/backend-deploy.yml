@@ -1,0 +1,108 @@
+name: Backend · Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/powersync/**"
+      - ".github/workflows/backend-deploy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-deploy
+  cancel-in-progress: false
+
+jobs:
+  supabase:
+    name: Supabase migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect migration changes
+        id: changes
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+          if printf '%s\n' "$changed_files" | grep -q '^supabase/migrations/'; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Supabase CLI
+        if: steps.changes.outputs.deploy == 'true'
+        uses: supabase/setup-cli@v3
+        with:
+          version: latest
+
+      - name: Deploy migrations
+        if: steps.changes.outputs.deploy == 'true'
+        run: |
+          test -n "${SUPABASE_DB_URL}" || (echo "::error::SUPABASE_DB_URL is empty" && exit 1)
+
+          supabase db push --db-url "$SUPABASE_DB_URL" --yes
+
+  powersync:
+    name: PowerSync sync config
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      POWERSYNC_API_URL: ${{ secrets.POWERSYNC_API_URL }}
+      POWERSYNC_API_TOKEN: ${{ secrets.POWERSYNC_API_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect PowerSync changes
+        id: changes
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+          if printf '%s\n' "$changed_files" | grep -q '^supabase/powersync/'; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy sync config
+        if: steps.changes.outputs.deploy == 'true'
+        run: |
+          test -n "${POWERSYNC_API_URL}" || (echo "::error::POWERSYNC_API_URL is empty" && exit 1)
+          test -n "${POWERSYNC_API_TOKEN}" || (echo "::error::POWERSYNC_API_TOKEN is empty" && exit 1)
+
+          api_url="${POWERSYNC_API_URL%/}"
+
+          curl --fail-with-body \
+            -X POST "${api_url}/api/sync-rules/v1/validate" \
+            -H "Authorization: Bearer ${POWERSYNC_API_TOKEN}" \
+            -H "Content-Type: application/yaml" \
+            --data-binary @supabase/powersync/sync_rules.yaml
+
+          curl --fail-with-body \
+            -X POST "${api_url}/api/sync-rules/v1/deploy" \
+            -H "Authorization: Bearer ${POWERSYNC_API_TOKEN}" \
+            -H "Content-Type: application/yaml" \
+            --data-binary @supabase/powersync/sync_rules.yaml
