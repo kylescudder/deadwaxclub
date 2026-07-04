@@ -9,6 +9,8 @@ final class BillingRepository: ObservableObject {
     @Published private(set) var subscriptionProduct: Product?
     @Published private(set) var isLoadingProducts = false
     @Published private(set) var isSubscribed = false
+    @Published private(set) var hasPremiumAccount = false
+    @Published private(set) var hasStoreKitSubscription = false
     @Published private(set) var lastError: String?
 
     private let auth: AuthClient
@@ -37,8 +39,16 @@ final class BillingRepository: ObservableObject {
 
     func resetForSignOut() {
         Log.breadcrumb("billing state reset for sign out", category: "billing")
+        hasStoreKitSubscription = false
+        hasPremiumAccount = false
         isSubscribed = false
         lastError = nil
+    }
+
+    func setPremiumAccount(_ premium: Bool) {
+        guard hasPremiumAccount != premium else { return }
+        hasPremiumAccount = premium
+        updateSubscriptionState(source: "premiumOverride")
     }
 
     func loadProducts() async {
@@ -133,8 +143,19 @@ final class BillingRepository: ObservableObject {
                 active = true
             }
         }
-        isSubscribed = active
+        hasStoreKitSubscription = active
+        updateSubscriptionState(source: "storeKit")
         Log.event("billing entitlement sync completed", category: "billing.entitlements", metadata: ["isSubscribed": isSubscribed])
+    }
+
+    private func updateSubscriptionState(source: String) {
+        isSubscribed = hasStoreKitSubscription || hasPremiumAccount
+        Log.event("billing subscription state updated", category: "billing.entitlements", metadata: [
+            "source": source,
+            "storeKit": hasStoreKitSubscription,
+            "premiumAccount": hasPremiumAccount,
+            "isSubscribed": isSubscribed,
+        ])
     }
 
     private func handle(_ result: VerificationResult<Transaction>) async {

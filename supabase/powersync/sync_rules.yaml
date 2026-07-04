@@ -16,7 +16,10 @@ streams:
   # --- profile / device --------------------------------------------------
   user_profile:
     auto_subscribe: true
-    query: select * from profiles where id = auth.user_id()
+    query: |
+      select id, display_name, primary_collection_id, is_premium_account, created_at, updated_at
+      from profiles
+      where id = auth.user_id()
 
   user_devices:
     auto_subscribe: true
