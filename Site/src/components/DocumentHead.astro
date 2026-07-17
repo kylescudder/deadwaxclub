@@ -1,0 +1,24 @@
+---
+interface Props {
+  title: string;
+  description: string;
+  ogTitle?: string;
+  ogUrl?: string;
+}
+
+const { title, description, ogTitle = title, ogUrl } = Astro.props;
+---
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#171b2a" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#171b2a" media="(prefers-color-scheme: dark)" />
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  <meta property="og:title" content={ogTitle} />
+  <meta property="og:description" content={description} />
+  <meta property="og:type" content="website" />
+  {ogUrl && <meta property="og:url" content={ogUrl} />}
+  <link rel="icon" href="/assets/deadwax-logo.svg" type="image/svg+xml" />
+</head>

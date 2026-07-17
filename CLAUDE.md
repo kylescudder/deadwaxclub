@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Deadwax Club — native iOS 17+ SwiftUI app for tracking owned/wishlist vinyl, plus a small static web viewer for public list links and a Supabase backend (Postgres + Auth + Storage + Edge Functions). Offline-first via PowerSync.
+Deadwax Club — native iOS 17+ SwiftUI app for tracking owned/wishlist vinyl, plus an Astro marketing site and public list viewer backed by Supabase (Postgres + Auth + Storage + Edge Functions). Offline-first via PowerSync.
 
 ## Common commands
 
@@ -28,19 +28,21 @@ supabase functions deploy notify-inbox                        # APNs fan-out for
 supabase functions deploy notify-price-change                 # legacy producer that writes price-alert rows
 ```
 
-Web (static, no build step locally):
+Web:
 
 ```sh
-cp web/js/config.example.js web/js/config.js                  # local dev only — production is generated at deploy
-npx netlify deploy --dir=web --prod                           # Netlify runs web/build-config.sh which writes config.js from env
+cp Site/public/js/config.example.js Site/public/js/config.js   # local dev only — production is generated at deploy
+bun run dev                                                    # installs Site deps and starts Astro
+bun run build                                                  # builds Site/dist
+npx netlify deploy --dir=Site/dist --prod                      # Netlify runs Site/build-config.sh before its build
 ```
 
-There is no test suite, linter, or formatter configured. Don't invent commands for them.
+There is no iOS test suite, linter, or formatter configured. The Astro site has `format` and `format:check` scripts under `Site/package.json`.
 
 ## Secrets and configuration
 
 - iOS secrets live in `Config/Secrets.xcconfig` (git-ignored, copied from `Config/Secrets.xcconfig.example`). Values are surfaced into Swift via `Info.plist` → `DeadWaxClub/App/AppSecrets.swift`. **xcconfig escaping gotcha**: a literal `//` in a value (e.g. `https://...`) must be written `https:/$()/...` to keep the parser from treating the rest of the line as a comment. Empty strings are treated as "feature disabled" — don't add fatal errors for unset secrets.
-- Web config lives in `web/js/config.js` (git-ignored). At deploy time `web/build-config.sh` (wired from `netlify.toml`) writes that file from Netlify env vars `SUPABASE_URL` and `SUPABASE_ANON_KEY`. The local copy of `config.js` from `config.example.js` is for running the site against your dev Supabase off-Netlify; don't paste real secrets there. The Supabase anon key is intentionally shipped to the browser; RLS + the `get_shared_list*` RPCs gate what's actually exposed.
+- Web config lives in `Site/public/js/config.js` (git-ignored). At deploy time `Site/build-config.sh` (wired from `netlify.toml`) writes that file from Netlify env vars `SUPABASE_URL` and `SUPABASE_ANON_KEY`. The local copy of `config.js` from `config.example.js` is for running the site against your dev Supabase off-Netlify; don't paste real secrets there. The Supabase anon key is intentionally shipped to the browser; RLS + the `get_shared_list*` RPCs gate what's actually exposed.
 - Supabase Edge Function secrets (`APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY`, `APNS_BUNDLE_ID`) are set in the Supabase dashboard, not in any local file. Both `notify-inbox` and `notify-price-change` read the same set.
 
 ## Architecture
@@ -86,8 +88,8 @@ There is no test suite, linter, or formatter configured. Don't invent commands f
 ### List sharing
 
 - `lists.share_mode` ∈ {`private`, `link_public`, `invite_only`, `collaborative`}. Public-link mode mints a 12-char `share_token`.
-- The web viewer (`web/l/index.html` + `web/js/list.js`) calls two unauthenticated `security definer` RPCs from `0004_lists.sql`: `get_shared_list(token)` and `get_shared_list_records(token)`. Flipping a list off `link_public` immediately revokes web access — no redeploy needed.
-- Universal Links: `https://deadwaxclub.app/l/<token>` opens the iOS app via `applinks:deadwaxclub.app` in `DeadWaxClub.entitlements` + `web/.well-known/apple-app-site-association`. The custom scheme `deadwaxclub://list/<token>` is the in-app fallback. Both are handled in `RootView.handle(url:)`.
+- The web viewer (`Site/src/pages/l/index.astro` + `Site/public/js/list.js`) calls two unauthenticated `security definer` RPCs from `0004_lists.sql`: `get_shared_list(token)` and `get_shared_list_records(token)`. Flipping a list off `link_public` immediately revokes web access — no redeploy needed.
+- Universal Links: `https://deadwaxclub.app/l/<token>` opens the iOS app via `applinks:deadwaxclub.app` in `DeadWaxClub.entitlements` + `Site/public/.well-known/apple-app-site-association`. The custom scheme `deadwaxclub://list/<token>` is the in-app fallback. Both are handled in `RootView.handle(url:)`.
 - Edition-3 caveat: records on lists where the viewer is a list-member but not in the record's Collection still cannot be expressed as a sync stream (it would need a 2-level join `list_members → list_items → records`). Records the viewer *owns* always sync via `member_records` because that's a one-level join through `collection_members`. The remaining gap (curated public/collaborative lists pulling in records the viewer doesn't already own) is filled by REST fetches in the list views.
 
 ### Other notable wiring
@@ -119,4 +121,4 @@ The Supabase folder is `supabase/` (lowercase) on disk and the README, `setup.sh
 
 ## What not to commit
 
-`Config/Secrets.xcconfig`, `web/js/config.js`, `DeadWaxClub.xcodeproj/`, `supabase/.temp/`, `supabase/.branches/`, `.netlify/`. All gitignored already — don't add overrides.
+`Config/Secrets.xcconfig`, `Site/public/js/config.js`, `DeadWaxClub.xcodeproj/`, `supabase/.temp/`, `supabase/.branches/`, `.netlify/`. All gitignored already — don't add overrides.
