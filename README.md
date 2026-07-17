@@ -120,17 +120,18 @@ Deadwax Club uses StoreKit for the `club.deadwax.supporter.monthly` auto-renewab
 
 ### 7. Public list web viewer (optional)
 
-A small static site under `web/` renders public-link lists in any browser and serves the Universal Links manifest. Drop it onto Netlify (or any static host) at `deadwaxclub.app`:
+An Astro site under `Site/` renders the marketing page, public-link lists, legal pages, and Universal Links manifest. Drop the built output onto Netlify (or any static host) at `deadwaxclub.app`:
 
 ```sh
-cp web/js/config.example.js web/js/config.js
+cp Site/public/js/config.example.js Site/public/js/config.js
 # Edit config.js with your Supabase URL + anon key
-npx netlify deploy --dir=web --prod
+bun run build
+npx netlify deploy --dir=Site/dist --prod
 ```
 
-Edit `web/.well-known/apple-app-site-association` and replace `TEAMID.com.deadwaxclub.app` with your real Apple Team ID + bundle. The `applinks:deadwaxclub.app` entry is already in `DeadWaxClub.entitlements`. After this is live, tapping any `https://deadwaxclub.app/l/<token>` link from another iOS app launches Deadwax Club directly; if the app isn't installed, the recipient sees the web list.
+Edit `Site/public/.well-known/apple-app-site-association` and replace `TEAMID.com.deadwaxclub.app` with your real Apple Team ID + bundle. The `applinks:deadwaxclub.app` entry is already in `DeadWaxClub.entitlements`. After this is live, tapping any `https://deadwaxclub.app/l/<token>` link from another iOS app launches Deadwax Club directly; if the app isn't installed, the recipient sees the web list.
 
-See `web/README.md` for full deployment notes.
+See `Site/README.md` for site commands.
 
 ### 8. Discogs token
 
@@ -189,14 +190,13 @@ supabase/
   functions/
     notify-price-change/  Edge Function: APNs fan-out on new lows
 
-web/                static landing + public list viewer (Netlify-ready)
-  index.html
-  l/index.html      renders any /l/<token> share link
-  styles.css        shared theme; CSS variables match iOS
-  js/
+Site/               Astro marketing site + public list viewer
+  src/pages/        routes for /, /l, /privacy, and /terms
+  src/styles.css    shared viewer/legal theme; CSS variables match iOS
+  public/js/
     list.js         vanilla module, fetches via Supabase REST RPCs
     config.example.js   template for Supabase URL + anon key
-  .well-known/
+  public/.well-known/
     apple-app-site-association   Universal Links manifest (template)
 ```
 

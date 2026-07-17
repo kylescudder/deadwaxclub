@@ -1,0 +1,21 @@
+---
+import "../styles.css";
+import DocumentHead from "../components/DocumentHead.astro";
+
+interface Props {
+  title: string;
+  description: string;
+  ogTitle?: string;
+  ogUrl?: string;
+}
+
+const { title, description, ogTitle, ogUrl } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <DocumentHead title={title} description={description} ogTitle={ogTitle} ogUrl={ogUrl} />
+  <body>
+    <slot />
+  </body>
+</html>

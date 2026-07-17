@@ -1,0 +1,109 @@
+---
+import LandingLayout from "../layouts/LandingLayout.astro";
+---
+
+<LandingLayout
+  title="Deadwax Club — track the vinyl you own and the vinyl you want"
+  description="Track vinyl records, scan barcodes in shops, plot price changes over time, and share your collection."
+  ogTitle="Deadwax Club"
+  ogUrl="https://deadwaxclub.app"
+>
+  <header class="site-shell promo-nav">
+    <a class="promo-brand" href="/" aria-label="Deadwax Club home">
+      <img src="/assets/deadwax-logo.svg" alt="" />
+      <span class="brand-word">Deadwax Club</span>
+    </a>
+    <nav class="variant-tabs" aria-label="Site links">
+      <a href="#features">Features</a>
+      <a href="#support">Support</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <span class="kicker">Built for serious record shelves</span>
+        <h1>A&nbsp;pocket catalog for your vinyl collection.</h1>
+        <p class="lead">
+          Track the records you own, the ones you want, and the prices worth acting on. Deadwax Club keeps your shelf searchable in shops, at home, and offline.
+        </p>
+        <div class="cta-row">
+          <a class="button button-primary" href="https://github.com/kylescudder/deadwaxclub">View on GitHub</a>
+          <a class="button button-secondary" href="#features">Explore features</a>
+        </div>
+      </div>
+      <div class="phone-scene" aria-hidden="true">
+        <span class="record-orbit"></span>
+        <div class="phone">
+          <img src="/assets/records-screen.png" alt="" />
+        </div>
+      </div>
+    </section>
+
+    <div class="stat-strip">
+      <div class="stat">
+        <strong>Scan</strong>
+        <span>Shop barcodes into Discogs data</span>
+        <p>Add records while you are holding the sleeve, then keep the details, notes, and cover art close to your collection.</p>
+      </div>
+      <div class="stat">
+        <strong>Track</strong>
+        <span>Owned records and wishlist finds</span>
+        <p>See what is already on your shelf, what you are still chasing, and how prices change before you buy.</p>
+      </div>
+      <div class="stat">
+        <strong>Share</strong>
+        <span>Public lists or private shelves</span>
+        <p>Send clean list links for wants, trades, gifts, and listening nights without exposing your whole archive.</p>
+      </div>
+    </div>
+
+    <section class="feature-section" id="features">
+      <span class="kicker">Built around real collecting</span>
+      <h2 class="section-title">Everything stays close to the record.</h2>
+      <div class="feature-grid">
+        <article class="feature">
+          <h3>Scan in the shop</h3>
+          <p>Point your phone at a sleeve barcode and pull Discogs details straight into your collection.</p>
+        </article>
+        <article class="feature">
+          <h3>Watch prices move</h3>
+          <p>Log prices over time, chart the history, and get notified when a wishlist record hits a new low.</p>
+        </article>
+        <article class="feature">
+          <h3>Share lists cleanly</h3>
+          <p>Send a public link, invite collaborators, or keep everything private until it is ready.</p>
+        </article>
+        <article class="feature">
+          <h3>Works offline first</h3>
+          <p>Browse on the train or in a basement shop. Changes sync back when the network returns.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="support-section" id="support" aria-labelledby="support-heading">
+      <div class="support-copy">
+        <span class="kicker">Need help?</span>
+        <h2 id="support-heading">Support for Deadwax Club</h2>
+        <p>
+          Questions, account requests, subscription issues, bug reports, and feedback are handled by email. Include the email address on your Deadwax Club account and a short description of what you need help with.
+        </p>
+      </div>
+      <div class="support-actions">
+        <a class="button button-primary" href="mailto:kyle@kylescudder.co.uk?subject=Deadwax%20Club%20Support">Email support</a>
+        <a class="button button-secondary" href="/privacy">Privacy policy</a>
+        <a class="button button-secondary" href="/terms">Terms of Use</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="promo-footer">
+    <span>Deadwax Club</span>
+    <span class="mini-links">
+      <a href="#support">Support</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="https://github.com/kylescudder/deadwaxclub">GitHub</a>
+    </span>
+  </footer>
+</LandingLayout>
