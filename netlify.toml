@@ -2,6 +2,9 @@
   base = "Site"
   command = "bun run build"
   publish = "dist"
+  # The ignore command runs from Site/. Keep deploys scoped to the site and
+  # the root deployment configuration, skipping unrelated app/backend changes.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../netlify.toml"
 
 [[headers]]
   for = "/assets/*"
