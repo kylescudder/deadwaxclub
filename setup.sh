@@ -3,7 +3,7 @@
 #
 # Walks through everything that doesn't require Apple Developer:
 #   1. Required CLI tools (xcodegen, supabase CLI, optional netlify CLI)
-#   2. Local secrets files (Config/Secrets.xcconfig, web/js/config.js)
+#   2. Local secrets files (Config/Secrets.xcconfig, Site/public/js/config.js)
 #   3. Supabase migrations
 #   4. PowerSync sync rules pointer
 #   5. Xcode project generation
@@ -53,6 +53,7 @@ if is_mac; then
     need xcodegen "brew install xcodegen"
 fi
 need supabase  "brew install supabase/tap/supabase"
+need bun       "brew install oven-sh/bun/bun"
 
 # Optional tools — warn but don't fail.
 if command -v netlify >/dev/null 2>&1; then
@@ -82,19 +83,19 @@ else
     ok "Config/Secrets.xcconfig already exists"
 fi
 
-if [[ ! -f web/js/config.js ]]; then
-    cp web/js/config.example.js web/js/config.js
-    warn "Created web/js/config.js from the example — fill in your Supabase URL and anon key before deploying the web site."
+if [[ ! -f Site/public/js/config.js ]]; then
+    cp Site/public/js/config.example.js Site/public/js/config.js
+    warn "Created Site/public/js/config.js from the example — fill in your Supabase URL and anon key before deploying the web site."
 else
-    ok "web/js/config.js already exists"
+    ok "Site/public/js/config.js already exists"
 fi
 
 # Detect placeholder values.
 if grep -q "your-supabase-anon-key\|your-project.supabase.co" Config/Secrets.xcconfig 2>/dev/null; then
     warn "Config/Secrets.xcconfig still contains placeholders. Edit it before building."
 fi
-if grep -q "your-supabase-anon-key\|your-project.supabase.co" web/js/config.js 2>/dev/null; then
-    warn "web/js/config.js still contains placeholders. Edit it before deploying."
+if grep -q "your-supabase-anon-key\|your-project.supabase.co" Site/public/js/config.js 2>/dev/null; then
+    warn "Site/public/js/config.js still contains placeholders. Edit it before deploying."
 fi
 
 # --- 3. Supabase project ---------------------------------------------------
@@ -176,8 +177,9 @@ Local setup is finished. The remaining work needs Apple Developer access:
        APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY, APNS_BUNDLE_ID
      Then `supabase functions deploy notify-price-change` and create
      the price_entries Insert webhook pointing at the function.
-  6. Replace TEAMID in web/.well-known/apple-app-site-association
-     with your real Apple Team ID, then `npx netlify deploy --dir=web --prod`.
+  6. Replace TEAMID in Site/public/.well-known/apple-app-site-association
+     with your real Apple Team ID, then `bun run build`
+     and `npx netlify deploy --dir=Site/dist --prod`.
   7. In Xcode → Signing & Capabilities, pick your paid team,
      plug your phone in, ⌘R.
 

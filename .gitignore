@@ -37,9 +37,12 @@ Config/Secrets.xcconfig
 .idea/
 *.swp
 
-# Web — local Supabase config (anon key is safe to commit, but encouraging
+# Site — local Supabase config (anon key is safe to commit, but encouraging
 # users to copy from .example.js keeps templates clean for forks).
-web/js/config.js
+Site/public/js/config.js
+Site/.astro/
+Site/dist/
+Site/node_modules/
 
 # supabase CLI scratch state (project ref, version pins, branches)
 Supabase/.temp/

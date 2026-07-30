@@ -370,6 +370,10 @@ final class AuthClient: ObservableObject {
                         .from("profiles")
                         .update(["display_name": firstName])
                         .eq("id", value: userID)
+                        // A returning Apple user may receive their name again
+                        // after revoking and re-authorizing access. Preserve any
+                        // display name they have already chosen.
+                        .is("display_name", value: nil)
                         .execute()
                 }
             } catch {

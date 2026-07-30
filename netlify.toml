@@ -1,29 +1,12 @@
 [build]
-  publish = "web"
-  # Skip deploys when neither the static site nor its Netlify configuration
-  # changed. Exit code 0 skips the build; git diff returns 1 when it should run.
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- web/ netlify.toml"
-  # web/js/config.js is git-ignored so secrets never live in the repo.
-  # The script writes it from Netlify env vars at deploy time. Configure
-  # SUPABASE_URL and SUPABASE_ANON_KEY under
-  # Site settings → Environment variables.
-  command = "./web/build-config.sh"
+  base = "Site"
+  command = "bun run build"
+  publish = "dist"
+  # The ignore command runs from Site/. Keep deploys scoped to the site and
+  # the root deployment configuration, skipping unrelated app/backend changes.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../netlify.toml"
 
-# Universal Links: Apple fetches /.well-known/apple-app-site-association and
-# requires Content-Type: application/json with no extension. Netlify can't
-# infer the content type from the extensionless path, so set it explicitly.
 [[headers]]
-  for = "/.well-known/apple-app-site-association"
-  [headers.values]
-    Content-Type = "application/json"
-
-# Long cache for the static stylesheet and scripts (immutable once deployed).
-[[headers]]
-  for = "/styles.css"
+  for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
-
-[[headers]]
-  for = "/js/*"
-  [headers.values]
-    Cache-Control = "public, max-age=86400"
