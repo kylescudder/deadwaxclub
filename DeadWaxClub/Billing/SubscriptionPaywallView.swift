@@ -10,74 +10,77 @@ struct SubscriptionPaywallView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: Theme.Spacing.xl) {
-                    Spacer(minLength: Theme.Spacing.lg)
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(spacing: Theme.Spacing.xl) {
+                        Spacer(minLength: Theme.Spacing.lg)
 
-                    Image("AppLogoIcon")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 78, height: 78)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                        Image("AppLogoIcon")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 78, height: 78)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
 
-                    VStack(spacing: Theme.Spacing.sm) {
-                        Text("Keep building your collection")
-                            .font(.title2.weight(.semibold))
-                            .multilineTextAlignment(.center)
-                        Text("Your first \(AppServices.freeRecordLimit) records are free. Subscribe to add unlimited owned and wishlist records.")
-                            .font(.body)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .multilineTextAlignment(.center)
-                    }
-
-                    VStack(spacing: Theme.Spacing.sm) {
-                        PrimaryButton(
-                            title: subscribeTitle,
-                            systemImage: "checkmark.seal.fill",
-                            action: { Task { await subscribe() } }
-                        )
-                        .disabled(isPurchasing || services.billing.subscriptionProduct == nil)
-
-                        Button {
-                            Task { await restore() }
-                        } label: {
-                            if isRestoring {
-                                ProgressView()
-                            } else {
-                                Text("Restore purchases")
-                            }
+                        VStack(spacing: Theme.Spacing.sm) {
+                            Text("Keep building your collection")
+                                .font(.title2.weight(.semibold))
+                                .multilineTextAlignment(.center)
+                            Text("Your first \(AppServices.freeRecordLimit) records are free. Subscribe to add unlimited owned and wishlist records.")
+                                .font(.body)
+                                .foregroundStyle(Theme.Colors.textSecondary)
+                                .multilineTextAlignment(.center)
                         }
-                        .disabled(isRestoring || isPurchasing)
+
+                        VStack(spacing: Theme.Spacing.sm) {
+                            PrimaryButton(
+                                title: subscribeTitle,
+                                systemImage: "checkmark.seal.fill",
+                                action: { Task { await subscribe() } }
+                            )
+                            .disabled(isPurchasing || services.billing.subscriptionProduct == nil)
+
+                            Button {
+                                Task { await restore() }
+                            } label: {
+                                if isRestoring {
+                                    ProgressView()
+                                } else {
+                                    Text("Restore purchases")
+                                }
+                            }
+                            .disabled(isRestoring || isPurchasing)
+                        }
+
+                        if services.billing.isLoadingProducts {
+                            ProgressView()
+                        } else if services.billing.subscriptionProduct == nil {
+                            Text("Subscription details are unavailable. Try again later.")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                        } else if let message = services.billing.lastError {
+                            Text(message)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                        }
+
+                        if let createdCount {
+                            Text("\(createdCount) records added")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.textTertiary)
+                        }
+
+                        subscriptionDisclosure
+
+                        Spacer(minLength: Theme.Spacing.lg)
                     }
-
-                    if services.billing.isLoadingProducts {
-                        ProgressView()
-                    } else if services.billing.subscriptionProduct == nil {
-                        Text("Subscription details are unavailable. Try again later.")
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                            .multilineTextAlignment(.center)
-                    } else if let message = services.billing.lastError {
-                        Text(message)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                            .multilineTextAlignment(.center)
-                    }
-
-                    if let createdCount {
-                        Text("\(createdCount) records added")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Colors.textTertiary)
-                    }
-
-                    subscriptionDisclosure
-
-                    Spacer(minLength: Theme.Spacing.lg)
+                    .padding(Theme.Spacing.xl)
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
                 }
-                .frame(maxWidth: .infinity)
+                .scrollBounceBehavior(.basedOnSize)
+                .background(Theme.Colors.background)
             }
-            .padding(Theme.Spacing.xl)
-            .background(Theme.Colors.background)
             .navigationTitle("Supporter Monthly")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -116,11 +119,19 @@ struct SubscriptionPaywallView: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.Colors.textTertiary)
                 .multilineTextAlignment(.center)
-            HStack(spacing: Theme.Spacing.sm) {
-                Link("Privacy Policy", destination: Self.privacyPolicyURL)
-                Text("•")
-                    .foregroundStyle(Theme.Colors.textTertiary)
-                Link("Terms of Use", destination: Self.termsOfUseURL)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Theme.Spacing.sm) {
+                    Link("Privacy Policy", destination: Self.privacyPolicyURL)
+                    Text("•")
+                        .foregroundStyle(Theme.Colors.textTertiary)
+                    Link("Terms of Use", destination: Self.termsOfUseURL)
+                }
+                .fixedSize(horizontal: true, vertical: false)
+
+                VStack(spacing: Theme.Spacing.xs) {
+                    Link("Privacy Policy", destination: Self.privacyPolicyURL)
+                    Link("Terms of Use", destination: Self.termsOfUseURL)
+                }
             }
             .font(.footnote.weight(.semibold))
         }
