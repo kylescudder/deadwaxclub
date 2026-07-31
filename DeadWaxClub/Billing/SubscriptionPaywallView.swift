@@ -69,7 +69,7 @@ struct SubscriptionPaywallView: View {
                         }
 
                         if let createdCount {
-                            Text("\(createdCount) records added")
+                            Text("\(createdCount) \(createdCount == 1 ? "record" : "records") added")
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
