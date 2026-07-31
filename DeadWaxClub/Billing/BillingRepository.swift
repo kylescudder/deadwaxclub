@@ -53,6 +53,7 @@ final class BillingRepository: ObservableObject {
 
     func loadProducts() async {
         Log.breadcrumb("billing products load started", category: "billing.products")
+        lastError = nil
         isLoadingProducts = true
         defer { isLoadingProducts = false }
         do {
