@@ -53,11 +53,13 @@ final class BillingRepository: ObservableObject {
 
     func loadProducts() async {
         Log.breadcrumb("billing products load started", category: "billing.products")
+        lastError = nil
         isLoadingProducts = true
         defer { isLoadingProducts = false }
         do {
             let products = try await Product.products(for: [Self.supporterMonthlyProductID])
             subscriptionProduct = products.first
+            lastError = nil
             Log.event("billing products load completed", category: "billing.products", metadata: ["count": products.count])
         } catch {
             lastError = error.localizedDescription
