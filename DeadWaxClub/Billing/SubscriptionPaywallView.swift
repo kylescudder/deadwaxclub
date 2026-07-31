@@ -37,7 +37,9 @@ struct SubscriptionPaywallView: View {
                                 systemImage: "checkmark.seal.fill",
                                 action: { Task { await subscribe() } }
                             )
-                            .disabled(isPurchasing || services.billing.subscriptionProduct == nil)
+                            // `purchase()` reloads products when no product is cached, so keep this
+                            // available as a retry after an initial StoreKit load failure.
+                            .disabled(isPurchasing || services.billing.isLoadingProducts)
 
                             Button {
                                 Task { await restore() }
