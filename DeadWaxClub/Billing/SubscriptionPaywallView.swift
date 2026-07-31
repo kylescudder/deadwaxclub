@@ -35,11 +35,12 @@ struct SubscriptionPaywallView: View {
                             PrimaryButton(
                                 title: subscribeTitle,
                                 systemImage: "checkmark.seal.fill",
+                                isLoading: isPurchasing,
                                 action: { Task { await subscribe() } }
                             )
                             // `purchase()` reloads products when no product is cached, so keep this
                             // available as a retry after an initial StoreKit load failure.
-                            .disabled(isPurchasing || services.billing.isLoadingProducts)
+                            .disabled(services.billing.isLoadingProducts)
 
                             Button {
                                 Task { await restore() }
@@ -56,7 +57,7 @@ struct SubscriptionPaywallView: View {
                         if services.billing.isLoadingProducts {
                             ProgressView()
                         } else if services.billing.subscriptionProduct == nil {
-                            Text("Subscription details are unavailable. Try again later.")
+                            Text("Subscription details are unavailable. Tap Subscribe to try again.")
                                 .font(.footnote)
                                 .foregroundStyle(.red)
                                 .multilineTextAlignment(.center)
