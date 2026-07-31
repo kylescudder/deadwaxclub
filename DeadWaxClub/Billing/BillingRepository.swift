@@ -59,7 +59,6 @@ final class BillingRepository: ObservableObject {
         do {
             let products = try await Product.products(for: [Self.supporterMonthlyProductID])
             subscriptionProduct = products.first
-            lastError = nil
             Log.event("billing products load completed", category: "billing.products", metadata: ["count": products.count])
         } catch {
             lastError = error.localizedDescription
