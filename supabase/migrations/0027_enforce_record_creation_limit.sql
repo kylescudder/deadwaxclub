@@ -3,9 +3,56 @@
 --
 -- The app-side preflight is only a UX affordance: older clients can skip it
 -- and two devices can both see spare capacity before either write reaches
--- Postgres. Locking the creator's profile row makes the entitlement lookup
--- and count serial for every record created by that user.
+-- Postgres. Lifetime usage lives in a protected quota row rather than a
+-- records count, so soft/hard deletions cannot restore allowance and creation
+-- remains O(1) as a collection grows.
 ------------------------------------------------------------
+
+create table if not exists public.record_creation_quotas (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  lifetime_record_count bigint not null default 0
+    check (lifetime_record_count >= 0),
+  updated_at timestamptz not null default now()
+);
+
+-- 0025 populated `created_by` for pre-existing records. Reapply its safe
+-- fallback before seeding so every historical row, including tombstones, is
+-- charged to the owner of the Collection that held it.
+with collection_owners as (
+  select distinct on (collection_id)
+    collection_id,
+    user_id
+  from public.collection_members
+  where role = 'owner'
+  order by collection_id, joined_at asc
+)
+update public.records r
+set created_by = co.user_id
+from collection_owners co
+where r.created_by is null
+  and r.collection_id = co.collection_id;
+
+do $attribution_check$
+begin
+  if exists (select 1 from public.records where created_by is null) then
+    raise exception 'Cannot seed record_creation_quotas: every historical record must have a creator';
+  end if;
+end
+$attribution_check$;
+
+insert into public.record_creation_quotas (user_id, lifetime_record_count)
+select created_by, count(*)
+from public.records
+where created_by is not null
+group by created_by
+on conflict (user_id) do update
+set lifetime_record_count = excluded.lifetime_record_count,
+    updated_at = now();
+
+-- Quota rows are implementation state. The trigger below is the only
+-- application path permitted to read or mutate them.
+alter table public.record_creation_quotas enable row level security;
+revoke all on table public.record_creation_quotas from anon, authenticated;
 
 create or replace function public.enforce_record_creation_limit()
 returns trigger
@@ -17,7 +64,7 @@ declare
   v_user_id uuid := auth.uid();
   v_is_premium_account boolean;
   v_has_active_entitlement boolean;
-  v_created_record_count integer;
+  v_lifetime_record_count bigint;
 begin
   if v_user_id is null then
     raise exception 'Authentication is required to create a record'
@@ -34,9 +81,14 @@ begin
     return new;
   end if;
 
-  -- This row lock is the concurrency guard. A second concurrent INSERT for
-  -- the same creator waits here, then performs its count after the first
-  -- transaction commits.
+  if new.created_by is not null and new.created_by <> v_user_id then
+    raise exception 'The supplied record creator does not match the authenticated user'
+      using errcode = 'DW002';
+  end if;
+
+  -- This row lock serializes all genuinely-new inserts for one creator.
+  -- A concurrent insert waits here until the first transaction has updated
+  -- its protected quota row.
   select p.is_premium_account
     into v_is_premium_account
     from public.profiles p
@@ -57,6 +109,16 @@ begin
 
   new.created_by := v_user_id;
 
+  insert into public.record_creation_quotas (user_id)
+  values (v_user_id)
+  on conflict (user_id) do nothing;
+
+  select q.lifetime_record_count
+    into v_lifetime_record_count
+    from public.record_creation_quotas q
+   where q.user_id = v_user_id
+   for update;
+
   select exists (
     select 1
       from public.iap_entitlements e
@@ -66,19 +128,18 @@ begin
        and (e.expires_at is null or e.expires_at > now())
   ) into v_has_active_entitlement;
 
-  if coalesce(v_is_premium_account, false) or v_has_active_entitlement then
-    return new;
-  end if;
-
-  select count(*)
-    into v_created_record_count
-    from public.records r
-   where r.created_by = v_user_id;
-
-  if v_created_record_count >= 5 then
+  if not (coalesce(v_is_premium_account, false) or v_has_active_entitlement)
+     and v_lifetime_record_count >= 5 then
     raise exception 'Free accounts can create up to 5 records. Subscribe to add more.'
-      using errcode = 'P0001';
+      using errcode = 'DW001';
   end if;
+
+  -- Paid records count toward the lifetime creation total too. If the
+  -- subscription later expires, it must not reset a creator's free allowance.
+  update public.record_creation_quotas
+  set lifetime_record_count = lifetime_record_count + 1,
+      updated_at = now()
+  where user_id = v_user_id;
 
   return new;
 end;

@@ -11,6 +11,7 @@ final class BillingRepository: ObservableObject {
     @Published private(set) var isSubscribed = false
     @Published private(set) var hasPremiumAccount = false
     @Published private(set) var hasStoreKitSubscription = false
+    @Published private(set) var hasServerConfirmedEntitlement = false
     @Published private(set) var lastError: String?
 
     private let auth: AuthClient
@@ -40,6 +41,7 @@ final class BillingRepository: ObservableObject {
     func resetForSignOut() {
         Log.breadcrumb("billing state reset for sign out", category: "billing")
         hasStoreKitSubscription = false
+        hasServerConfirmedEntitlement = false
         hasPremiumAccount = false
         isSubscribed = false
         lastError = nil
@@ -136,21 +138,35 @@ final class BillingRepository: ObservableObject {
     func syncEntitlements() async {
         Log.breadcrumb("billing entitlement sync started", category: "billing.entitlements")
         var active = false
+        var serverConfirmed = false
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result,
                   transaction.productID == Self.supporterMonthlyProductID else { continue }
-            await sync(transaction, jwsRepresentation: result.jwsRepresentation)
             if transaction.isActiveSubscriptionEntitlement {
                 active = true
+                serverConfirmed = await sync(transaction, jwsRepresentation: result.jwsRepresentation) || serverConfirmed
             }
         }
         hasStoreKitSubscription = active
+        hasServerConfirmedEntitlement = active && serverConfirmed
+        if active && !hasServerConfirmedEntitlement && lastError == nil {
+            lastError = "Your subscription is active, but we could not verify it with the server yet. Please try again shortly."
+        } else if !active {
+            lastError = nil
+        }
         updateSubscriptionState(source: "storeKit")
-        Log.event("billing entitlement sync completed", category: "billing.entitlements", metadata: ["isSubscribed": isSubscribed])
+        Log.event("billing entitlement sync completed", category: "billing.entitlements", metadata: [
+            "isSubscribed": isSubscribed,
+            "storeKit": active,
+            "serverConfirmed": hasServerConfirmedEntitlement,
+        ])
     }
 
     private func updateSubscriptionState(source: String) {
-        isSubscribed = hasStoreKitSubscription || hasPremiumAccount
+        // StoreKit verification is immediate device evidence, but record
+        // creation is enforced by Postgres. Do not promise unlimited database
+        // creation until the verified transaction has been mirrored there.
+        isSubscribed = hasPremiumAccount || (hasStoreKitSubscription && hasServerConfirmedEntitlement)
         Log.event("billing subscription state updated", category: "billing.entitlements", metadata: [
             "source": source,
             "storeKit": hasStoreKitSubscription,
@@ -168,32 +184,43 @@ final class BillingRepository: ObservableObject {
         await syncEntitlements()
     }
 
-    private func sync(_ transaction: Transaction, jwsRepresentation: String) async {
+    private func sync(_ transaction: Transaction, jwsRepresentation: String) async -> Bool {
         Log.event("billing transaction sync started", category: "billing.syncTransaction", metadata: ["productID": transaction.productID])
-        guard let token = await auth.currentAccessToken() else { return }
-        do {
-            let url = AppSecrets.supabaseURL
-                .appendingPathComponent("functions")
-                .appendingPathComponent("v1")
-                .appendingPathComponent("iap-sync-transaction")
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            request.setValue(AppSecrets.supabaseAnonKey, forHTTPHeaderField: "apikey")
-            request.httpBody = try JSONEncoder().encode(TransactionSyncRequest(
-                signedTransactionInfo: jwsRepresentation,
-                source: "ios"
-            ))
+        guard let token = await auth.currentAccessToken() else { return false }
+        for attempt in 0..<3 {
+            do {
+                let url = AppSecrets.supabaseURL
+                    .appendingPathComponent("functions")
+                    .appendingPathComponent("v1")
+                    .appendingPathComponent("iap-sync-transaction")
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                request.setValue(AppSecrets.supabaseAnonKey, forHTTPHeaderField: "apikey")
+                request.httpBody = try JSONEncoder().encode(TransactionSyncRequest(
+                    signedTransactionInfo: jwsRepresentation,
+                    source: "ios"
+                ))
 
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                throw BillingSyncError.badStatus(http.statusCode)
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                    throw BillingSyncError.badStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
+                }
+                let result = try JSONDecoder().decode(TransactionSyncResponse.self, from: data)
+                guard result.active else { throw BillingSyncError.serverDidNotConfirm }
+                lastError = nil
+                Log.event("billing transaction sync completed", category: "billing.syncTransaction", metadata: ["productID": transaction.productID])
+                return true
+            } catch {
+                Log.error(error, category: "billing.syncTransaction")
+                if attempt < 2 {
+                    try? await Task.sleep(nanoseconds: UInt64(attempt + 1) * 500_000_000)
+                }
             }
-            Log.event("billing transaction sync completed", category: "billing.syncTransaction", metadata: ["productID": transaction.productID])
-        } catch {
-            Log.error(error, category: "billing.syncTransaction")
         }
+        lastError = "Your subscription is active, but we could not verify it with the server yet. Please try again shortly."
+        return false
     }
 }
 
@@ -202,13 +229,20 @@ private struct TransactionSyncRequest: Encodable {
     let source: String
 }
 
+private struct TransactionSyncResponse: Decodable {
+    let active: Bool
+}
+
 private enum BillingSyncError: LocalizedError {
     case badStatus(Int)
+    case serverDidNotConfirm
 
     var errorDescription: String? {
         switch self {
         case .badStatus(let status):
             return "Subscription sync failed with status \(status)."
+        case .serverDidNotConfirm:
+            return "The server did not confirm the subscription."
         }
     }
 }
