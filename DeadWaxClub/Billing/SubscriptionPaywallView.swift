@@ -38,8 +38,6 @@ struct SubscriptionPaywallView: View {
                                 isLoading: isPurchasing,
                                 action: { Task { await subscribe() } }
                             )
-                            // `purchase()` reloads products when no product is cached, so keep this
-                            // available as a retry after an initial StoreKit load failure.
                             .disabled(
                                 isRestoring ||
                                     (services.billing.isLoadingProducts &&
