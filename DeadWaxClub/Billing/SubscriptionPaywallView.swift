@@ -25,7 +25,10 @@ struct SubscriptionPaywallView: View {
                             Text("Keep building your collection")
                                 .font(.title2.weight(.semibold))
                                 .multilineTextAlignment(.center)
-                            Text("Your first \(AppServices.freeRecordLimit) records are free. Subscribe to add unlimited owned and wishlist records.")
+                            Text(
+                                "Your first \(AppServices.freeRecordLimit) collection items are free. " +
+                                "Subscribe to add unlimited owned and wishlist items."
+                            )
                                 .font(.body)
                                 .foregroundStyle(Theme.Colors.textSecondary)
                                 .multilineTextAlignment(.center)
@@ -71,7 +74,9 @@ struct SubscriptionPaywallView: View {
                         }
 
                         if let createdCount {
-                            Text("\(createdCount) \(createdCount == 1 ? "record" : "records") added")
+                            Text(
+                                "\(createdCount) \(createdCount == 1 ? "item" : "items") in your collection"
+                            )
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
