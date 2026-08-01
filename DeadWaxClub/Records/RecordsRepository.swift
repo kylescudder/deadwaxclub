@@ -174,8 +174,7 @@ final class RecordsRepository: ObservableObject {
                 sql: """
                 select count(*) as count
                 from records
-                where deleted_at is null
-                  and (
+                where (
                     created_by = ?
                     or (
                       created_by is null
