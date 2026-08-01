@@ -41,8 +41,9 @@ struct SubscriptionPaywallView: View {
                             // `purchase()` reloads products when no product is cached, so keep this
                             // available as a retry after an initial StoreKit load failure.
                             .disabled(
-                                services.billing.isLoadingProducts &&
-                                services.billing.subscriptionProduct == nil
+                                isRestoring ||
+                                    (services.billing.isLoadingProducts &&
+                                        services.billing.subscriptionProduct == nil)
                             )
 
                             Button {
