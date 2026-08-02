@@ -30,10 +30,6 @@ final class AppServices: ObservableObject {
     /// ManageCollectionsView focused on this Collection.
     @Published var pendingDeepLinkCollectionID: String?
 
-    /// Raised when Postgres atomically rejects an offline/concurrent record
-    /// create at the free limit and the sync connector retires its local row.
-    @Published var isSubscriptionPaywallPresented = false
-
     private var cancellables = Set<AnyCancellable>()
 
     init() {
@@ -85,12 +81,6 @@ final class AppServices: ObservableObject {
                     Log.event("collection deeplink received", category: "app.deeplink", metadata: ["collectionID": collectionID])
                     self?.pendingDeepLinkCollectionID = collectionID
                 }
-            }
-            .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: .recordCreationLimitReached)
-            .sink { [weak self] _ in
-                self?.isSubscriptionPaywallPresented = true
             }
             .store(in: &cancellables)
 
@@ -149,7 +139,8 @@ final class AppServices: ObservableObject {
             Log.error(error, category: "billing.limit")
             return false
         }
-        if billing.isSubscribed || (await records.hasVerifiedUnlimitedAccess(userID: userID)) {
+        let hasVerifiedUnlimitedAccess = await records.hasVerifiedUnlimitedAccess(userID: userID)
+        if billing.isSubscribed || hasVerifiedUnlimitedAccess {
             Log.breadcrumb("record creation allowed by verified subscription snapshot", category: "billing.limit")
             return true
         }
