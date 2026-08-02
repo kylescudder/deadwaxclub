@@ -7,13 +7,19 @@ final class RecordsRepository: ObservableObject {
     @Published private(set) var isLoading = false
 
     private let database: PowerSyncDatabaseProtocol
+    private let issues: SyncIssueStore
     private var watchTask: Task<Void, Never>?
+    private var quotaWatchTask: Task<Void, Never>?
 
-    init(database: PowerSyncDatabaseProtocol) {
+    init(database: PowerSyncDatabaseProtocol, issues: SyncIssueStore) {
         self.database = database
+        self.issues = issues
     }
 
-    deinit { watchTask?.cancel() }
+    deinit {
+        watchTask?.cancel()
+        quotaWatchTask?.cancel()
+    }
 
     private var recordSelectSQL: String {
         """
@@ -54,6 +60,7 @@ final class RecordsRepository: ObservableObject {
             "collectionID": collectionID,
         ])
         watchTask?.cancel()
+        quotaWatchTask?.cancel()
         isLoading = true
         watchTask = Task { [weak self, database] in
             guard let self else { return }
@@ -100,9 +107,25 @@ final class RecordsRepository: ObservableObject {
                 await MainActor.run { self.isLoading = false }
             }
         }
+        quotaWatchTask = Task { [weak self, database] in
+            do {
+                let stream = try database.watch(
+                    sql: "select lifetime_record_count from record_creation_quotas where id = ?",
+                    parameters: [userID], mapper: { try $0.getInt(name: "lifetime_record_count") }
+                )
+                for try await rows in stream {
+                    guard !Task.isCancelled, let count = rows.first else { continue }
+                    try await database.execute(
+                        sql: "delete from pending_record_creations where state = 'accepted' and expected_lifetime_count <= ?",
+                        parameters: [count]
+                    )
+                }
+            } catch { Log.error(error, category: "records.quotaWatch") }
+        }
     }
 
-    func upsert(_ record: VinylRecord) async {
+    @discardableResult
+    func upsert(_ record: VinylRecord) async -> Bool {
         Log.event("record upsert started", category: "records.upsert", metadata: [
             "recordID": record.id,
             "collectionID": record.collectionID,
@@ -116,83 +139,127 @@ final class RecordsRepository: ObservableObject {
         let albumID = AlbumIdentity.stableID(for: record.albumDedupeKey)
         let pressingID = record.recordPressingID ?? RecordPressingIdentity.stableID(for: record.pressingDedupeKey)
         do {
+            let existingRecord = try await database.getOptional(
+                sql: "select 1 as present from records where id = ?", parameters: [record.id],
+                mapper: { try $0.getInt(name: "present") }
+            ) != nil
+            if !existingRecord {
+                // Fail before catalog writes so first-launch/offline users do
+                // not enqueue partial optimistic data without a quota snapshot.
+                _ = try await creationUsage(userID: record.createdBy)
+            }
             try await upsertAlbum(record, albumID: albumID, updatedAt: updatedAt)
             try await upsertPressing(record, albumID: albumID, pressingID: pressingID, updatedAt: updatedAt, estimatedAt: estimatedAt)
 
             // PowerSync exposes tables as views — ON CONFLICT … DO UPDATE is
             // not supported. Insert-or-ignore then update covers both cases.
-            try await database.execute(
-                sql: """
-                insert or ignore into records
-                  (id, record_pressing_id, collection_id, created_by, status, notes, created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                parameters: [
-                    record.id,
-                    pressingID,
-                    record.collectionID,
-                    record.createdBy,
-                    record.status.rawValue,
-                    record.notes,
-                    createdAt,
-                    updatedAt,
-                ]
-            )
-            try await database.execute(
-                sql: """
-                update records set
-                  record_pressing_id = ?,
-                  collection_id = ?,
-                  created_by = coalesce(created_by, ?),
-                  status = ?,
-                  notes = ?,
-                  updated_at = ?
-                where id = ?
-                """,
-                parameters: [
-                    pressingID,
-                    record.collectionID,
-                    record.createdBy,
-                    record.status.rawValue,
-                    record.notes,
-                    updatedAt,
-                    record.id,
-                ]
-            )
+            try await database.writeTransaction { transaction in
+                let exists = try transaction.getOptional(
+                    sql: "select 1 as present from records where id = ?", parameters: [record.id],
+                    mapper: { try $0.getInt(name: "present") }
+                ) != nil
+                if !exists {
+                    let serverCount = try RecordQuotaSnapshot.requireInitializedCount(
+                        transaction.getOptional(
+                            sql: "select lifetime_record_count from record_creation_quotas where id = ?",
+                            parameters: [record.createdBy],
+                            mapper: { try $0.getInt(name: "lifetime_record_count") }
+                        )
+                    )
+                    let pendingCount = try transaction.getOptional(
+                        sql: "select count(*) as count from pending_record_creations where user_id = ? and expected_lifetime_count > ?",
+                        parameters: [record.createdBy, serverCount],
+                        mapper: { try $0.getInt(name: "count") }
+                    ) ?? 0
+                    let hasUnlimitedSnapshot = try transaction.getOptional(
+                        sql: """
+                        select 1 as allowed from profiles p
+                        where p.id = ? and p.is_premium_account = 1
+                        union all
+                        select 1 as allowed from iap_entitlements e
+                        where e.id = ? and e.bundle_id = 'com.deadwaxclub.app'
+                          and e.product_id = 'club.deadwax.supporter.monthly'
+                          and e.environment in ('sandbox', 'production')
+                          and e.verification_source in ('storekit_transaction', 'app_store_server_notification')
+                          and e.signed_at is not null and e.verified_at is not null
+                          and e.status = 'active' and e.revoked_at is null
+                          and e.expires_at is not null and datetime(e.expires_at) > datetime('now')
+                        limit 1
+                        """,
+                        parameters: [record.createdBy, record.createdBy],
+                        mapper: { try $0.getInt(name: "allowed") }
+                    ) != nil
+                    let expected = serverCount + pendingCount + 1
+                    guard hasUnlimitedSnapshot || expected <= 5 else {
+                        throw RecordCreationError.freeLimitReached
+                    }
+                    try transaction.execute(
+                        sql: "insert into pending_record_creations (id, user_id, expected_lifetime_count, state, created_at) values (?, ?, ?, 'queued', ?)",
+                        parameters: [record.id, record.createdBy, expected, createdAt]
+                    )
+                    try transaction.execute(
+                        sql: "insert into records (id, record_pressing_id, collection_id, created_by, status, notes, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
+                        parameters: [record.id, pressingID, record.collectionID, record.createdBy, record.status.rawValue, record.notes, createdAt, updatedAt]
+                    )
+                } else {
+                    try transaction.execute(
+                        sql: "update records set record_pressing_id = ?, collection_id = ?, status = ?, notes = ?, updated_at = ? where id = ?",
+                        parameters: [pressingID, record.collectionID, record.status.rawValue, record.notes, updatedAt, record.id]
+                    )
+                }
+            }
             Log.event("record upsert completed", category: "records.upsert", metadata: [
                 "recordID": record.id,
                 "pressingID": pressingID,
             ])
+            return true
         } catch {
             Log.error(error, category: "records.upsert")
+            if error as? RecordCreationError == .quotaSnapshotUnavailable {
+                issues.reportQuotaSnapshotUnavailable()
+            } else if error as? RecordCreationError == .freeLimitReached {
+                issues.reportRejectedRecord(quotaExceeded: true)
+            }
+            return false
         }
     }
 
-    func createdRecordCount(userID: String) async -> Int {
+    func creationUsage(userID: String) async throws -> Int {
+        let serverCount = try RecordQuotaSnapshot.requireInitializedCount(
+            try await database.getOptional(
+                sql: "select lifetime_record_count from record_creation_quotas where id = ?",
+                parameters: [userID], mapper: { try $0.getInt(name: "lifetime_record_count") }
+            )
+        )
+        let pending = try await database.getOptional(
+            sql: "select count(*) as count from pending_record_creations where user_id = ? and expected_lifetime_count > ?",
+            parameters: [userID, serverCount], mapper: { try $0.getInt(name: "count") }
+        ) ?? 0
+        return serverCount + pending
+    }
+
+    func hasVerifiedUnlimitedAccess(userID: String) async -> Bool {
         do {
-            let count = try await database.getOptional(
+            return try await database.getOptional(
                 sql: """
-                select count(*) as count
-                from records
-                where (
-                    created_by = ?
-                    or (
-                      created_by is null
-                      and collection_id in (
-                        select collection_id from collection_members
-                        where user_id = ? and role = 'owner'
-                      )
-                    )
-                  )
+                select 1 as allowed from profiles p
+                where p.id = ? and p.is_premium_account = 1
+                union all
+                select 1 as allowed from iap_entitlements e
+                where e.id = ? and e.bundle_id = 'com.deadwaxclub.app'
+                  and e.product_id = 'club.deadwax.supporter.monthly'
+                  and e.environment in ('sandbox', 'production')
+                  and e.verification_source in ('storekit_transaction', 'app_store_server_notification')
+                  and e.signed_at is not null and e.verified_at is not null
+                  and e.status = 'active' and e.revoked_at is null
+                  and e.expires_at is not null and datetime(e.expires_at) > datetime('now')
+                limit 1
                 """,
-                parameters: [userID, userID],
-                mapper: { try $0.getInt(name: "count") }
-            ) ?? 0
-            Log.event("created record count fetched", category: "records.createdRecordCount", metadata: ["count": count])
-            return count
+                parameters: [userID, userID], mapper: { try $0.getInt(name: "allowed") }
+            ) != nil
         } catch {
-            Log.error(error, category: "records.createdRecordCount")
-            return 0
+            Log.error(error, category: "records.entitlementSnapshot")
+            return false
         }
     }
 

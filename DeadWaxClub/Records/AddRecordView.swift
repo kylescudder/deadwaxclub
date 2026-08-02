@@ -420,7 +420,7 @@ struct AddRecordView: View {
 
         if existing == nil, !(await services.canCreateNewRecord()) {
             Log.breadcrumb("record save blocked by free record limit", category: "addrecord.save")
-            showPaywall = true
+            if services.syncIssues.current == nil { showPaywall = true }
             return
         }
 
@@ -447,7 +447,7 @@ struct AddRecordView: View {
             updatedAt: now,
             deletedAt: nil
         )
-        await services.records.upsert(record)
+        guard await services.records.upsert(record) else { return }
         Log.event("record save persisted", category: "addrecord.save", metadata: [
             "recordID": record.id,
             "collectionID": record.collectionID,

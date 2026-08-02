@@ -53,8 +53,10 @@ struct ResetPasswordSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Sign out") {
                         Task {
-                            await services.auth.signOut()
-                            services.auth.isPasswordRecovery = false
+                            if await services.auth.signOut() {
+                                await services.sync.wipe()
+                                services.auth.isPasswordRecovery = false
+                            }
                         }
                     }
                 }

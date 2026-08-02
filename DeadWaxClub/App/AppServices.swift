@@ -8,6 +8,7 @@ final class AppServices: ObservableObject {
 
     let auth: AuthClient
     let sync: PowerSyncManager
+    let syncIssues: SyncIssueStore
     let billing: BillingRepository
     let discogs: DiscogsClient
     let coverArt: CoverArtCache
@@ -38,17 +39,19 @@ final class AppServices: ObservableObject {
     init() {
         Log.breadcrumb("app services initializing", category: "app.lifecycle")
         let auth = AuthClient()
-        let sync = PowerSyncManager(authClient: auth)
+        let syncIssues = SyncIssueStore()
+        let sync = PowerSyncManager(authClient: auth, issues: syncIssues)
         let billing = BillingRepository(auth: auth)
         let discogs = DiscogsClient()
         let coverArt = CoverArtCache(authClient: auth)
 
         self.auth = auth
         self.sync = sync
+        self.syncIssues = syncIssues
         self.billing = billing
         self.discogs = discogs
         self.coverArt = coverArt
-        self.records = RecordsRepository(database: sync.database)
+        self.records = RecordsRepository(database: sync.database, issues: syncIssues)
         self.prices = PriceEntriesRepository(database: sync.database)
         self.recordImages = RecordImagesRepository(database: sync.database)
         self.profile = ProfileRepository(database: sync.database, auth: auth)
@@ -57,7 +60,7 @@ final class AppServices: ObservableObject {
         self.notifications = NotificationsRepository(database: sync.database)
         self.onboarding = OnboardingCoordinator()
 
-        for child: any ObservableObject in [auth, sync, billing, discogs, records, prices, recordImages, profile, lists, collections, notifications, onboarding] {
+        for child: any ObservableObject in [auth, sync, syncIssues, billing, discogs, records, prices, recordImages, profile, lists, collections, notifications, onboarding] {
             (child.objectWillChange as? ObservableObjectPublisher)?
                 .sink { [weak self] in self?.objectWillChange.send() }
                 .store(in: &cancellables)
@@ -116,6 +119,7 @@ final class AppServices: ObservableObject {
             onboarding.resetForSignOut()
             billing.resetForSignOut()
             profile.stopWatching()
+            lists.stopWatching()
             collections.stopWatching()
             notifications.stopWatching()
             return
@@ -131,15 +135,24 @@ final class AppServices: ObservableObject {
     }
 
     func canCreateNewRecord() async -> Bool {
-        guard !billing.isSubscribed else {
-            Log.breadcrumb("record creation allowed by subscription", category: "billing.limit")
-            return true
-        }
         guard let userID = auth.currentUserID?.lowerUUID else {
             Log.warning("record creation limit check failed: no authenticated user", category: "billing.limit")
             return false
         }
-        let count = await records.createdRecordCount(userID: userID)
+        let count: Int
+        do {
+            count = try await records.creationUsage(userID: userID)
+        } catch RecordCreationError.quotaSnapshotUnavailable {
+            syncIssues.reportQuotaSnapshotUnavailable()
+            return false
+        } catch {
+            Log.error(error, category: "billing.limit")
+            return false
+        }
+        if billing.isSubscribed || (await records.hasVerifiedUnlimitedAccess(userID: userID)) {
+            Log.breadcrumb("record creation allowed by verified subscription snapshot", category: "billing.limit")
+            return true
+        }
         let allowed = count < Self.freeRecordLimit
         Log.event("record creation limit checked", category: "billing.limit", metadata: [
             "count": count,

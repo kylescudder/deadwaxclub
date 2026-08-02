@@ -1,4 +1,4 @@
--- Reproducible checks for 0027_enforce_record_creation_limit.sql.
+-- Reproducible checks for the authoritative record creation quota migrations.
 --
 -- Run against a disposable, migrated Supabase database as the database owner:
 --   psql "$DATABASE_URL" -f supabase/tests/record_creation_quota_checks.sql
@@ -92,13 +92,18 @@ begin
   end;
   if not v_failed then raise exception 'Hard delete restored quota'; end if;
 
-  -- A PostgREST/PowerSync upsert of an existing ID is an update, not a create.
-  insert into public.records (id, record_pressing_id, collection_id, created_by, status, notes)
-  values (v_record_ids[2], v_pressing_id, v_collection_id, v_user_id, 'owned', 'updated')
-  on conflict (id) do update set notes = excluded.notes;
+  -- A replayed plain insert hits the durable event ledger and does not charge
+  -- twice. The connector confirms this UUID exists before acknowledging 23505.
+  v_failed := false;
+  begin
+    insert into public.records (id, record_pressing_id, collection_id, created_by, status, notes)
+    values (v_record_ids[2], v_pressing_id, v_collection_id, v_user_id, 'owned', 'replay');
+  exception when unique_violation then v_failed := true;
+  end;
+  if not v_failed then raise exception 'Duplicate replay unexpectedly inserted'; end if;
   select lifetime_record_count into v_count
   from public.record_creation_quotas where user_id = v_user_id;
-  if v_count <> 5 then raise exception 'Existing-ID upsert consumed quota'; end if;
+  if v_count <> 5 then raise exception 'Duplicate replay consumed quota'; end if;
 
   -- The trigger derives the creator; spoofing or changing it is rejected.
   v_failed := false;
@@ -111,7 +116,7 @@ begin
   v_failed := false;
   begin
     update public.records set created_by = v_other_user_id where id = v_record_ids[2];
-  exception when insufficient_privilege then v_failed := true;
+  exception when sqlstate 'DW002' then v_failed := true;
   end;
   if not v_failed then raise exception 'Creator reassignment was accepted'; end if;
 
@@ -222,6 +227,15 @@ begin
   values (gen_random_uuid(), v_pressing_id, v_collection_id, 'owned');
 end
 $checks$;
+
+-- Every profile must have a materialized snapshot, including confirmed zero.
+do $$ begin
+  if exists (
+    select 1 from public.profiles p
+    left join public.record_creation_quotas q on q.user_id = p.id
+    where q.user_id is null
+  ) then raise exception 'Profile without initialized quota snapshot'; end if;
+end $$;
 
 -- Concurrent check: in two psql sessions, use the same free test user with
 -- `lifetime_record_count = 4` and execute the INSERT below at the same time.

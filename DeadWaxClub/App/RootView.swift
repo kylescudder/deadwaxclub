@@ -91,6 +91,9 @@ struct RootView: View {
         .sheet(isPresented: $services.isSubscriptionPaywallPresented) {
             SubscriptionPaywallView()
         }
+        .alert(item: $services.syncIssues.current) { issue in
+            Alert(title: Text(issue.title), message: Text(issue.message), dismissButton: .default(Text("OK")))
+        }
         // Password-recovery sheet: shown whenever Supabase has handed us a
         // recovery session (the user just clicked the email reset link).
         // Stacked at the end so it sits above every other sheet, including
