@@ -144,9 +144,12 @@ final class RecordsRepository: ObservableObject {
                 mapper: { try $0.getInt(name: "present") }
             ) != nil
             if !existingRecord {
+                guard let creatorID = record.createdBy else {
+                    throw RecordCreationError.missingCreator
+                }
                 // Fail before catalog writes so first-launch/offline users do
                 // not enqueue partial optimistic data without a quota snapshot.
-                _ = try await creationUsage(userID: record.createdBy)
+                _ = try await creationUsage(userID: creatorID)
             }
             try await upsertAlbum(record, albumID: albumID, updatedAt: updatedAt)
             try await upsertPressing(record, albumID: albumID, pressingID: pressingID, updatedAt: updatedAt, estimatedAt: estimatedAt)
@@ -159,16 +162,19 @@ final class RecordsRepository: ObservableObject {
                     mapper: { try $0.getInt(name: "present") }
                 ) != nil
                 if !exists {
+                    guard let creatorID = record.createdBy else {
+                        throw RecordCreationError.missingCreator
+                    }
                     let serverCount = try RecordQuotaSnapshot.requireInitializedCount(
                         transaction.getOptional(
                             sql: "select lifetime_record_count from record_creation_quotas where id = ?",
-                            parameters: [record.createdBy],
+                            parameters: [creatorID],
                             mapper: { try $0.getInt(name: "lifetime_record_count") }
                         )
                     )
                     let pendingCount = try transaction.getOptional(
                         sql: "select count(*) as count from pending_record_creations where user_id = ? and expected_lifetime_count > ?",
-                        parameters: [record.createdBy, serverCount],
+                        parameters: [creatorID, serverCount],
                         mapper: { try $0.getInt(name: "count") }
                     ) ?? 0
                     let hasUnlimitedSnapshot = try transaction.getOptional(
@@ -186,7 +192,7 @@ final class RecordsRepository: ObservableObject {
                           and e.expires_at is not null and datetime(e.expires_at) > datetime('now')
                         limit 1
                         """,
-                        parameters: [record.createdBy, record.createdBy],
+                        parameters: [creatorID, creatorID],
                         mapper: { try $0.getInt(name: "allowed") }
                     ) != nil
                     let expected = serverCount + pendingCount + 1
@@ -195,11 +201,11 @@ final class RecordsRepository: ObservableObject {
                     }
                     try transaction.execute(
                         sql: "insert into pending_record_creations (id, user_id, expected_lifetime_count, state, created_at) values (?, ?, ?, 'queued', ?)",
-                        parameters: [record.id, record.createdBy, expected, createdAt]
+                        parameters: [record.id, creatorID, expected, createdAt]
                     )
                     try transaction.execute(
                         sql: "insert into records (id, record_pressing_id, collection_id, created_by, status, notes, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
-                        parameters: [record.id, pressingID, record.collectionID, record.createdBy, record.status.rawValue, record.notes, createdAt, updatedAt]
+                        parameters: [record.id, pressingID, record.collectionID, creatorID, record.status.rawValue, record.notes, createdAt, updatedAt]
                     )
                 } else {
                     try transaction.execute(

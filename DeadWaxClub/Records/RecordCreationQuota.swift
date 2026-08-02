@@ -3,6 +3,7 @@ import Foundation
 enum RecordCreationError: Error, Equatable, Sendable {
     case quotaSnapshotUnavailable
     case freeLimitReached
+    case missingCreator
 }
 
 enum RecordQuotaSnapshot {
