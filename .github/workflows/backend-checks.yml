@@ -1,0 +1,73 @@
+name: Backend · Checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/**"
+      - ".github/workflows/backend-checks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Clean stack migrations and entitlement checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Format and type-check entitlement writers
+        run: |
+          deno fmt --check \
+            supabase/functions/_shared/apple-transaction-verification.ts \
+            supabase/functions/_shared/apple-transaction-verification_test.ts \
+            supabase/functions/iap-sync-transaction/index.ts \
+            supabase/functions/iap-app-store-notifications/index.ts
+          deno check --config supabase/functions/deno.json \
+            supabase/functions/iap-sync-transaction/index.ts
+          deno check --config supabase/functions/deno.json \
+            supabase/functions/iap-app-store-notifications/index.ts
+          deno test --config supabase/functions/deno.json \
+            supabase/functions/_shared/apple-transaction-verification_test.ts
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v2.1.1
+        with:
+          version: latest
+
+      - name: Start clean Supabase stack and apply migrations
+        run: |
+          supabase start
+          supabase db reset --local
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Create quota-test users
+        run: |
+          eval "$(supabase status --output env)"
+          for email in quota-check-one@example.com quota-check-two@example.com; do
+            curl --fail --silent --show-error \
+              -X POST "${API_URL}/auth/v1/signup" \
+              -H "apikey: ${ANON_KEY}" \
+              -H "Content-Type: application/json" \
+              --data "{\"email\":\"${email}\",\"password\":\"quota-check-password\"}"
+          done
+
+      - name: Run quota and entitlement SQL checks
+        run: |
+          eval "$(supabase status --output env)"
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 \
+            -f supabase/tests/record_creation_quota_checks.sql

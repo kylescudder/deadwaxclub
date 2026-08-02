@@ -88,6 +88,9 @@ struct RootView: View {
             // services and auto-navigates to the matching Collection.
             NavigationStack { ManageCollectionsView() }
         }
+        .sheet(isPresented: $services.isSubscriptionPaywallPresented) {
+            SubscriptionPaywallView()
+        }
         // Password-recovery sheet: shown whenever Supabase has handed us a
         // recovery session (the user just clicked the email reset link).
         // Stacked at the end so it sits above every other sheet, including
