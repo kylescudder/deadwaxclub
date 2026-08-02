@@ -134,6 +134,13 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Sync") {
+                LabeledContent("Status", value: syncStatusLabel)
+                if services.sync.pendingUploadCount > 0 {
+                    LabeledContent("Pending uploads", value: "\(services.sync.pendingUploadCount)")
+                }
+            }
+
             Section("Account") {
                 if case let .signedIn(_, email) = services.auth.state, let email {
                     LabeledContent("Signed in as", value: email)
@@ -167,9 +174,10 @@ struct SettingsView: View {
         .alert("Sign out of Deadwax Club?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {
                 Task {
-                    await services.auth.signOut()
-                    await services.sync.wipe()
-                    services.onboarding.resetForSignOut()
+                    if await services.auth.signOut() {
+                        await services.sync.wipe()
+                        services.onboarding.resetForSignOut()
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -212,11 +220,22 @@ struct SettingsView: View {
         return "\(v) (\(b))"
     }
 
+    private var syncStatusLabel: String {
+        switch services.sync.status {
+        case .idle: "Waiting"
+        case .connecting: "Connecting"
+        case .connected: services.sync.pendingUploadCount == 0 ? "Up to date" : "Uploading"
+        case .offline: "Offline"
+        case .error: "Error"
+        }
+    }
+
     private func deleteAccount() async {
         isDeleting = true
         defer { isDeleting = false }
         do {
             try await services.auth.deleteAccount()
+            await services.sync.wipe()
             successCount += 1
         } catch {
             deleteError = error.localizedDescription

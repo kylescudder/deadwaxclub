@@ -487,14 +487,17 @@ final class AuthClient: ObservableObject {
         return false
     }
 
-    func signOut() async {
+    @discardableResult
+    func signOut() async -> Bool {
         AuthClient.clearPendingRecoveryFlag()
         Log.breadcrumb("signout started", category: "auth")
         do {
             try await supabase.auth.signOut()
             Log.breadcrumb("signout completed", category: "auth")
+            return true
         } catch {
             Log.error(error, category: "auth")
+            return false
         }
     }
 

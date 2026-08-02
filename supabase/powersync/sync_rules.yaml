@@ -21,10 +21,6 @@ streams:
       from profiles
       where id = auth.user_id()
 
-  user_devices:
-    auto_subscribe: true
-    query: select * from device_tokens where user_id = auth.user_id()
-
   user_notifications:
     auto_subscribe: true
     query: select * from notifications where user_id = auth.user_id()
@@ -34,6 +30,15 @@ streams:
     query: |
       select user_id as id, bundle_id, product_id, transaction_id, original_transaction_id, status, expires_at, revoked_at, environment, signed_at, verified_at, verification_source, updated_at
       from iap_entitlements
+      where user_id = auth.user_id()
+
+  # Read-only authoritative lifetime usage. A materialized zero row is
+  # distinct from no row, which means the first download is incomplete.
+  user_record_creation_quota:
+    auto_subscribe: true
+    query: |
+      select user_id as id, lifetime_record_count, updated_at
+      from record_creation_quotas
       where user_id = auth.user_id()
 
   # --- collections (replaces single-owner user_records / user_prices) ----

@@ -8,6 +8,7 @@ final class AppServices: ObservableObject {
 
     let auth: AuthClient
     let sync: PowerSyncManager
+    let syncIssues: SyncIssueStore
     let billing: BillingRepository
     let discogs: DiscogsClient
     let coverArt: CoverArtCache
@@ -29,26 +30,24 @@ final class AppServices: ObservableObject {
     /// ManageCollectionsView focused on this Collection.
     @Published var pendingDeepLinkCollectionID: String?
 
-    /// Raised when Postgres atomically rejects an offline/concurrent record
-    /// create at the free limit and the sync connector retires its local row.
-    @Published var isSubscriptionPaywallPresented = false
-
     private var cancellables = Set<AnyCancellable>()
 
     init() {
         Log.breadcrumb("app services initializing", category: "app.lifecycle")
         let auth = AuthClient()
-        let sync = PowerSyncManager(authClient: auth)
+        let syncIssues = SyncIssueStore()
+        let sync = PowerSyncManager(authClient: auth, issues: syncIssues)
         let billing = BillingRepository(auth: auth)
         let discogs = DiscogsClient()
         let coverArt = CoverArtCache(authClient: auth)
 
         self.auth = auth
         self.sync = sync
+        self.syncIssues = syncIssues
         self.billing = billing
         self.discogs = discogs
         self.coverArt = coverArt
-        self.records = RecordsRepository(database: sync.database)
+        self.records = RecordsRepository(database: sync.database, issues: syncIssues, auth: auth, billing: billing)
         self.prices = PriceEntriesRepository(database: sync.database)
         self.recordImages = RecordImagesRepository(database: sync.database)
         self.profile = ProfileRepository(database: sync.database, auth: auth)
@@ -57,7 +56,7 @@ final class AppServices: ObservableObject {
         self.notifications = NotificationsRepository(database: sync.database)
         self.onboarding = OnboardingCoordinator()
 
-        for child: any ObservableObject in [auth, sync, billing, discogs, records, prices, recordImages, profile, lists, collections, notifications, onboarding] {
+        for child: any ObservableObject in [auth, sync, syncIssues, billing, discogs, records, prices, recordImages, profile, lists, collections, notifications, onboarding] {
             (child.objectWillChange as? ObservableObjectPublisher)?
                 .sink { [weak self] in self?.objectWillChange.send() }
                 .store(in: &cancellables)
@@ -82,12 +81,6 @@ final class AppServices: ObservableObject {
                     Log.event("collection deeplink received", category: "app.deeplink", metadata: ["collectionID": collectionID])
                     self?.pendingDeepLinkCollectionID = collectionID
                 }
-            }
-            .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: .recordCreationLimitReached)
-            .sink { [weak self] _ in
-                self?.isSubscriptionPaywallPresented = true
             }
             .store(in: &cancellables)
 
@@ -116,6 +109,7 @@ final class AppServices: ObservableObject {
             onboarding.resetForSignOut()
             billing.resetForSignOut()
             profile.stopWatching()
+            lists.stopWatching()
             collections.stopWatching()
             notifications.stopWatching()
             return
@@ -131,19 +125,39 @@ final class AppServices: ObservableObject {
     }
 
     func canCreateNewRecord() async -> Bool {
-        guard !billing.isSubscribed else {
-            Log.breadcrumb("record creation allowed by subscription", category: "billing.limit")
-            return true
-        }
         guard let userID = auth.currentUserID?.lowerUUID else {
             Log.warning("record creation limit check failed: no authenticated user", category: "billing.limit")
             return false
         }
-        let count = await records.createdRecordCount(userID: userID)
-        let allowed = count < Self.freeRecordLimit
+        let status: RecordCreationStatus
+        do {
+            if sync.status == .offline {
+                status = try await records.localRecordCreationStatus(userID: userID)
+            } else {
+                do {
+                    status = try await records.recordCreationStatus()
+                } catch where RecordCreationFailure.isConnectivityFailure(error) {
+                    status = try await records.localRecordCreationStatus(userID: userID)
+                }
+            }
+        } catch RecordCreationError.quotaSnapshotUnavailable {
+            syncIssues.reportQuotaSnapshotUnavailable()
+            return false
+        } catch {
+            Log.error(error, category: "billing.limit")
+            return false
+        }
+        if RecordCreationAuthorization.allowsUnlimited(
+            billingIsSubscribed: billing.isSubscribed,
+            snapshotHasVerifiedEntitlement: status.hasVerifiedEntitlement
+        ) {
+            Log.breadcrumb("record creation allowed by verified subscription snapshot", category: "billing.limit")
+            return true
+        }
+        let allowed = status.lifetimeRecordCount < status.freeLimit
         Log.event("record creation limit checked", category: "billing.limit", metadata: [
-            "count": count,
-            "limit": Self.freeRecordLimit,
+            "count": status.lifetimeRecordCount,
+            "limit": status.freeLimit,
             "allowed": allowed,
         ])
         return allowed

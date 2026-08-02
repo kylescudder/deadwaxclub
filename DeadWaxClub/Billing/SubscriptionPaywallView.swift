@@ -171,6 +171,6 @@ struct SubscriptionPaywallView: View {
 
     private func loadCount() async {
         guard let userID = services.auth.currentUserID?.lowerUUID else { return }
-        createdCount = await services.records.createdRecordCount(userID: userID)
+        createdCount = try? await services.records.creationUsage(userID: userID)
     }
 }

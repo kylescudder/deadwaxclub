@@ -21,7 +21,7 @@ packages:
     from: 2.20.0
   PowerSync:
     url: https://github.com/powersync-ja/powersync-swift
-    from: 1.0.0
+    from: 1.15.1
   Lottie:
     url: https://github.com/airbnb/lottie-ios
     from: 4.5.0
@@ -34,10 +34,14 @@ schemes:
     build:
       targets:
         DeadWaxClub: all
+        DeadWaxClubTests: [test]
     run:
       config: Debug
       executable: DeadWaxClub
       storeKitConfiguration: DeadWaxClub/Resources/StoreKit/DeadWaxClub.storekit
+    test:
+      targets:
+        - DeadWaxClubTests
 
 targets:
   DeadWaxClub:
@@ -141,3 +145,18 @@ targets:
           CODE_SIGN_IDENTITY: Apple Distribution
           CODE_SIGN_STYLE: Manual
           PROVISIONING_PROFILE_SPECIFIER: DeadwaxClub Widgets App Store
+
+  DeadWaxClubTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: DeadWaxClubTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.deadwaxclub.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: DeadWaxClub
+      - package: Supabase
+        product: Supabase

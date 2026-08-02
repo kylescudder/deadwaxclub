@@ -1,108 +1,136 @@
+import Combine
 import Foundation
 import PowerSync
-import Combine
 
 @MainActor
 final class PowerSyncManager: ObservableObject {
+    private static let requiresWipeKey = "sync.requiresWipeBeforeConnect"
+
     enum SyncStatus: Equatable {
-        case idle
-        case connecting
-        case connected
-        case offline
+        case idle, connecting, connected, offline
         case error(String)
     }
 
+    enum AuthAction: Equatable { case none, connect, disconnect }
+
+    static func action(for state: AuthClient.State) -> AuthAction {
+        switch state {
+        case .unknown: .none
+        case .signedIn: .connect
+        case .signedOut: .disconnect
+        }
+    }
+
     @Published private(set) var status: SyncStatus = .idle
+    @Published private(set) var pendingUploadCount = 0
 
     let database: PowerSyncDatabaseProtocol
     private let auth: AuthClient
+    private let issues: SyncIssueStore
     private var connector: SupabaseConnector?
     private var cancellables = Set<AnyCancellable>()
+    private var statusTask: Task<Void, Never>?
+    private var pendingCountTask: Task<Void, Never>?
 
-    init(authClient: AuthClient) {
-        self.auth = authClient
-        // dbFilename is a filename, not a path — PowerSync manages the
-        // location itself under Application Support/databases.
-        self.database = PowerSyncDatabase(
-            schema: DatabaseSchema.schema,
-            dbFilename: "deadwaxclub.sqlite"
-        )
+    init(authClient: AuthClient, issues: SyncIssueStore) {
+        auth = authClient
+        self.issues = issues
+        database = PowerSyncDatabase(schema: DatabaseSchema.schema, dbFilename: "deadwaxclub.sqlite")
+    }
+
+    deinit {
+        statusTask?.cancel()
+        pendingCountTask?.cancel()
     }
 
     func startObservingAuth() async {
-        Log.breadcrumb("powersync auth observer starting", category: "sync")
-        auth.$state
-            .removeDuplicates()
-            .sink { [weak self] state in
-                Task { [weak self] in await self?.reconcile(state: state) }
+        auth.$state.removeDuplicates().sink { [weak self] state in
+            Task { @MainActor [weak self] in await self?.reconcile(state) }
+        }.store(in: &cancellables)
+
+        let database = database
+        statusTask = Task { [weak self] in
+            for await update in database.currentStatus.asFlow() {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    if let error = update.anyError { self?.status = .error(String(describing: error)) }
+                    else if update.connected { self?.status = .connected }
+                    else if update.connecting { self?.status = .connecting }
+                    else if update.hasSynced == true { self?.status = .offline }
+                    else { self?.status = .idle }
+                }
             }
-            .store(in: &cancellables)
-        await reconcile(state: auth.state)
+        }
+
+        pendingCountTask = Task { [weak self] in
+            do {
+                let stream = try database.watch(
+                    sql: "select count(*) as count from ps_crud", parameters: [],
+                    mapper: { try $0.getInt(name: "count") }
+                )
+                for try await rows in stream {
+                    guard !Task.isCancelled else { return }
+                    self?.pendingUploadCount = rows.first ?? 0
+                }
+            } catch { Log.error(error, category: "sync.pendingCount") }
+        }
+        await reconcile(auth.state)
     }
 
-    private func reconcile(state: AuthClient.State) async {
-        Log.breadcrumb("powersync reconciling auth state", category: "sync")
-        switch state {
-        case .signedIn:
-            await connectIfNeeded()
-        case .signedOut:
-            await disconnect()
-        case .unknown:
-            // Transient state during auth bootstrap on every launch.
-            // disconnect() calls disconnectAndClear() which wipes the local
-            // SQLite *and* the pending upload queue — way too aggressive for
-            // what's just "we haven't read the keychain yet". Wait for an
-            // explicit signedOut.
-            break
+    private func reconcile(_ state: AuthClient.State) async {
+        switch Self.action(for: state) {
+        case .connect: await connectIfNeeded()
+        case .disconnect: await disconnect()
+        case .none: break
         }
     }
 
     private func connectIfNeeded() async {
-        guard connector == nil else {
-            Log.breadcrumb("powersync connect skipped; connector already exists", category: "sync")
-            return
+        guard connector == nil else { return }
+        if UserDefaults.standard.bool(forKey: Self.requiresWipeKey) {
+            do {
+                try await database.disconnectAndClear()
+                UserDefaults.standard.removeObject(forKey: Self.requiresWipeKey)
+                pendingUploadCount = 0
+            } catch {
+                status = .error("Offline data must be cleared before syncing another account.")
+                Log.error(error, category: "sync.preconnectWipe")
+                return
+            }
         }
-        Log.breadcrumb("powersync connecting", category: "sync")
         status = .connecting
-        let connector = SupabaseConnector(auth: auth)
+        let connector = SupabaseConnector(auth: auth, issues: issues)
         self.connector = connector
-        do {
-            try await database.connect(connector: connector)
-            status = .connected
-            Log.breadcrumb("powersync connected", category: "sync")
-        } catch {
+        do { try await database.connect(connector: connector) }
+        catch {
+            self.connector = nil
             status = .error(error.localizedDescription)
             Log.error(error, category: "sync.connect")
         }
     }
 
     private func disconnect() async {
-        Log.breadcrumb("powersync disconnect requested", category: "sync")
-        // Use the non-clearing disconnect so transient .signedOut states
-        // emitted during session refresh don't wipe the local DB and the
-        // CRUD upload queue. To wipe on actual sign-out, call wipe()
-        // explicitly from the sign-out path.
+        guard connector != nil else { return }
         do {
             try await database.disconnect()
             connector = nil
             status = .idle
-            Log.breadcrumb("powersync disconnected", category: "sync")
-        } catch {
-            Log.error(error, category: "sync.disconnect")
-        }
+        } catch { Log.error(error, category: "sync.disconnect") }
     }
 
-    /// Tear down PowerSync's local SQLite + pending uploads. Call only when
-    /// the user has explicitly signed out via the Settings UI.
+    /// Persist the guard before clearing. A failed clear blocks any later
+    /// account from connecting until the wipe succeeds.
     func wipe() async {
-        Log.breadcrumb("powersync wipe requested", category: "sync")
+        UserDefaults.standard.set(true, forKey: Self.requiresWipeKey)
         do {
             try await database.disconnectAndClear()
+            UserDefaults.standard.removeObject(forKey: Self.requiresWipeKey)
             connector = nil
             status = .idle
-            Log.breadcrumb("powersync wiped", category: "sync")
+            pendingUploadCount = 0
         } catch {
             Log.error(error, category: "sync.wipe")
+            issues.reportLocalClearFailure()
         }
     }
 }

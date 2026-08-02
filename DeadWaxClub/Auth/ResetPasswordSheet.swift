@@ -53,8 +53,10 @@ struct ResetPasswordSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Sign out") {
                         Task {
-                            await services.auth.signOut()
-                            services.auth.isPasswordRecovery = false
+                            if await services.auth.signOut() {
+                                await services.sync.wipe()
+                                services.auth.isPasswordRecovery = false
+                            }
                         }
                     }
                 }
@@ -76,6 +78,21 @@ struct ResetPasswordSheet: View {
             localError = "Passwords don't match."
             return
         }
-        _ = await services.auth.updatePassword(newPassword: password)
+        await PasswordRecoveryCleanup.run(
+            updatePassword: { await services.auth.updatePassword(newPassword: password) },
+            wipe: { await services.sync.wipe() }
+        )
+    }
+}
+
+enum PasswordRecoveryCleanup {
+    @discardableResult
+    static func run(
+        updatePassword: () async -> Bool,
+        wipe: () async -> Void
+    ) async -> Bool {
+        guard await updatePassword() else { return false }
+        await wipe()
+        return true
     }
 }

@@ -7,13 +7,23 @@ final class RecordsRepository: ObservableObject {
     @Published private(set) var isLoading = false
 
     private let database: PowerSyncDatabaseProtocol
+    private let issues: SyncIssueStore
+    private let auth: AuthClient
+    private let billing: BillingRepository
     private var watchTask: Task<Void, Never>?
+    private var quotaWatchTask: Task<Void, Never>?
 
-    init(database: PowerSyncDatabaseProtocol) {
+    init(database: PowerSyncDatabaseProtocol, issues: SyncIssueStore, auth: AuthClient, billing: BillingRepository) {
         self.database = database
+        self.issues = issues
+        self.auth = auth
+        self.billing = billing
     }
 
-    deinit { watchTask?.cancel() }
+    deinit {
+        watchTask?.cancel()
+        quotaWatchTask?.cancel()
+    }
 
     private var recordSelectSQL: String {
         """
@@ -54,6 +64,7 @@ final class RecordsRepository: ObservableObject {
             "collectionID": collectionID,
         ])
         watchTask?.cancel()
+        quotaWatchTask?.cancel()
         isLoading = true
         watchTask = Task { [weak self, database] in
             guard let self else { return }
@@ -100,9 +111,25 @@ final class RecordsRepository: ObservableObject {
                 await MainActor.run { self.isLoading = false }
             }
         }
+        quotaWatchTask = Task { [weak self, database] in
+            do {
+                let stream = try database.watch(
+                    sql: "select lifetime_record_count from record_creation_quotas where id = ?",
+                    parameters: [userID], mapper: { try $0.getInt(name: "lifetime_record_count") }
+                )
+                for try await rows in stream {
+                    guard !Task.isCancelled, let count = rows.first else { continue }
+                    try await database.execute(
+                        sql: "delete from pending_record_creations where state = 'accepted' and expected_lifetime_count <= ?",
+                        parameters: [count]
+                    )
+                }
+            } catch { Log.error(error, category: "records.quotaWatch") }
+        }
     }
 
-    func upsert(_ record: VinylRecord) async {
+    @discardableResult
+    func upsert(_ record: VinylRecord) async -> Bool {
         Log.event("record upsert started", category: "records.upsert", metadata: [
             "recordID": record.id,
             "collectionID": record.collectionID,
@@ -115,182 +142,222 @@ final class RecordsRepository: ObservableObject {
         let estimatedAt = record.estimatedPriceUpdatedAt?.iso8601
         let albumID = AlbumIdentity.stableID(for: record.albumDedupeKey)
         let pressingID = record.recordPressingID ?? RecordPressingIdentity.stableID(for: record.pressingDedupeKey)
+        let billingIsSubscribed = billing.isSubscribed
         do {
-            try await upsertAlbum(record, albumID: albumID, updatedAt: updatedAt)
-            try await upsertPressing(record, albumID: albumID, pressingID: pressingID, updatedAt: updatedAt, estimatedAt: estimatedAt)
+            // Quota reservation, catalog rows, and the record are one SQLite
+            // transaction. A losing concurrent create therefore cannot leave
+            // orphaned album/pressing writes in PowerSync's CRUD queue.
+            try await database.writeTransaction { transaction in
+                let exists = try transaction.getOptional(
+                    sql: "select 1 as present from records where id = ?", parameters: [record.id],
+                    mapper: { try $0.getInt(name: "present") }
+                ) != nil
+                let creation: (creatorID: String, expectedCount: Int)?
+                if !exists {
+                    guard let creatorID = record.createdBy else {
+                        throw RecordCreationError.missingCreator
+                    }
+                    let serverCount = try RecordQuotaSnapshot.requireInitializedCount(
+                        transaction.getOptional(
+                            sql: "select lifetime_record_count from record_creation_quotas where id = ?",
+                            parameters: [creatorID],
+                            mapper: { try $0.getInt(name: "lifetime_record_count") }
+                        )
+                    )
+                    let pendingCount = try transaction.getOptional(
+                        sql: "select count(*) as count from pending_record_creations where user_id = ? and expected_lifetime_count > ?",
+                        parameters: [creatorID, serverCount],
+                        mapper: { try $0.getInt(name: "count") }
+                    ) ?? 0
+                    let hasUnlimitedSnapshot = try transaction.getOptional(
+                        sql: """
+                        select 1 as allowed from profiles p
+                        where p.id = ? and p.is_premium_account = 1
+                        union all
+                        select 1 as allowed from iap_entitlements e
+                        where e.id = ? and e.bundle_id = 'com.deadwaxclub.app'
+                          and e.product_id = 'club.deadwax.supporter.monthly'
+                          and e.environment in ('sandbox', 'production')
+                          and e.verification_source in ('storekit_transaction', 'app_store_server_notification')
+                          and e.signed_at is not null and e.verified_at is not null
+                          and e.status = 'active' and e.revoked_at is null
+                          and e.expires_at is not null and datetime(e.expires_at) > datetime('now')
+                        limit 1
+                        """,
+                        parameters: [creatorID, creatorID],
+                        mapper: { try $0.getInt(name: "allowed") }
+                    ) != nil
+                    let expected = serverCount + pendingCount + 1
+                    let allowsUnlimited = RecordCreationAuthorization.allowsUnlimited(
+                        billingIsSubscribed: billingIsSubscribed,
+                        snapshotHasVerifiedEntitlement: hasUnlimitedSnapshot
+                    )
+                    guard allowsUnlimited || expected <= 5 else {
+                        throw RecordCreationError.freeLimitReached
+                    }
+                    creation = (creatorID, expected)
+                } else {
+                    creation = nil
+                }
 
-            // PowerSync exposes tables as views — ON CONFLICT … DO UPDATE is
-            // not supported. Insert-or-ignore then update covers both cases.
-            try await database.execute(
-                sql: """
-                insert or ignore into records
-                  (id, record_pressing_id, collection_id, created_by, status, notes, created_at, updated_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                parameters: [
-                    record.id,
-                    pressingID,
-                    record.collectionID,
-                    record.createdBy,
-                    record.status.rawValue,
-                    record.notes,
-                    createdAt,
-                    updatedAt,
-                ]
-            )
-            try await database.execute(
-                sql: """
-                update records set
-                  record_pressing_id = ?,
-                  collection_id = ?,
-                  created_by = coalesce(created_by, ?),
-                  status = ?,
-                  notes = ?,
-                  updated_at = ?
-                where id = ?
-                """,
-                parameters: [
-                    pressingID,
-                    record.collectionID,
-                    record.createdBy,
-                    record.status.rawValue,
-                    record.notes,
-                    updatedAt,
-                    record.id,
-                ]
-            )
+                // PowerSync tables are views, so use insert-or-ignore followed
+                // by update rather than ON CONFLICT.
+                try transaction.execute(
+                    sql: """
+                    insert or ignore into albums
+                      (id, dedupe_key, title, artist, album_year, created_at, updated_at)
+                    values (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    parameters: [albumID, record.albumDedupeKey, record.title, record.artist,
+                                 record.albumYear, createdAt, updatedAt]
+                )
+                try transaction.execute(
+                    sql: "update albums set title = ?, artist = ?, album_year = ?, updated_at = ? where id = ?",
+                    parameters: [record.title, record.artist, record.albumYear, updatedAt, albumID]
+                )
+                try transaction.execute(
+                    sql: """
+                    insert or ignore into record_pressings
+                      (id, album_id, dedupe_key, year, colourway,
+                       cover_art_source_url, cover_art_storage_path,
+                       discogs_release_id, barcode,
+                       estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
+                       created_at, updated_at)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    parameters: [
+                        pressingID, albumID, record.pressingDedupeKey, record.year,
+                        record.colourway, record.coverArtSourceURL, record.coverArtStoragePath,
+                        record.discogsReleaseID, record.barcode, record.estimatedPriceCents,
+                        record.estimatedPriceCurrency, estimatedAt, createdAt, updatedAt,
+                    ]
+                )
+                try transaction.execute(
+                    sql: """
+                    update record_pressings set
+                      album_id = ?, year = ?, colourway = ?, cover_art_source_url = ?,
+                      cover_art_storage_path = coalesce(?, cover_art_storage_path),
+                      discogs_release_id = ?, barcode = ?,
+                      estimated_price_cents = coalesce(?, estimated_price_cents),
+                      estimated_price_currency = coalesce(?, estimated_price_currency),
+                      estimated_price_updated_at = coalesce(?, estimated_price_updated_at),
+                      updated_at = ?
+                    where id = ?
+                    """,
+                    parameters: [
+                        albumID, record.year, record.colourway, record.coverArtSourceURL,
+                        record.coverArtStoragePath, record.discogsReleaseID, record.barcode,
+                        record.estimatedPriceCents, record.estimatedPriceCurrency, estimatedAt,
+                        updatedAt, pressingID,
+                    ]
+                )
+
+                if let creation {
+                    try transaction.execute(
+                        sql: "insert into pending_record_creations (id, user_id, expected_lifetime_count, state, created_at) values (?, ?, ?, 'queued', ?)",
+                        parameters: [record.id, creation.creatorID, creation.expectedCount, createdAt]
+                    )
+                    try transaction.execute(
+                        sql: "insert into records (id, record_pressing_id, collection_id, created_by, status, notes, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
+                        parameters: [record.id, pressingID, record.collectionID, creation.creatorID, record.status.rawValue, record.notes, createdAt, updatedAt]
+                    )
+                } else {
+                    try transaction.execute(
+                        sql: "update records set record_pressing_id = ?, collection_id = ?, status = ?, notes = ?, updated_at = ? where id = ?",
+                        parameters: [pressingID, record.collectionID, record.status.rawValue, record.notes, updatedAt, record.id]
+                    )
+                }
+            }
             Log.event("record upsert completed", category: "records.upsert", metadata: [
                 "recordID": record.id,
                 "pressingID": pressingID,
             ])
+            return true
         } catch {
             Log.error(error, category: "records.upsert")
+            if error as? RecordCreationError == .quotaSnapshotUnavailable {
+                issues.reportQuotaSnapshotUnavailable()
+            } else if error as? RecordCreationError == .freeLimitReached {
+                issues.reportRejectedRecord(quotaExceeded: true)
+            }
+            return false
         }
     }
 
-    func createdRecordCount(userID: String) async -> Int {
+    func creationUsage(userID: String) async throws -> Int {
+        let serverCount = try RecordQuotaSnapshot.requireInitializedCount(
+            try await database.getOptional(
+                sql: "select lifetime_record_count from record_creation_quotas where id = ?",
+                parameters: [userID], mapper: { try $0.getInt(name: "lifetime_record_count") }
+            )
+        )
+        let pending = try await database.getOptional(
+            sql: "select count(*) as count from pending_record_creations where user_id = ? and expected_lifetime_count > ?",
+            parameters: [userID, serverCount], mapper: { try $0.getInt(name: "count") }
+        ) ?? 0
+        return serverCount + pending
+    }
+
+    /// Transactional server status while online, augmented with unresolved
+    /// device-local reservations that the server cannot see yet.
+    func recordCreationStatus() async throws -> RecordCreationStatus {
+        guard let userID = auth.currentUserID?.lowerUUID else {
+            throw RecordCreationError.unauthenticated
+        }
+        let rows: [RecordCreationStatus] = try await auth.supabase
+            .rpc("get_record_creation_status")
+            .execute()
+            .value
+        guard let status = rows.first else {
+            throw RecordCreationError.serverValidationFailure
+        }
+        return try await statusIncludingLocalPending(status, userID: userID)
+    }
+
+    func localRecordCreationStatus(userID: String) async throws -> RecordCreationStatus {
+        let lifetimeCount = try await creationUsage(userID: userID)
+        return RecordCreationStatus(
+            lifetimeRecordCount: lifetimeCount,
+            freeLimit: AppServices.freeRecordLimit,
+            hasVerifiedEntitlement: await hasVerifiedUnlimitedAccess(userID: userID)
+        )
+    }
+
+    private func statusIncludingLocalPending(
+        _ status: RecordCreationStatus,
+        userID: String
+    ) async throws -> RecordCreationStatus {
+        let pending = try await database.getOptional(
+            sql: "select count(*) as count from pending_record_creations where user_id = ? and expected_lifetime_count > ?",
+            parameters: [userID, status.lifetimeRecordCount],
+            mapper: { try $0.getInt(name: "count") }
+        ) ?? 0
+        return status.includingPending(pending)
+    }
+
+    func hasVerifiedUnlimitedAccess(userID: String) async -> Bool {
         do {
-            let count = try await database.getOptional(
+            return try await database.getOptional(
                 sql: """
-                select count(*) as count
-                from records
-                where (
-                    created_by = ?
-                    or (
-                      created_by is null
-                      and collection_id in (
-                        select collection_id from collection_members
-                        where user_id = ? and role = 'owner'
-                      )
-                    )
-                  )
+                select 1 as allowed from profiles p
+                where p.id = ? and p.is_premium_account = 1
+                union all
+                select 1 as allowed from iap_entitlements e
+                where e.id = ? and e.bundle_id = 'com.deadwaxclub.app'
+                  and e.product_id = 'club.deadwax.supporter.monthly'
+                  and e.environment in ('sandbox', 'production')
+                  and e.verification_source in ('storekit_transaction', 'app_store_server_notification')
+                  and e.signed_at is not null and e.verified_at is not null
+                  and e.status = 'active' and e.revoked_at is null
+                  and e.expires_at is not null and datetime(e.expires_at) > datetime('now')
+                limit 1
                 """,
-                parameters: [userID, userID],
-                mapper: { try $0.getInt(name: "count") }
-            ) ?? 0
-            Log.event("created record count fetched", category: "records.createdRecordCount", metadata: ["count": count])
-            return count
+                parameters: [userID, userID], mapper: { try $0.getInt(name: "allowed") }
+            ) != nil
         } catch {
-            Log.error(error, category: "records.createdRecordCount")
-            return 0
+            Log.error(error, category: "records.entitlementSnapshot")
+            return false
         }
-    }
-
-    private func upsertAlbum(_ record: VinylRecord, albumID: String, updatedAt: String) async throws {
-        try await database.execute(
-            sql: """
-            insert or ignore into albums
-              (id, dedupe_key, title, artist, album_year, created_at, updated_at)
-            values (?, ?, ?, ?, ?, ?, ?)
-            """,
-            parameters: [
-                albumID,
-                record.albumDedupeKey,
-                record.title,
-                record.artist,
-                record.albumYear,
-                record.createdAt.iso8601,
-                updatedAt,
-            ]
-        )
-        try await database.execute(
-            sql: """
-            update albums set
-              title = ?,
-              artist = ?,
-              album_year = ?,
-              updated_at = ?
-            where id = ?
-            """,
-            parameters: [
-                record.title,
-                record.artist,
-                record.albumYear,
-                updatedAt,
-                albumID,
-            ]
-        )
-    }
-
-    private func upsertPressing(_ record: VinylRecord, albumID: String, pressingID: String, updatedAt: String, estimatedAt: String?) async throws {
-        try await database.execute(
-            sql: """
-            insert or ignore into record_pressings
-              (id, album_id, dedupe_key, year, colourway,
-               cover_art_source_url, cover_art_storage_path,
-               discogs_release_id, barcode,
-               estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
-               created_at, updated_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            parameters: [
-                pressingID,
-                albumID,
-                record.pressingDedupeKey,
-                record.year,
-                record.colourway,
-                record.coverArtSourceURL,
-                record.coverArtStoragePath,
-                record.discogsReleaseID,
-                record.barcode,
-                record.estimatedPriceCents,
-                record.estimatedPriceCurrency,
-                estimatedAt,
-                record.createdAt.iso8601,
-                updatedAt,
-            ]
-        )
-        try await database.execute(
-            sql: """
-            update record_pressings set
-              album_id = ?,
-              year = ?,
-              colourway = ?,
-              cover_art_source_url = ?,
-              cover_art_storage_path = coalesce(?, cover_art_storage_path),
-              discogs_release_id = ?,
-              barcode = ?,
-              estimated_price_cents = coalesce(?, estimated_price_cents),
-              estimated_price_currency = coalesce(?, estimated_price_currency),
-              estimated_price_updated_at = coalesce(?, estimated_price_updated_at),
-              updated_at = ?
-            where id = ?
-            """,
-            parameters: [
-                albumID,
-                record.year,
-                record.colourway,
-                record.coverArtSourceURL,
-                record.coverArtStoragePath,
-                record.discogsReleaseID,
-                record.barcode,
-                record.estimatedPriceCents,
-                record.estimatedPriceCurrency,
-                estimatedAt,
-                updatedAt,
-                pressingID,
-            ]
-        )
     }
 
     func updateEstimate(recordID: String, cents: Int, currency: String) async {

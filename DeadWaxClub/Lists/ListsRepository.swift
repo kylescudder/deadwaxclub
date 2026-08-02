@@ -46,6 +46,12 @@ final class ListsRepository: ObservableObject {
         }
     }
 
+    func stopWatching() {
+        watchTask?.cancel()
+        watchTask = nil
+        lists = []
+    }
+
     func create(name: String, description: String?, mode: ListShareMode) async -> VinylList? {
         Log.event("list create started", category: "lists.create", metadata: ["mode": mode.rawValue])
         guard let ownerID = auth.currentUserID?.lowerUUID else { return nil }

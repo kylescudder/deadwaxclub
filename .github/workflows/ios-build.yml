@@ -61,3 +61,13 @@ jobs:
             -configuration Debug \
             -destination "generic/platform=iOS Simulator" \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project DeadWaxClub.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,OS=latest,name=iPhone 17 Pro" \
+            CODE_SIGNING_ALLOWED=NO

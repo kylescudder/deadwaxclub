@@ -174,7 +174,7 @@ struct ScanResultSheet: View {
         }
 
         if existing == nil, !(await services.canCreateNewRecord()) {
-            showPaywall = true
+            if services.syncIssues.current == nil { showPaywall = true }
             return
         }
 
@@ -216,7 +216,7 @@ struct ScanResultSheet: View {
             updatedAt: now,
             deletedAt: nil
         )
-        await services.records.upsert(record)
+        guard await services.records.upsert(record) else { return }
         if !lookup.imageURLs.isEmpty {
             await services.ingestDiscogsImages(
                 recordID: recordID,
