@@ -8,9 +8,12 @@
 -- remains O(1) as a collection grows.
 ------------------------------------------------------------
 
--- Supabase applies each migration in one transaction. This lock therefore
--- covers historical attribution, quota seeding, and trigger installation: an
--- INSERT/UPDATE/DELETE cannot slip between the seed snapshot and enforcement.
+-- The Supabase migration runner executes statements individually, so make the
+-- deployment transaction explicit. This lock then covers historical
+-- attribution, quota seeding, and trigger installation: an INSERT/UPDATE/
+-- DELETE cannot slip between the seed snapshot and enforcement.
+begin;
+
 lock table public.records in share row exclusive mode;
 
 create table if not exists public.record_creation_quotas (
@@ -294,3 +297,5 @@ create trigger records_enforce_creation_limit
 
 -- This function is invoked only by the trigger, never as an RPC.
 revoke execute on function public.enforce_record_creation_limit() from public;
+
+commit;
