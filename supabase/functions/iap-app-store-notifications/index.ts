@@ -8,6 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   AppleVerificationError,
   dateFromMillis,
+  DEADWAX_ENTITLEMENT_POLICY,
   entitlementStatus,
   verifyAppleNotification,
 } from "../_shared/apple-transaction-verification.ts";
@@ -58,7 +59,7 @@ serve(async (req) => {
       p_environment: transaction.environment,
       p_signed_at: dateFromMillis(transaction.signedAt),
       p_verified_at: new Date().toISOString(),
-      p_verification_source: "app_store_server_notification",
+      p_verification_source: DEADWAX_ENTITLEMENT_POLICY.verificationSources[1],
     });
     if (error) throw error;
 
