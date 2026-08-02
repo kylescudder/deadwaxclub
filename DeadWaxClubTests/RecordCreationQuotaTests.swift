@@ -91,6 +91,7 @@ final class RecordCreationQuotaTests: XCTestCase {
         ))
     }
 
+    @MainActor
     func testTransientAuthBootstrapDoesNotClearOrDisconnect() {
         XCTAssertEqual(PowerSyncManager.action(for: .unknown), .none)
         XCTAssertEqual(PowerSyncManager.action(for: .signedOut), .disconnect)
