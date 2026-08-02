@@ -21,6 +21,55 @@ final class RecordCreationQuotaTests: XCTestCase {
         XCTAssertGreaterThan(count + 1 + 1, 5)
     }
 
+    func testOnlineStatusIncludesLocalPendingCreations() {
+        let serverStatus = RecordCreationStatus(
+            lifetimeRecordCount: 3,
+            freeLimit: 5,
+            hasVerifiedEntitlement: false
+        )
+        XCTAssertEqual(
+            serverStatus.includingPending(2),
+            RecordCreationStatus(
+                lifetimeRecordCount: 5,
+                freeLimit: 5,
+                hasVerifiedEntitlement: false
+            )
+        )
+    }
+
+    func testServerConfirmedBillingAllowsStaleEntitlementSnapshot() {
+        XCTAssertTrue(RecordCreationAuthorization.allowsUnlimited(
+            billingIsSubscribed: true,
+            snapshotHasVerifiedEntitlement: false
+        ))
+        XCTAssertFalse(RecordCreationAuthorization.allowsUnlimited(
+            billingIsSubscribed: false,
+            snapshotHasVerifiedEntitlement: false
+        ))
+    }
+
+    func testSuccessfulPasswordResetWipesPowerSync() async {
+        let spy = WipeSpy()
+        let succeeded = await PasswordRecoveryCleanup.run(
+            updatePassword: { true },
+            wipe: { await spy.recordWipe() }
+        )
+        XCTAssertTrue(succeeded)
+        let wipeCount = await spy.count
+        XCTAssertEqual(wipeCount, 1)
+    }
+
+    func testFailedPasswordResetDoesNotWipePowerSync() async {
+        let spy = WipeSpy()
+        let succeeded = await PasswordRecoveryCleanup.run(
+            updatePassword: { false },
+            wipe: { await spy.recordWipe() }
+        )
+        XCTAssertFalse(succeeded)
+        let wipeCount = await spy.count
+        XCTAssertEqual(wipeCount, 0)
+    }
+
     func testOnlyKnownPermanentUploadErrorsAreAcknowledged() {
         XCTAssertTrue(SupabaseConnector.isPermanentRejection(
             PostgrestError(code: "DW001", message: "quota reached")
@@ -46,4 +95,9 @@ final class RecordCreationQuotaTests: XCTestCase {
         XCTAssertEqual(PowerSyncManager.action(for: .unknown), .none)
         XCTAssertEqual(PowerSyncManager.action(for: .signedOut), .disconnect)
     }
+}
+
+private actor WipeSpy {
+    private(set) var count = 0
+    func recordWipe() { count += 1 }
 }

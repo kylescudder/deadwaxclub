@@ -47,7 +47,7 @@ final class AppServices: ObservableObject {
         self.billing = billing
         self.discogs = discogs
         self.coverArt = coverArt
-        self.records = RecordsRepository(database: sync.database, issues: syncIssues)
+        self.records = RecordsRepository(database: sync.database, issues: syncIssues, auth: auth, billing: billing)
         self.prices = PriceEntriesRepository(database: sync.database)
         self.recordImages = RecordImagesRepository(database: sync.database)
         self.profile = ProfileRepository(database: sync.database, auth: auth)
@@ -129,9 +129,17 @@ final class AppServices: ObservableObject {
             Log.warning("record creation limit check failed: no authenticated user", category: "billing.limit")
             return false
         }
-        let count: Int
+        let status: RecordCreationStatus
         do {
-            count = try await records.creationUsage(userID: userID)
+            if sync.status == .offline {
+                status = try await records.localRecordCreationStatus(userID: userID)
+            } else {
+                do {
+                    status = try await records.recordCreationStatus()
+                } catch where RecordCreationFailure.isConnectivityFailure(error) {
+                    status = try await records.localRecordCreationStatus(userID: userID)
+                }
+            }
         } catch RecordCreationError.quotaSnapshotUnavailable {
             syncIssues.reportQuotaSnapshotUnavailable()
             return false
@@ -139,15 +147,17 @@ final class AppServices: ObservableObject {
             Log.error(error, category: "billing.limit")
             return false
         }
-        let hasVerifiedUnlimitedAccess = await records.hasVerifiedUnlimitedAccess(userID: userID)
-        if billing.isSubscribed || hasVerifiedUnlimitedAccess {
+        if RecordCreationAuthorization.allowsUnlimited(
+            billingIsSubscribed: billing.isSubscribed,
+            snapshotHasVerifiedEntitlement: status.hasVerifiedEntitlement
+        ) {
             Log.breadcrumb("record creation allowed by verified subscription snapshot", category: "billing.limit")
             return true
         }
-        let allowed = count < Self.freeRecordLimit
+        let allowed = status.lifetimeRecordCount < status.freeLimit
         Log.event("record creation limit checked", category: "billing.limit", metadata: [
-            "count": count,
-            "limit": Self.freeRecordLimit,
+            "count": status.lifetimeRecordCount,
+            "limit": status.freeLimit,
             "allowed": allowed,
         ])
         return allowed

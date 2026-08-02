@@ -78,6 +78,21 @@ struct ResetPasswordSheet: View {
             localError = "Passwords don't match."
             return
         }
-        _ = await services.auth.updatePassword(newPassword: password)
+        await PasswordRecoveryCleanup.run(
+            updatePassword: { await services.auth.updatePassword(newPassword: password) },
+            wipe: { await services.sync.wipe() }
+        )
+    }
+}
+
+enum PasswordRecoveryCleanup {
+    @discardableResult
+    static func run(
+        updatePassword: () async -> Bool,
+        wipe: () async -> Void
+    ) async -> Bool {
+        guard await updatePassword() else { return false }
+        await wipe()
+        return true
     }
 }

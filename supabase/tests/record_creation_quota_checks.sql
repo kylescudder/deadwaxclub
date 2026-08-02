@@ -87,6 +87,14 @@ begin
   v_failed := false;
   begin
     insert into public.records (id, record_pressing_id, collection_id, status)
+    values (v_record_ids[1], v_pressing_id, v_collection_id, 'owned');
+  exception when unique_violation then v_failed := true;
+  end;
+  if not v_failed then raise exception 'Historical hard-deleted record UUID was reused'; end if;
+
+  v_failed := false;
+  begin
+    insert into public.records (id, record_pressing_id, collection_id, status)
     values (gen_random_uuid(), v_pressing_id, v_collection_id, 'owned');
   exception when sqlstate 'DW001' then v_failed := true;
   end;

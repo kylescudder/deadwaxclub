@@ -8,12 +8,16 @@ final class RecordsRepository: ObservableObject {
 
     private let database: PowerSyncDatabaseProtocol
     private let issues: SyncIssueStore
+    private let auth: AuthClient
+    private let billing: BillingRepository
     private var watchTask: Task<Void, Never>?
     private var quotaWatchTask: Task<Void, Never>?
 
-    init(database: PowerSyncDatabaseProtocol, issues: SyncIssueStore) {
+    init(database: PowerSyncDatabaseProtocol, issues: SyncIssueStore, auth: AuthClient, billing: BillingRepository) {
         self.database = database
         self.issues = issues
+        self.auth = auth
+        self.billing = billing
     }
 
     deinit {
@@ -138,6 +142,7 @@ final class RecordsRepository: ObservableObject {
         let estimatedAt = record.estimatedPriceUpdatedAt?.iso8601
         let albumID = AlbumIdentity.stableID(for: record.albumDedupeKey)
         let pressingID = record.recordPressingID ?? RecordPressingIdentity.stableID(for: record.pressingDedupeKey)
+        let billingIsSubscribed = billing.isSubscribed
         do {
             // Quota reservation, catalog rows, and the record are one SQLite
             // transaction. A losing concurrent create therefore cannot leave
@@ -183,7 +188,11 @@ final class RecordsRepository: ObservableObject {
                         mapper: { try $0.getInt(name: "allowed") }
                     ) != nil
                     let expected = serverCount + pendingCount + 1
-                    guard hasUnlimitedSnapshot || expected <= 5 else {
+                    let allowsUnlimited = RecordCreationAuthorization.allowsUnlimited(
+                        billingIsSubscribed: billingIsSubscribed,
+                        snapshotHasVerifiedEntitlement: hasUnlimitedSnapshot
+                    )
+                    guard allowsUnlimited || expected <= 5 else {
                         throw RecordCreationError.freeLimitReached
                     }
                     creation = (creatorID, expected)
@@ -287,6 +296,43 @@ final class RecordsRepository: ObservableObject {
             parameters: [userID, serverCount], mapper: { try $0.getInt(name: "count") }
         ) ?? 0
         return serverCount + pending
+    }
+
+    /// Transactional server status while online, augmented with unresolved
+    /// device-local reservations that the server cannot see yet.
+    func recordCreationStatus() async throws -> RecordCreationStatus {
+        guard let userID = auth.currentUserID?.lowerUUID else {
+            throw RecordCreationError.unauthenticated
+        }
+        let rows: [RecordCreationStatus] = try await auth.supabase
+            .rpc("get_record_creation_status")
+            .execute()
+            .value
+        guard let status = rows.first else {
+            throw RecordCreationError.serverValidationFailure
+        }
+        return try await statusIncludingLocalPending(status, userID: userID)
+    }
+
+    func localRecordCreationStatus(userID: String) async throws -> RecordCreationStatus {
+        let lifetimeCount = try await creationUsage(userID: userID)
+        return RecordCreationStatus(
+            lifetimeRecordCount: lifetimeCount,
+            freeLimit: AppServices.freeRecordLimit,
+            hasVerifiedEntitlement: await hasVerifiedUnlimitedAccess(userID: userID)
+        )
+    }
+
+    private func statusIncludingLocalPending(
+        _ status: RecordCreationStatus,
+        userID: String
+    ) async throws -> RecordCreationStatus {
+        let pending = try await database.getOptional(
+            sql: "select count(*) as count from pending_record_creations where user_id = ? and expected_lifetime_count > ?",
+            parameters: [userID, status.lifetimeRecordCount],
+            mapper: { try $0.getInt(name: "count") }
+        ) ?? 0
+        return status.includingPending(pending)
     }
 
     func hasVerifiedUnlimitedAccess(userID: String) async -> Bool {
