@@ -31,20 +31,28 @@ function json(body: Record<string, unknown>, status = 200): Response {
 async function authenticatedUserID(req: Request): Promise<string> {
   const authorization = req.headers.get("Authorization") ?? "";
   const token = authorization.replace(/^Bearer\s+/i, "");
-  if (!token) throw new AppleVerificationError("Missing Authorization bearer token");
+  if (!token) {
+    throw new AppleVerificationError("Missing Authorization bearer token");
+  }
 
   const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) throw new AppleVerificationError("Invalid user token");
+  if (error || !data.user) {
+    throw new AppleVerificationError("Invalid user token");
+  }
   return data.user.id.toLowerCase();
 }
 
 serve(async (req) => {
   try {
-    if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+    if (req.method !== "POST") {
+      return json({ error: "method_not_allowed" }, 405);
+    }
 
     const userID = await authenticatedUserID(req);
     const body = await req.json() as SyncRequest;
-    const transaction = await verifyAppleTransaction(body.signedTransactionInfo);
+    const transaction = await verifyAppleTransaction(
+      body.signedTransactionInfo,
+    );
     if (transaction.appAccountToken !== userID) {
       return json({ error: "app_account_token_mismatch" }, 403);
     }
@@ -52,16 +60,20 @@ serve(async (req) => {
     const expiresAt = dateFromMillis(transaction.expiresDate);
     const revokedAt = dateFromMillis(transaction.revocationDate);
     const status = entitlementStatus(expiresAt, revokedAt);
-    const { error } = await supabase.from("iap_entitlements").upsert({
-      user_id: userID,
-      product_id: transaction.productId,
-      original_transaction_id: transaction.originalTransactionId,
-      status,
-      expires_at: expiresAt,
-      revoked_at: revokedAt,
-      environment: transaction.environment,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" });
+    const { error } = await supabase.rpc("apply_verified_iap_entitlement", {
+      p_user_id: userID,
+      p_bundle_id: transaction.bundleId,
+      p_product_id: transaction.productId,
+      p_transaction_id: transaction.transactionId,
+      p_original_transaction_id: transaction.originalTransactionId,
+      p_status: status,
+      p_expires_at: expiresAt,
+      p_revoked_at: revokedAt,
+      p_environment: transaction.environment,
+      p_signed_at: dateFromMillis(transaction.signedAt),
+      p_verified_at: new Date().toISOString(),
+      p_verification_source: "storekit_transaction",
+    });
     if (error) throw error;
 
     return json({ status, active: status === "active" });

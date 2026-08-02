@@ -2,7 +2,12 @@
 
 Run these checks after deploying both IAP Edge Functions with valid Apple
 verification secrets. They intentionally never use a real production
-transaction.
+transaction. Both verified writers call the service-role-only
+`apply_verified_iap_entitlement` RPC; it revalidates the Deadwax bundle,
+single accepted subscription product, Sandbox/Production environment,
+transaction/timestamp metadata, and writer source before updating the mirror.
+Rows created before this verification contract retain null verification fields
+and cannot authorize unlimited record creation.
 
 1. Send a malformed or forged compact JWS to `iap-sync-transaction` with a
    valid Supabase access token. It must return `400` with

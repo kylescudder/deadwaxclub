@@ -8,6 +8,11 @@
 -- remains O(1) as a collection grows.
 ------------------------------------------------------------
 
+-- Supabase applies each migration in one transaction. This lock therefore
+-- covers historical attribution, quota seeding, and trigger installation: an
+-- INSERT/UPDATE/DELETE cannot slip between the seed snapshot and enforcement.
+lock table public.records in share row exclusive mode;
+
 create table if not exists public.record_creation_quotas (
   user_id uuid primary key references public.profiles(id) on delete cascade,
   lifetime_record_count bigint not null default 0
@@ -53,6 +58,132 @@ set lifetime_record_count = excluded.lifetime_record_count,
 -- application path permitted to read or mutate them.
 alter table public.record_creation_quotas enable row level security;
 revoke all on table public.record_creation_quotas from anon, authenticated;
+
+-- A row written by the former decoded-payload implementation deliberately
+-- remains unverified: these nullable columns are not backfilled. Only the
+-- service-role writer below can turn a newly Apple-verified transaction into
+-- an entitlement that the creation trigger accepts.
+alter table public.iap_entitlements
+  add column if not exists bundle_id text,
+  add column if not exists transaction_id text,
+  add column if not exists signed_at timestamptz,
+  add column if not exists verified_at timestamptz,
+  add column if not exists verification_source text;
+
+create unique index if not exists iap_entitlements_transaction_id_idx
+  on public.iap_entitlements (transaction_id)
+  where transaction_id is not null;
+
+-- Deadwax's cross-boundary entitlement contract. The Edge Functions use the
+-- same bundle, product, environments, and source values before calling this
+-- service-role-only function. Keep this list deliberately exact: accepting
+-- any active product would turn an unrelated purchase into an unlimited plan.
+create or replace function public.apply_verified_iap_entitlement(
+  p_user_id uuid,
+  p_bundle_id text,
+  p_product_id text,
+  p_transaction_id text,
+  p_original_transaction_id text,
+  p_status text,
+  p_expires_at timestamptz,
+  p_revoked_at timestamptz,
+  p_environment text,
+  p_signed_at timestamptz,
+  p_verified_at timestamptz,
+  p_verification_source text
+)
+returns public.iap_entitlements
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_entitlement public.iap_entitlements;
+begin
+  if auth.role() <> 'service_role' then
+    raise exception 'Only the entitlement verification service may write entitlements'
+      using errcode = '42501';
+  end if;
+
+  if p_user_id is null
+     or p_bundle_id <> 'com.deadwaxclub.app'
+     or p_product_id <> 'club.deadwax.supporter.monthly'
+     or p_environment not in ('sandbox', 'production')
+     or p_verification_source not in ('storekit_transaction', 'app_store_server_notification')
+     or p_status not in ('active', 'expired', 'revoked')
+     or nullif(trim(p_transaction_id), '') is null
+     or nullif(trim(p_original_transaction_id), '') is null
+     or p_signed_at is null
+     or p_verified_at is null
+     or p_verified_at < p_signed_at
+     or (p_status = 'active' and p_revoked_at is not null) then
+    raise exception 'Rejected verified entitlement payload'
+      using errcode = 'DW003';
+  end if;
+
+  insert into public.iap_entitlements as e (
+    user_id, bundle_id, product_id, transaction_id, original_transaction_id,
+    status, expires_at, revoked_at, environment, signed_at, verified_at,
+    verification_source, updated_at
+  ) values (
+    p_user_id, p_bundle_id, p_product_id, p_transaction_id,
+    p_original_transaction_id, p_status, p_expires_at, p_revoked_at,
+    p_environment, p_signed_at, p_verified_at, p_verification_source, now()
+  )
+  on conflict (user_id) do update
+  set bundle_id = excluded.bundle_id,
+      product_id = excluded.product_id,
+      transaction_id = excluded.transaction_id,
+      original_transaction_id = excluded.original_transaction_id,
+      status = excluded.status,
+      expires_at = excluded.expires_at,
+      revoked_at = excluded.revoked_at,
+      environment = excluded.environment,
+      signed_at = excluded.signed_at,
+      verified_at = excluded.verified_at,
+      verification_source = excluded.verification_source,
+      updated_at = now()
+  returning * into v_entitlement;
+  return v_entitlement;
+end;
+$$;
+
+revoke all on function public.apply_verified_iap_entitlement(
+  uuid, text, text, text, text, text, timestamptz, timestamptz, text,
+  timestamptz, timestamptz, text
+) from public, anon, authenticated;
+grant execute on function public.apply_verified_iap_entitlement(
+  uuid, text, text, text, text, text, timestamptz, timestamptz, text,
+  timestamptz, timestamptz, text
+) to service_role;
+
+create or replace function public.has_verified_deadwax_entitlement(p_user_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.iap_entitlements e
+    where e.user_id = p_user_id
+      and e.bundle_id = 'com.deadwaxclub.app'
+      and e.product_id = 'club.deadwax.supporter.monthly'
+      and e.environment in ('sandbox', 'production')
+      and e.signed_at is not null
+      and e.verified_at is not null
+      and e.verification_source in (
+        'storekit_transaction',
+        'app_store_server_notification'
+      )
+      and e.status = 'active'
+      and e.revoked_at is null
+      and (e.expires_at is null or e.expires_at > now())
+  );
+$$;
+
+revoke execute on function public.has_verified_deadwax_entitlement(uuid) from public;
 
 create or replace function public.enforce_record_creation_limit()
 returns trigger
@@ -119,14 +250,8 @@ begin
    where q.user_id = v_user_id
    for update;
 
-  select exists (
-    select 1
-      from public.iap_entitlements e
-     where e.user_id = v_user_id
-       and e.status = 'active'
-       and e.revoked_at is null
-       and (e.expires_at is null or e.expires_at > now())
-  ) into v_has_active_entitlement;
+  select public.has_verified_deadwax_entitlement(v_user_id)
+    into v_has_active_entitlement;
 
   if not (coalesce(v_is_premium_account, false) or v_has_active_entitlement)
      and v_lifetime_record_count >= 5 then

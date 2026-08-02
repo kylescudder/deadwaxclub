@@ -32,7 +32,7 @@ streams:
   user_iap_entitlement:
     auto_subscribe: true
     query: |
-      select user_id as id, product_id, original_transaction_id, status, expires_at, revoked_at, environment, updated_at
+      select user_id as id, bundle_id, product_id, transaction_id, original_transaction_id, status, expires_at, revoked_at, environment, signed_at, verified_at, verification_source, updated_at
       from iap_entitlements
       where user_id = auth.user_id()
 

@@ -111,13 +111,32 @@ begin
   end;
   if not v_failed then raise exception 'Creator reassignment was accepted'; end if;
 
-  -- Both server-authoritative unlimited paths bypass the free cap.
+  -- A legacy active row from the former decoded-payload implementation is
+  -- historical only. Missing verification metadata must not bypass the cap.
   update public.profiles set is_premium_account = true where id = v_user_id;
   insert into public.records (id, record_pressing_id, collection_id, status)
   values (gen_random_uuid(), v_pressing_id, v_collection_id, 'owned');
   update public.profiles set is_premium_account = false where id = v_user_id;
   insert into public.iap_entitlements (user_id, product_id, status, expires_at)
   values (v_user_id, 'club.deadwax.supporter.monthly', 'active', now() + interval '1 day');
+  v_failed := false;
+  begin
+    insert into public.records (id, record_pressing_id, collection_id, status)
+    values (gen_random_uuid(), v_pressing_id, v_collection_id, 'owned');
+  exception when sqlstate 'DW001' then v_failed := true;
+  end;
+  if not v_failed then raise exception 'Legacy unverified entitlement bypassed the free cap'; end if;
+
+  -- The same current entitlement only bypasses after a verified writer has
+  -- supplied the exact bundle/product/environment/source contract.
+  update public.iap_entitlements
+  set bundle_id = 'com.deadwaxclub.app',
+      transaction_id = 'quota-check-' || v_user_id,
+      environment = 'sandbox',
+      signed_at = now() - interval '1 minute',
+      verified_at = now(),
+      verification_source = 'storekit_transaction'
+  where user_id = v_user_id;
   insert into public.records (id, record_pressing_id, collection_id, status)
   values (gen_random_uuid(), v_pressing_id, v_collection_id, 'owned');
 end
@@ -131,5 +150,25 @@ $checks$;
 --   select set_config('request.jwt.claim.sub', '<user UUID>', false);
 --   insert into public.records (id, record_pressing_id, collection_id, status)
 --   values (gen_random_uuid(), '<pressing UUID>', '<collection UUID>', 'owned');
+
+-- Migration deployment lock check: use two psql sessions against a disposable
+-- database while 0027 is being applied. Session B must receive 55P03 rather
+-- than insert between quota seeding and trigger installation, then can retry
+-- after Session A commits:
+--
+--   -- Session A (the migration transaction):
+--   begin;
+--   lock table public.records in share row exclusive mode;
+--   -- run 0027's historical attribution + quota seed + trigger statements
+--   select pg_sleep(5); -- make the protected deployment window observable
+--   commit;
+--
+--   -- Session B, during the sleep:
+--   set lock_timeout = '250ms';
+--   insert into public.records (id, record_pressing_id, collection_id, status)
+--   values (gen_random_uuid(), '<pressing UUID>', '<collection UUID>', 'owned');
+--   -- expected: ERROR 55P03 canceling statement due to lock timeout
+--   -- After Session A commits, retry the same INSERT: it reaches the trigger
+--   -- and is included in the protected quota count.
 
 rollback;

@@ -76,7 +76,7 @@ final class SupabaseConnector: PowerSyncBackendConnectorProtocol, @unchecked Sen
         try await batch.complete(writeCheckpoint: nil)
     }
 
-    private func isTerminalQuotaRejection(_ error: Error, for entry: any CrudEntry) -> Bool {
+    private func isTerminalQuotaRejection(_ error: Error, for entry: CrudEntry) -> Bool {
         guard entry.table == "records" else { return false }
         guard case .put = entry.op else { return false }
         return (error as? PostgrestError)?.code == Self.recordQuotaExceededCode

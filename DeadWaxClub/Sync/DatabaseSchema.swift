@@ -252,12 +252,17 @@ enum DatabaseSchema {
     static let iapEntitlements = Table(
         name: "iap_entitlements",
         columns: [
+            Column.text("bundle_id"),
             Column.text("product_id"),
+            Column.text("transaction_id"),
             Column.text("original_transaction_id"),
             Column.text("status"),
             Column.text("expires_at"),
             Column.text("revoked_at"),
             Column.text("environment"),
+            Column.text("signed_at"),
+            Column.text("verified_at"),
+            Column.text("verification_source"),
             Column.text("updated_at"),
         ]
     )
