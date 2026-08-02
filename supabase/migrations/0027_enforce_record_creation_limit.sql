@@ -116,12 +116,15 @@ begin
      or p_signed_at is null
      or p_verified_at is null
      or p_verified_at < p_signed_at
+     -- The accepted product is an auto-renewing monthly subscription. Both
+     -- active and expired events must carry Apple's expiry timestamp.
+     or (p_status in ('active', 'expired') and p_expires_at is null)
      or (p_status = 'active' and p_revoked_at is not null) then
     raise exception 'Rejected verified entitlement payload'
       using errcode = 'DW003';
   end if;
 
-  insert into public.iap_entitlements as e (
+  insert into public.iap_entitlements (
     user_id, bundle_id, product_id, transaction_id, original_transaction_id,
     status, expires_at, revoked_at, environment, signed_at, verified_at,
     verification_source, updated_at
@@ -143,7 +146,20 @@ begin
       verified_at = excluded.verified_at,
       verification_source = excluded.verification_source,
       updated_at = now()
+  -- Apple signed time, rather than receipt/verification time, establishes
+  -- entitlement ordering. A delayed old active event must not undo a newer
+  -- revoke or expiry event.
+  where public.iap_entitlements.signed_at is null
+     or excluded.signed_at >= public.iap_entitlements.signed_at
   returning * into v_entitlement;
+
+  -- A delayed event is intentionally ignored. Return the current authoritative
+  -- row so the Edge Function response cannot promise a stale entitlement.
+  if not found then
+    select * into v_entitlement
+    from public.iap_entitlements
+    where user_id = p_user_id;
+  end if;
   return v_entitlement;
 end;
 $$;
@@ -179,7 +195,8 @@ as $$
       )
       and e.status = 'active'
       and e.revoked_at is null
-      and (e.expires_at is null or e.expires_at > now())
+      and e.expires_at is not null
+      and e.expires_at > now()
   );
 $$;
 

@@ -19,6 +19,9 @@ declare
   v_record_id uuid;
   v_count bigint;
   v_failed boolean;
+  v_signed_at timestamptz := now() - interval '10 minutes';
+  v_status text;
+  v_transaction_id text;
 begin
   select id, primary_collection_id
     into v_user_id, v_collection_id
@@ -43,6 +46,7 @@ begin
   delete from public.iap_entitlements where user_id = v_user_id;
   delete from public.record_creation_quotas where user_id = v_user_id;
   perform set_config('request.jwt.claim.sub', v_user_id::text, true);
+  perform set_config('request.jwt.claim.role', 'service_role', true);
 
   insert into public.albums (id, dedupe_key, title, artist)
   values (v_album_id, 'quota-check:' || v_album_id, 'Quota Check', 'Deadwax Club');
@@ -127,16 +131,93 @@ begin
   end;
   if not v_failed then raise exception 'Legacy unverified entitlement bypassed the free cap'; end if;
 
-  -- The same current entitlement only bypasses after a verified writer has
-  -- supplied the exact bundle/product/environment/source contract.
-  update public.iap_entitlements
-  set bundle_id = 'com.deadwaxclub.app',
-      transaction_id = 'quota-check-' || v_user_id,
-      environment = 'sandbox',
-      signed_at = now() - interval '1 minute',
-      verified_at = now(),
-      verification_source = 'storekit_transaction'
-  where user_id = v_user_id;
+  -- The monthly product must always carry an Apple expiry date, including an
+  -- active event. The service-role writer exposes DW003 for malformed claims.
+  v_failed := false;
+  begin
+    perform public.apply_verified_iap_entitlement(
+      v_user_id, 'com.deadwaxclub.app', 'club.deadwax.supporter.monthly',
+      'missing-expiry-' || v_user_id, 'original-' || v_user_id, 'active',
+      null, null, 'sandbox', v_signed_at, v_signed_at + interval '1 second',
+      'storekit_transaction'
+    );
+  exception when sqlstate 'DW003' then v_failed := true;
+  end;
+  if not v_failed then raise exception 'Active monthly entitlement without expiry was accepted'; end if;
+
+  -- A valid, active, unexpired event can update a legacy row and bypass the
+  -- record cap. Subsequent checks exercise signed-time monotonic ordering.
+  perform public.apply_verified_iap_entitlement(
+    v_user_id, 'com.deadwaxclub.app', 'club.deadwax.supporter.monthly',
+    'active-initial-' || v_user_id, 'original-' || v_user_id, 'active',
+    now() + interval '1 day', null, 'sandbox', v_signed_at,
+    v_signed_at + interval '1 second', 'storekit_transaction'
+  );
+
+  -- A newer revoke wins. An older active event received later cannot undo it.
+  perform public.apply_verified_iap_entitlement(
+    v_user_id, 'com.deadwaxclub.app', 'club.deadwax.supporter.monthly',
+    'revoked-newer-' || v_user_id, 'original-' || v_user_id, 'revoked',
+    now() + interval '1 day', now(), 'sandbox', v_signed_at + interval '2 minutes',
+    v_signed_at + interval '2 minutes 1 second', 'app_store_server_notification'
+  );
+  perform public.apply_verified_iap_entitlement(
+    v_user_id, 'com.deadwaxclub.app', 'club.deadwax.supporter.monthly',
+    'active-older-' || v_user_id, 'original-' || v_user_id, 'active',
+    now() + interval '1 day', null, 'sandbox', v_signed_at + interval '1 minute',
+    v_signed_at + interval '1 minute 1 second', 'storekit_transaction'
+  );
+  select status, transaction_id into v_status, v_transaction_id
+  from public.iap_entitlements where user_id = v_user_id;
+  if v_status <> 'revoked' or v_transaction_id <> ('revoked-newer-' || v_user_id) then
+    raise exception 'Older active event overwrote newer revoked state';
+  end if;
+
+  -- Equal signed timestamps are accepted, then a newer expiry wins. The
+  -- earlier equal active event cannot overwrite that newer expired state.
+  perform public.apply_verified_iap_entitlement(
+    v_user_id, 'com.deadwaxclub.app', 'club.deadwax.supporter.monthly',
+    'active-equal-' || v_user_id, 'original-' || v_user_id, 'active',
+    now() + interval '1 day', null, 'sandbox', v_signed_at + interval '2 minutes',
+    v_signed_at + interval '2 minutes 2 seconds', 'storekit_transaction'
+  );
+  select status, transaction_id into v_status, v_transaction_id
+  from public.iap_entitlements where user_id = v_user_id;
+  if v_status <> 'active' or v_transaction_id <> ('active-equal-' || v_user_id) then
+    raise exception 'Equal signed event did not update entitlement state';
+  end if;
+  perform public.apply_verified_iap_entitlement(
+    v_user_id, 'com.deadwaxclub.app', 'club.deadwax.supporter.monthly',
+    'expired-newer-' || v_user_id, 'original-' || v_user_id, 'expired',
+    now() - interval '1 day', null, 'sandbox', v_signed_at + interval '3 minutes',
+    v_signed_at + interval '3 minutes 1 second', 'app_store_server_notification'
+  );
+  perform public.apply_verified_iap_entitlement(
+    v_user_id, 'com.deadwaxclub.app', 'club.deadwax.supporter.monthly',
+    'active-before-expiry-' || v_user_id, 'original-' || v_user_id, 'active',
+    now() + interval '1 day', null, 'sandbox', v_signed_at + interval '2 minutes',
+    v_signed_at + interval '2 minutes 3 seconds', 'storekit_transaction'
+  );
+  select status, transaction_id into v_status, v_transaction_id
+  from public.iap_entitlements where user_id = v_user_id;
+  if v_status <> 'expired' or v_transaction_id <> ('expired-newer-' || v_user_id) then
+    raise exception 'Older active event overwrote newer expired state';
+  end if;
+
+  -- A newer signed active event can legitimately restore the current state.
+  perform public.apply_verified_iap_entitlement(
+    v_user_id, 'com.deadwaxclub.app', 'club.deadwax.supporter.monthly',
+    'active-newer-' || v_user_id, 'original-' || v_user_id, 'active',
+    now() + interval '1 day', null, 'sandbox', v_signed_at + interval '4 minutes',
+    v_signed_at + interval '4 minutes 1 second', 'storekit_transaction'
+  );
+  select status, transaction_id into v_status, v_transaction_id
+  from public.iap_entitlements where user_id = v_user_id;
+  if v_status <> 'active' or v_transaction_id <> ('active-newer-' || v_user_id) then
+    raise exception 'Newer signed active event did not update entitlement state';
+  end if;
+
+  -- The valid current active entitlement bypasses the record limit.
   insert into public.records (id, record_pressing_id, collection_id, status)
   values (gen_random_uuid(), v_pressing_id, v_collection_id, 'owned');
 end
