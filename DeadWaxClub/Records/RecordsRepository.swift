@@ -139,28 +139,15 @@ final class RecordsRepository: ObservableObject {
         let albumID = AlbumIdentity.stableID(for: record.albumDedupeKey)
         let pressingID = record.recordPressingID ?? RecordPressingIdentity.stableID(for: record.pressingDedupeKey)
         do {
-            let existingRecord = try await database.getOptional(
-                sql: "select 1 as present from records where id = ?", parameters: [record.id],
-                mapper: { try $0.getInt(name: "present") }
-            ) != nil
-            if !existingRecord {
-                guard let creatorID = record.createdBy else {
-                    throw RecordCreationError.missingCreator
-                }
-                // Fail before catalog writes so first-launch/offline users do
-                // not enqueue partial optimistic data without a quota snapshot.
-                _ = try await creationUsage(userID: creatorID)
-            }
-            try await upsertAlbum(record, albumID: albumID, updatedAt: updatedAt)
-            try await upsertPressing(record, albumID: albumID, pressingID: pressingID, updatedAt: updatedAt, estimatedAt: estimatedAt)
-
-            // PowerSync exposes tables as views — ON CONFLICT … DO UPDATE is
-            // not supported. Insert-or-ignore then update covers both cases.
+            // Quota reservation, catalog rows, and the record are one SQLite
+            // transaction. A losing concurrent create therefore cannot leave
+            // orphaned album/pressing writes in PowerSync's CRUD queue.
             try await database.writeTransaction { transaction in
                 let exists = try transaction.getOptional(
                     sql: "select 1 as present from records where id = ?", parameters: [record.id],
                     mapper: { try $0.getInt(name: "present") }
                 ) != nil
+                let creation: (creatorID: String, expectedCount: Int)?
                 if !exists {
                     guard let creatorID = record.createdBy else {
                         throw RecordCreationError.missingCreator
@@ -199,13 +186,71 @@ final class RecordsRepository: ObservableObject {
                     guard hasUnlimitedSnapshot || expected <= 5 else {
                         throw RecordCreationError.freeLimitReached
                     }
+                    creation = (creatorID, expected)
+                } else {
+                    creation = nil
+                }
+
+                // PowerSync tables are views, so use insert-or-ignore followed
+                // by update rather than ON CONFLICT.
+                try transaction.execute(
+                    sql: """
+                    insert or ignore into albums
+                      (id, dedupe_key, title, artist, album_year, created_at, updated_at)
+                    values (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    parameters: [albumID, record.albumDedupeKey, record.title, record.artist,
+                                 record.albumYear, createdAt, updatedAt]
+                )
+                try transaction.execute(
+                    sql: "update albums set title = ?, artist = ?, album_year = ?, updated_at = ? where id = ?",
+                    parameters: [record.title, record.artist, record.albumYear, updatedAt, albumID]
+                )
+                try transaction.execute(
+                    sql: """
+                    insert or ignore into record_pressings
+                      (id, album_id, dedupe_key, year, colourway,
+                       cover_art_source_url, cover_art_storage_path,
+                       discogs_release_id, barcode,
+                       estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
+                       created_at, updated_at)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    parameters: [
+                        pressingID, albumID, record.pressingDedupeKey, record.year,
+                        record.colourway, record.coverArtSourceURL, record.coverArtStoragePath,
+                        record.discogsReleaseID, record.barcode, record.estimatedPriceCents,
+                        record.estimatedPriceCurrency, estimatedAt, createdAt, updatedAt,
+                    ]
+                )
+                try transaction.execute(
+                    sql: """
+                    update record_pressings set
+                      album_id = ?, year = ?, colourway = ?, cover_art_source_url = ?,
+                      cover_art_storage_path = coalesce(?, cover_art_storage_path),
+                      discogs_release_id = ?, barcode = ?,
+                      estimated_price_cents = coalesce(?, estimated_price_cents),
+                      estimated_price_currency = coalesce(?, estimated_price_currency),
+                      estimated_price_updated_at = coalesce(?, estimated_price_updated_at),
+                      updated_at = ?
+                    where id = ?
+                    """,
+                    parameters: [
+                        albumID, record.year, record.colourway, record.coverArtSourceURL,
+                        record.coverArtStoragePath, record.discogsReleaseID, record.barcode,
+                        record.estimatedPriceCents, record.estimatedPriceCurrency, estimatedAt,
+                        updatedAt, pressingID,
+                    ]
+                )
+
+                if let creation {
                     try transaction.execute(
                         sql: "insert into pending_record_creations (id, user_id, expected_lifetime_count, state, created_at) values (?, ?, ?, 'queued', ?)",
-                        parameters: [record.id, creatorID, expected, createdAt]
+                        parameters: [record.id, creation.creatorID, creation.expectedCount, createdAt]
                     )
                     try transaction.execute(
                         sql: "insert into records (id, record_pressing_id, collection_id, created_by, status, notes, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
-                        parameters: [record.id, pressingID, record.collectionID, creatorID, record.status.rawValue, record.notes, createdAt, updatedAt]
+                        parameters: [record.id, pressingID, record.collectionID, creation.creatorID, record.status.rawValue, record.notes, createdAt, updatedAt]
                     )
                 } else {
                     try transaction.execute(
@@ -267,103 +312,6 @@ final class RecordsRepository: ObservableObject {
             Log.error(error, category: "records.entitlementSnapshot")
             return false
         }
-    }
-
-    private func upsertAlbum(_ record: VinylRecord, albumID: String, updatedAt: String) async throws {
-        try await database.execute(
-            sql: """
-            insert or ignore into albums
-              (id, dedupe_key, title, artist, album_year, created_at, updated_at)
-            values (?, ?, ?, ?, ?, ?, ?)
-            """,
-            parameters: [
-                albumID,
-                record.albumDedupeKey,
-                record.title,
-                record.artist,
-                record.albumYear,
-                record.createdAt.iso8601,
-                updatedAt,
-            ]
-        )
-        try await database.execute(
-            sql: """
-            update albums set
-              title = ?,
-              artist = ?,
-              album_year = ?,
-              updated_at = ?
-            where id = ?
-            """,
-            parameters: [
-                record.title,
-                record.artist,
-                record.albumYear,
-                updatedAt,
-                albumID,
-            ]
-        )
-    }
-
-    private func upsertPressing(_ record: VinylRecord, albumID: String, pressingID: String, updatedAt: String, estimatedAt: String?) async throws {
-        try await database.execute(
-            sql: """
-            insert or ignore into record_pressings
-              (id, album_id, dedupe_key, year, colourway,
-               cover_art_source_url, cover_art_storage_path,
-               discogs_release_id, barcode,
-               estimated_price_cents, estimated_price_currency, estimated_price_updated_at,
-               created_at, updated_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            parameters: [
-                pressingID,
-                albumID,
-                record.pressingDedupeKey,
-                record.year,
-                record.colourway,
-                record.coverArtSourceURL,
-                record.coverArtStoragePath,
-                record.discogsReleaseID,
-                record.barcode,
-                record.estimatedPriceCents,
-                record.estimatedPriceCurrency,
-                estimatedAt,
-                record.createdAt.iso8601,
-                updatedAt,
-            ]
-        )
-        try await database.execute(
-            sql: """
-            update record_pressings set
-              album_id = ?,
-              year = ?,
-              colourway = ?,
-              cover_art_source_url = ?,
-              cover_art_storage_path = coalesce(?, cover_art_storage_path),
-              discogs_release_id = ?,
-              barcode = ?,
-              estimated_price_cents = coalesce(?, estimated_price_cents),
-              estimated_price_currency = coalesce(?, estimated_price_currency),
-              estimated_price_updated_at = coalesce(?, estimated_price_updated_at),
-              updated_at = ?
-            where id = ?
-            """,
-            parameters: [
-                albumID,
-                record.year,
-                record.colourway,
-                record.coverArtSourceURL,
-                record.coverArtStoragePath,
-                record.discogsReleaseID,
-                record.barcode,
-                record.estimatedPriceCents,
-                record.estimatedPriceCurrency,
-                estimatedAt,
-                updatedAt,
-                pressingID,
-            ]
-        )
     }
 
     func updateEstimate(recordID: String, cents: Int, currency: String) async {

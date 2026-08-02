@@ -105,6 +105,15 @@ begin
   from public.record_creation_quotas where user_id = v_user_id;
   if v_count <> 5 then raise exception 'Duplicate replay consumed quota'; end if;
 
+  -- Deployed clients still use PostgREST upsert. The BEFORE INSERT trigger
+  -- must let an existing record reach ON CONFLICT without touching the ledger.
+  insert into public.records (id, record_pressing_id, collection_id, created_by, status, notes)
+  values (v_record_ids[2], v_pressing_id, v_collection_id, v_user_id, 'owned', 'legacy replay')
+  on conflict (id) do update set notes = excluded.notes;
+  select lifetime_record_count into v_count
+  from public.record_creation_quotas where user_id = v_user_id;
+  if v_count <> 5 then raise exception 'Legacy upsert replay consumed quota'; end if;
+
   -- The trigger derives the creator; spoofing or changing it is rejected.
   v_failed := false;
   begin

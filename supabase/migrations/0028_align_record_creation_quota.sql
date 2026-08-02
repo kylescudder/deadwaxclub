@@ -17,6 +17,23 @@ alter table public.record_creation_events enable row level security;
 alter table public.record_creation_events force row level security;
 revoke all on table public.record_creation_events from anon, authenticated;
 
+-- Install the initializer before reading profiles for the backfill. A signup
+-- racing this migration is therefore covered either by the snapshot below or
+-- by this trigger, with ON CONFLICT making the overlap harmless.
+create or replace function public.initialize_record_creation_quota()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.record_creation_quotas (user_id, lifetime_record_count, updated_at)
+  values (new.id, 0, statement_timestamp()) on conflict (user_id) do nothing;
+  return new;
+end;
+$$;
+revoke all on function public.initialize_record_creation_quota() from public;
+drop trigger if exists profiles_initialize_record_creation_quota on public.profiles;
+create trigger profiles_initialize_record_creation_quota
+  after insert on public.profiles for each row
+  execute function public.initialize_record_creation_quota();
+
 insert into public.record_creation_events (record_id, user_id, created_at)
 select id, created_by, created_at from public.records
 where created_by is not null
@@ -35,20 +52,6 @@ set lifetime_record_count = greatest(
       excluded.lifetime_record_count
     ),
     updated_at = statement_timestamp();
-
-create or replace function public.initialize_record_creation_quota()
-returns trigger language plpgsql security definer set search_path = public as $$
-begin
-  insert into public.record_creation_quotas (user_id, lifetime_record_count, updated_at)
-  values (new.id, 0, statement_timestamp()) on conflict (user_id) do nothing;
-  return new;
-end;
-$$;
-revoke all on function public.initialize_record_creation_quota() from public;
-drop trigger if exists profiles_initialize_record_creation_quota on public.profiles;
-create trigger profiles_initialize_record_creation_quota
-  after insert on public.profiles for each row
-  execute function public.initialize_record_creation_quota();
 
 create or replace function public.get_record_creation_status()
 returns table (lifetime_record_count bigint, free_limit integer, has_verified_entitlement boolean)
@@ -88,6 +91,14 @@ begin
     raise exception 'Profile not found' using errcode = '42501';
   end if;
   new.created_by := v_user_id;
+
+  -- Compatibility for deployed clients that still PUT with PostgREST upsert:
+  -- BEFORE INSERT runs before ON CONFLICT, so an already-committed record must
+  -- bypass the insert-only ledger path. A hard-deleted ID remains absent and
+  -- is still rejected by the durable ledger's primary key below.
+  if exists (select 1 from public.records where id = new.id) then
+    return new;
+  end if;
 
   -- The ledger makes retries and hard-delete/reinsert cycles unambiguous.
   insert into public.record_creation_events (record_id, user_id)
