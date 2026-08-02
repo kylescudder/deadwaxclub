@@ -207,6 +207,58 @@ h1 {
   border: 1px solid var(--line);
 }
 
+.app-store-button {
+  min-height: 54px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 9px;
+  padding: 7px 15px 7px 13px;
+  color: #fff;
+  background: #050505;
+  box-shadow: 0 9px 22px rgba(5, 5, 5, 0.2);
+  transition:
+    transform 140ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.app-store-button:hover {
+  transform: translateY(-2px);
+  background: #171717;
+  box-shadow: 0 12px 26px rgba(5, 5, 5, 0.28);
+}
+
+.app-store-button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.app-store-button svg {
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  fill: currentColor;
+}
+
+.app-store-button span {
+  display: flex;
+  flex-direction: column;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.app-store-button small {
+  margin-bottom: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
 .phone-scene {
   position: relative;
   min-height: 610px;
