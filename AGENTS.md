@@ -39,6 +39,14 @@ npx netlify deploy --dir=Site/dist --prod                      # Netlify runs Si
 
 There is no iOS test suite, linter, or formatter configured. The Astro site has `format` and `format:check` scripts under `Site/package.json`.
 
+## Shared APNs gateway migration
+
+Before changing push registration, APNs delivery, `device_tokens`, notification
+webhooks, or notification Edge Functions, read
+`docs/push-gateway/README.md` and follow its routed contract, infrastructure,
+testing, and project-checklist documents. Preserve its provider-neutral HTTP
+contract and rollout gates across all application repositories.
+
 ## Secrets and configuration
 
 - iOS secrets live in `Config/Secrets.xcconfig` (git-ignored, copied from `Config/Secrets.xcconfig.example`). Values are surfaced into Swift via `Info.plist` → `DeadWaxClub/App/AppSecrets.swift`. **xcconfig escaping gotcha**: a literal `//` in a value (e.g. `https://...`) must be written `https:/$()/...` to keep the parser from treating the rest of the line as a comment. Empty strings are treated as "feature disabled" — don't add fatal errors for unset secrets.

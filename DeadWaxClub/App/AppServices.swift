@@ -62,7 +62,14 @@ final class AppServices: ObservableObject {
                 .store(in: &cancellables)
         }
 
-        PushManager.shared.bind(auth: auth)
+        let pushManager = PushManager.shared
+        pushManager.bind(auth: auth)
+        auth.beforeSessionInvalidation = { [weak pushManager] in
+            await pushManager?.deactivate()
+        }
+        auth.afterSessionInvalidationFailure = { [weak pushManager] in
+            await pushManager?.activate()
+        }
         billing.start()
         Task { await sync.startObservingAuth() }
 
@@ -106,6 +113,7 @@ final class AppServices: ObservableObject {
     private func applyAuth(state: AuthClient.State) {
         Log.event("app services applying auth state", category: "app.auth", metadata: ["state": state.loggingDescription])
         guard case let .signedIn(userID, _) = state else {
+            PushManager.shared.sessionEnded()
             onboarding.resetForSignOut()
             billing.resetForSignOut()
             profile.stopWatching()
@@ -121,7 +129,7 @@ final class AppServices: ObservableObject {
         notifications.startWatching(userID: id)
         Task { await billing.syncEntitlements() }
         evaluateOnboarding()
-        Task { await PushManager.shared.registerIfAuthorized() }
+        Task { await PushManager.shared.activate() }
     }
 
     func canCreateNewRecord() async -> Bool {

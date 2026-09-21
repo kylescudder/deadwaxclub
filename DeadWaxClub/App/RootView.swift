@@ -110,6 +110,7 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 QuickActionRouter.activate()
+                Task { await PushManager.shared.refreshRegistration() }
             }
         }
     }
