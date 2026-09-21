@@ -170,7 +170,7 @@ private final class PushURLProtocol: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         do {
-            let response = try Self.handler.response(for: request)
+            let response = try Self.handler.response(for: request.materializingHTTPBody())
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocolDidFinishLoading(self)
         } catch {
@@ -179,6 +179,26 @@ private final class PushURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+private extension URLRequest {
+    func materializingHTTPBody() -> URLRequest {
+        guard httpBody == nil, let stream = httpBodyStream else { return self }
+        stream.open()
+        defer { stream.close() }
+
+        var body = Data()
+        var buffer = [UInt8](repeating: 0, count: 4_096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            body.append(contentsOf: buffer.prefix(count))
+        }
+
+        var copy = self
+        copy.httpBody = body
+        return copy
+    }
 }
 
 private final class PushURLProtocolHandler: @unchecked Sendable {
