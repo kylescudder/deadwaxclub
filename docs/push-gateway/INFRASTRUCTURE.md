@@ -235,6 +235,33 @@ in Secrets Manager. It must not be `postgres`, `service_role`, or an app user's
 credential. Grant only schema usage plus select/update on `push_outbox`; the
 table trigger remains the only insert path.
 
+Run an operator-owned script through `psql` with `relay_password` supplied as a
+secret variable (never a checked-in literal):
+
+```sql
+create role push_gateway_relay noinherit login password :'relay_password';
+alter role push_gateway_relay set statement_timeout = '15s';
+grant connect on database postgres to push_gateway_relay;
+grant usage on schema public to push_gateway_relay;
+grant select on public.push_outbox to push_gateway_relay;
+grant update (
+  accepted_at, attempt_count, next_attempt_at,
+  lease_until, last_error, dead_at
+) on public.push_outbox to push_gateway_relay;
+create policy "push outbox relay"
+  on public.push_outbox
+  for all
+  to push_gateway_relay
+  using (true)
+  with check (true);
+```
+
+If the project database name is not `postgres`, substitute the actual name.
+The policy allows only operations that SQL grants already permit; it does not
+grant insert/delete. Verify privileges by successfully leasing a fixture while
+rejecting a `select` from `profiles` and an `insert`/`delete` on `push_outbox`
+before saving the connection URI.
+
 The claim operation runs in one transaction:
 
 ```sql

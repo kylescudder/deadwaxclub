@@ -174,6 +174,7 @@ struct PushIdentity: Equatable, Sendable {
     let accessToken: String
 }
 
+@MainActor
 protocol PushIdentityProviding: AnyObject {
     func currentPushIdentity() async -> PushIdentity?
 }
