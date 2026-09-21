@@ -59,7 +59,25 @@ final class AuthClient: ObservableObject {
 
     let supabase: SupabaseClient
 
+    /// Generic lifecycle hooks for work that must use the current access
+    /// token before Supabase invalidates it. Notification-specific types stay
+    /// outside the auth client.
+    var beforeSessionInvalidation: (() async -> Void)?
+    var afterSessionInvalidationFailure: (() async -> Void)?
+
     private var stateTask: Task<Void, Never>?
+
+    func performSessionInvalidation<T>(
+        _ operation: () async throws -> T
+    ) async rethrows -> T {
+        await beforeSessionInvalidation?()
+        do {
+            return try await operation()
+        } catch {
+            await afterSessionInvalidationFailure?()
+            throw error
+        }
+    }
 
     init() {
         self.supabase = SupabaseClient(
@@ -308,7 +326,9 @@ final class AuthClient: ObservableObject {
                 try await client.auth.update(user: UserAttributes(password: newPassword))
             }
             isPasswordRecovery = false
-            try await client.auth.signOut()
+            try await performSessionInvalidation {
+                try await client.auth.signOut()
+            }
             Log.breadcrumb("password updated; recovery session signed out", category: "auth.updatePassword")
             return true
         } catch {
@@ -492,7 +512,9 @@ final class AuthClient: ObservableObject {
         AuthClient.clearPendingRecoveryFlag()
         Log.breadcrumb("signout started", category: "auth")
         do {
-            try await supabase.auth.signOut()
+            try await performSessionInvalidation {
+                try await supabase.auth.signOut()
+            }
             Log.breadcrumb("signout completed", category: "auth")
             return true
         } catch {
@@ -506,8 +528,10 @@ final class AuthClient: ObservableObject {
     /// Locally any cached cover art is purged after the RPC succeeds.
     func deleteAccount() async throws {
         Log.breadcrumb("account deletion started", category: "auth.deleteAccount")
-        try await supabase.rpc("delete_my_account").execute()
-        try await supabase.auth.signOut()
+        try await performSessionInvalidation {
+            try await supabase.rpc("delete_my_account").execute()
+            try await supabase.auth.signOut()
+        }
         Log.breadcrumb("account deletion completed", category: "auth.deleteAccount")
     }
 }
