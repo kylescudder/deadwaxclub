@@ -21,7 +21,7 @@ packages:
     from: 2.55.4
   PowerSync:
     url: https://github.com/powersync-ja/powersync-swift
-    from: 1.15.1
+    from: 1.16.4
   Lottie:
     url: https://github.com/airbnb/lottie-ios
     from: 4.5.0
