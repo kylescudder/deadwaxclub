@@ -18,7 +18,7 @@ settings:
 packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift
-    from: 2.20.0
+    from: 2.55.4
   PowerSync:
     url: https://github.com/powersync-ja/powersync-swift
     from: 1.15.1
