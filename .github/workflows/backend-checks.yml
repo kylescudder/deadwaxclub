@@ -41,7 +41,7 @@ jobs:
             supabase/functions/_shared/apple-transaction-verification_test.ts
 
       - name: Set up Supabase CLI
-        uses: supabase/setup-cli@v2.1.1
+        uses: supabase/setup-cli@v2.1.2
         with:
           version: latest
 
