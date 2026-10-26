@@ -24,7 +24,7 @@ packages:
     from: 1.15.1
   Lottie:
     url: https://github.com/airbnb/lottie-ios
-    from: 4.5.0
+    from: 4.6.1
   Sentry:
     url: https://github.com/getsentry/sentry-cocoa
     from: 8.40.0
