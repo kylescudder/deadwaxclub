@@ -39,6 +39,10 @@
 	<string>Deadwax Club saves cover art for your records.</string>
 	<key>POWERSYNC_URL</key>
 	<string>$(POWERSYNC_URL)</string>
+	<key>PUSH_GATEWAY_APPLICATION_ID</key>
+	<string>$(PUSH_GATEWAY_APPLICATION_ID)</string>
+	<key>PUSH_GATEWAY_URL</key>
+	<string>$(PUSH_GATEWAY_URL)</string>
 	<key>SENTRY_DSN</key>
 	<string>$(SENTRY_DSN)</string>
 	<key>SUPABASE_ANON_KEY</key>
