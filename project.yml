@@ -27,7 +27,7 @@ packages:
     from: 4.5.0
   Sentry:
     url: https://github.com/getsentry/sentry-cocoa
-    from: 8.40.0
+    from: 8.58.4
 
 schemes:
   DeadWaxClub:
