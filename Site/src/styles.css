@@ -35,8 +35,8 @@ body {
   min-height: 100%;
   margin: 0;
   font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-    "Helvetica Neue", sans-serif;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display',
+    'Helvetica Neue', sans-serif;
   background:
     radial-gradient(
       circle at top left,
@@ -235,7 +235,7 @@ svg {
 }
 
 .phone::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -258,7 +258,7 @@ svg {
 }
 
 .sleeve::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 18%;
   border-radius: 999px;
