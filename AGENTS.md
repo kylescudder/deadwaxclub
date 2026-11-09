@@ -31,18 +31,17 @@ supabase functions deploy notify-price-change                 # legacy producer 
 Web:
 
 ```sh
-cp Site/public/js/config.example.js Site/public/js/config.js   # local dev only — production is generated at deploy
+cp Site/public/js/config.example.js Site/public/js/config.js   # local dev only — releases generate it during the image build
 bun run dev                                                    # installs Site deps and starts Astro
 bun run build                                                  # builds Site/dist
-npx netlify deploy --dir=Site/dist --prod                      # Netlify runs Site/build-config.sh before its build
 ```
 
-There is no iOS test suite, linter, or formatter configured. The Astro site has `format` and `format:check` scripts under `Site/package.json`.
+There is no iOS test suite, linter, or formatter configured. The Astro site uses the house tooling in `Site/` (`typecheck`, `lint`, `format:check`, `check:site`). Merging a `Site/` change to `main` deploys it to Herman (see the README's Website deployment section).
 
 ## Secrets and configuration
 
 - iOS secrets live in `Config/Secrets.xcconfig` (git-ignored, copied from `Config/Secrets.xcconfig.example`). Values are surfaced into Swift via `Info.plist` → `DeadWaxClub/App/AppSecrets.swift`. **xcconfig escaping gotcha**: a literal `//` in a value (e.g. `https://...`) must be written `https:/$()/...` to keep the parser from treating the rest of the line as a comment. Empty strings are treated as "feature disabled" — don't add fatal errors for unset secrets.
-- Web config lives in `Site/public/js/config.js` (git-ignored). At deploy time `Site/build-config.sh` (wired from `netlify.toml`) writes that file from Netlify env vars `SUPABASE_URL` and `SUPABASE_ANON_KEY`. The local copy of `config.js` from `config.example.js` is for running the site against your dev Supabase off-Netlify; don't paste real secrets there. The Supabase anon key is intentionally shipped to the browser; RLS + the `get_shared_list*` RPCs gate what's actually exposed.
+- Web config lives in `Site/public/js/config.js` (git-ignored). Release images generate it with `Site/scripts/write-config.mjs` from the `SITE_SUPABASE_URL` and `SITE_SUPABASE_ANON_KEY` repository variables. The local copy of `config.js` from `config.example.js` is for running the site against your dev Supabase; don't paste real secrets there. The Supabase anon key is intentionally shipped to the browser; RLS + the `get_shared_list*` RPCs gate what's actually exposed.
 - Supabase Edge Function secrets (`APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY`, `APNS_BUNDLE_ID`) are set in the Supabase dashboard, not in any local file. Both `notify-inbox` and `notify-price-change` read the same set. The IAP functions additionally require `APPLE_ROOT_CERTIFICATES_BASE64` (a JSON array of Apple DER root certificates encoded as base64), `APPLE_BUNDLE_ID`, and `APPLE_APPLE_ID` (the numeric App Store ID required for production verification). Never accept decoded JWS payloads as proof of entitlement.
 
 ## Architecture
@@ -120,7 +119,7 @@ When something fails to build after a package bump, investigate the SDK changelo
 
 ## Folder casing
 
-The Supabase folder is `supabase/` (lowercase) on disk and the README, `setup.sh`, and `netlify.toml` all use that casing. macOS is case-insensitive by default so `Supabase/` works locally too — the `.gitignore` keeps both forms for safety — but always write `supabase/migrations/...` in new code, scripts, or docs to stay portable to case-sensitive filesystems.
+The Supabase folder is `supabase/` (lowercase) on disk and the README and `setup.sh` use that casing. macOS is case-insensitive by default so `Supabase/` works locally too — the `.gitignore` keeps both forms for safety — but always write `supabase/migrations/...` in new code, scripts, or docs to stay portable to case-sensitive filesystems.
 
 ## What not to commit
 

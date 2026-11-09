@@ -2,7 +2,7 @@
   "applinks": {
     "details": [
       {
-        "appIDs": ["TEAMID.com.deadwaxclub.app"],
+        "appIDs": ["6AAGJ9Y234.com.deadwaxclub.app"],
         "components": [
           { "/": "/l/*", "comment": "Public list share links" }
         ]

@@ -118,20 +118,17 @@ Deadwax Club uses StoreKit for the `club.deadwax.supporter.monthly` auto-renewab
    ```
 4. Configure App Store Server Notifications V2 to `https://<project>.supabase.co/functions/v1/iap-app-store-notifications`.
 
-### 7. Public list web viewer (optional)
+### 7. Website and public list viewer
 
-An Astro site under `Site/` renders the marketing page, public-link lists, legal pages, and Universal Links manifest. Drop the built output onto Netlify (or any static host) at `deadwaxclub.app`:
+The Astro site under `Site/` serves the marketing page, support, privacy and terms pages, public list links (`/l/<token>`) and the Universal Links manifest at **https://deadwaxclub.app**. For local work:
 
 ```sh
 cp Site/public/js/config.example.js Site/public/js/config.js
 # Edit config.js with your Supabase URL + anon key
-bun run build
-npx netlify deploy --dir=Site/dist --prod
+bun run dev
 ```
 
-Edit `Site/public/.well-known/apple-app-site-association` and replace `TEAMID.com.deadwaxclub.app` with your real Apple Team ID + bundle. The `applinks:deadwaxclub.app` entry is already in `DeadWaxClub.entitlements`. After this is live, tapping any `https://deadwaxclub.app/l/<token>` link from another iOS app launches Deadwax Club directly; if the app isn't installed, the recipient sees the web list.
-
-See `Site/README.md` for site commands.
+See `Site/README.md` for the site commands and checks.
 
 ### 8. Discogs token
 
@@ -160,6 +157,32 @@ xcodebuild build \
 ```
 
 Or hit ⌘R in Xcode. Barcode scanning needs a real device.
+
+## Website deployment
+
+Merging a change under `Site/` to `main` runs `.github/workflows/release-site.yml`.
+It repeats the site checks (`ci-site.yml`), builds a multi-architecture image of
+the static site served by an unprivileged, read-only Caddy container, publishes
+it to `ghcr.io/kylescudder/deadwaxclub-site` with GitHub build provenance, then
+asks Herman to deploy that exact digest. Herman's shared deploy-core service
+verifies the provenance, swaps the container, checks the pages, assets and Apple
+association, rolls back on failure and acknowledges the revision; the workflow
+waits until the public site reports it in `X-Deadwax-Revision`.
+
+The release needs these GitHub settings:
+
+| Setting | Kind | Purpose |
+|---|---|---|
+| `SITE_SUPABASE_URL` | repository variable | Supabase API origin for the list viewer |
+| `SITE_SUPABASE_ANON_KEY` | repository variable | Public Supabase anon key (RLS gates access) |
+| `DEPLOY_ENABLED` | `production` variable | `true` turns on deployment |
+| `DEPLOY_HOST` | `production` variable | Herman deploy hostname, protected by Cloudflare Access |
+| `SITE_BASE_URL` | `production` variable | Public origin checked for the new revision |
+| `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` | `production` secrets | Access service token for the deploy hostname |
+| `DEPLOY_WEBHOOK_SECRET` | `production` secret | HMAC key for deploy requests |
+
+Host setup, rollback and the receiver live in Herman's platform runbook and the
+`kylescudder/deploy-core` repository, not in this repository.
 
 ## Repo layout
 
@@ -197,7 +220,7 @@ Site/               Astro marketing site + public list viewer
     list.js         vanilla module, fetches via Supabase REST RPCs
     config.example.js   template for Supabase URL + anon key
   public/.well-known/
-    apple-app-site-association   Universal Links manifest (template)
+    apple-app-site-association   Universal Links manifest
 ```
 
 ## Status
