@@ -2,14 +2,25 @@ import Foundation
 import UIKit
 import UserNotifications
 
-/// Coordinates APNs registration and uploads the device token to Supabase
-/// `device_tokens` so the notify-price-change Edge Function can target it.
 @MainActor
-final class PushManager: NSObject, ObservableObject {
+protocol PushNotifications: AnyObject {
+    var authorizationStatus: UNAuthorizationStatus { get }
+    func requestAuthorization() async -> Bool
+    func activate() async
+    func deactivate() async
+    func receivedDeviceToken(_ data: Data) async
+    func refreshRegistration() async
+}
+
+/// Coordinates notification authorization, APNs registration, and the active
+/// registration transport. The legacy Supabase transport remains the fallback
+/// while the shared gateway URL is empty.
+@MainActor
+final class PushManager: NSObject, ObservableObject, PushNotifications {
     static let shared = PushManager()
 
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
-    weak var auth: AuthClient?
+    private var registrationLifecycle: PushRegistrationLifecycle?
 
     private override init() {
         super.init()
@@ -17,7 +28,29 @@ final class PushManager: NSObject, ObservableObject {
         Task { await refreshAuthorizationStatus() }
     }
 
-    func bind(auth: AuthClient) { self.auth = auth }
+    func bind(auth: AuthClient) {
+        let configuration = PushGatewayConfiguration.fromBundle
+        let gateway: (any PushRegistrationTransport)? = configuration.map {
+            GatewayPushRegistrationTransport(
+                configuration: $0,
+                session: URLSession(configuration: .ephemeral)
+            )
+        }
+        let legacy = LegacyPushRegistrationTransport(auth: auth)
+        let transport = PushRegistrationTransportSelector.select(
+            configuration: configuration,
+            gateway: gateway,
+            legacy: legacy
+        )
+        registrationLifecycle = PushRegistrationLifecycle(
+            identityProvider: auth,
+            installationIDProvider: KeychainPushInstallationIDProvider(),
+            transport: transport,
+            remoteNotificationRegistrar: SystemRemoteNotificationRegistrar(),
+            environment: .current,
+            reportError: { error, category in Log.error(error, category: category) }
+        )
+    }
 
     func refreshAuthorizationStatus() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
@@ -33,7 +66,7 @@ final class PushManager: NSObject, ObservableObject {
                 .requestAuthorization(options: [.alert, .sound, .badge])
             await refreshAuthorizationStatus()
             if granted {
-                UIApplication.shared.registerForRemoteNotifications()
+                await registrationLifecycle?.refreshRegistration(isAuthorized: true)
             }
             return granted
         } catch {
@@ -42,56 +75,39 @@ final class PushManager: NSObject, ObservableObject {
         }
     }
 
-    /// Idempotent: if the user has already granted permission, ensures the
-    /// device is registered with APNs so the latest token is uploaded.
-    /// Call on sign-in and on app foreground.
-    func registerIfAuthorized() async {
+    func activate() async {
         await refreshAuthorizationStatus()
-        guard authorizationStatus == .authorized
-            || authorizationStatus == .provisional
-            || authorizationStatus == .ephemeral else { return }
-        UIApplication.shared.registerForRemoteNotifications()
+        await registrationLifecycle?.activate(isAuthorized: isAuthorized)
+    }
+
+    func deactivate() async {
+        await registrationLifecycle?.deactivate()
+    }
+
+    func sessionEnded() {
+        registrationLifecycle?.sessionEnded()
+    }
+
+    /// Idempotent: after authorization, resubmits the current token and asks
+    /// iOS to refresh it. Called on each foreground transition.
+    func refreshRegistration() async {
+        await refreshAuthorizationStatus()
+        await registrationLifecycle?.refreshRegistration(isAuthorized: isAuthorized)
     }
 
     /// Called from the AppDelegate after iOS hands us a device token.
-    func didRegister(deviceToken data: Data) async {
-        let token = data.map { String(format: "%02x", $0) }.joined()
-        await upload(apnsToken: token)
+    func receivedDeviceToken(_ data: Data) async {
+        await registrationLifecycle?.receivedDeviceToken(data)
     }
 
     func didFailToRegister(error: Error) {
         Log.error(error, category: "push.register")
     }
 
-    private func upload(apnsToken: String) async {
-        guard let auth, let userID = auth.currentUserID?.lowerUUID else { return }
-        let payload: [String: String] = [
-            "user_id": userID,
-            "apns_token": apnsToken,
-            "device_name": UIDevice.current.name,
-            "bundle_id": Bundle.main.bundleIdentifier ?? "com.deadwaxclub.app",
-            "environment": Self.apnsEnvironment,
-        ]
-        do {
-            try await auth.supabase
-                .from("device_tokens")
-                .upsert(payload, onConflict: "user_id,apns_token")
-                .execute()
-            Log.breadcrumb("apns token uploaded", category: "push")
-        } catch {
-            Log.error(error, category: "push.upload")
-        }
-    }
-
-    /// Detect the right APNs environment for the running build.
-    /// Uses the embedded provisioning profile in debug; assumes production
-    /// in App Store builds.
-    private static var apnsEnvironment: String {
-        #if DEBUG
-        return "sandbox"
-        #else
-        return "production"
-        #endif
+    private var isAuthorized: Bool {
+        authorizationStatus == .authorized
+            || authorizationStatus == .provisional
+            || authorizationStatus == .ephemeral
     }
 }
 

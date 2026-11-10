@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        Task { await PushManager.shared.didRegister(deviceToken: deviceToken) }
+        Task { await PushManager.shared.receivedDeviceToken(deviceToken) }
     }
 
     func application(
