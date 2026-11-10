@@ -3,18 +3,37 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.4.4",
   "scripts": {
     "dev": "astro dev --host 0.0.0.0",
     "build": "astro build",
     "preview": "astro preview --host 0.0.0.0",
+    "typecheck": "astro check",
+    "lint": "eslint . --ignore-pattern '.astro/'",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "check:site": "node scripts/check-site.mjs",
+    "prepare": "cd .. && husky Site/.husky"
+  },
+  "lint-staged": {
+    "*": "prettier --check --ignore-unknown"
   },
   "dependencies": {
     "astro": "^7.1.1"
   },
   "devDependencies": {
-    "prettier": "^3.6.2",
-    "prettier-plugin-astro": "^0.14.1"
+    "@astrojs/check": "0.9.12",
+    "@eslint/js": "9.39.5",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "eslint": "9.39.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.4.26",
+    "globals": "16.5.0",
+    "husky": "9.1.7",
+    "lint-staged": "17.6.0",
+    "prettier": "3.9.10",
+    "prettier-plugin-tailwindcss": "0.8.1",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "typescript-eslint": "8.72.0"
   }
 }

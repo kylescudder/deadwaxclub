@@ -1,12 +1,7 @@
+# Releases are built by GitHub Actions and deployed to Herman; see the README.
+# Netlify builds are disabled until the old project is retired.
 [build]
   base = "Site"
   command = "bun run build"
   publish = "dist"
-  # The ignore command runs from Site/. Keep deploys scoped to the site and
-  # the root deployment configuration, skipping unrelated app/backend changes.
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../netlify.toml"
-
-[[headers]]
-  for = "/assets/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+  ignore = "exit 0"

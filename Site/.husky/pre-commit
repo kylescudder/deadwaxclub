@@ -1,0 +1,3 @@
+# Deadwax Club: the site is not at the git root, so run lint-staged from Site/.
+cd Site
+bunx --bun --no-install lint-staged
