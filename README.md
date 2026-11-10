@@ -169,15 +169,17 @@ verifies the provenance, swaps the container, checks the pages, assets and Apple
 association, rolls back on failure and acknowledges the revision; the workflow
 waits until the public site reports it in `X-Deadwax-Revision`.
 
-The release needs these GitHub settings:
+The release needs these GitHub settings. Variables are repository-level because
+the deploy job's condition is evaluated before it enters the `production`
+environment; the secrets live in that main-only environment.
 
 | Setting | Kind | Purpose |
 |---|---|---|
 | `SITE_SUPABASE_URL` | repository variable | Supabase API origin for the list viewer |
 | `SITE_SUPABASE_ANON_KEY` | repository variable | Public Supabase anon key (RLS gates access) |
-| `DEPLOY_ENABLED` | `production` variable | `true` turns on deployment |
-| `DEPLOY_HOST` | `production` variable | Herman deploy hostname, protected by Cloudflare Access |
-| `SITE_BASE_URL` | `production` variable | Public origin checked for the new revision |
+| `DEPLOY_ENABLED` | repository variable | `true` turns on deployment |
+| `DEPLOY_HOST` | repository variable | Herman deploy hostname, protected by Cloudflare Access |
+| `SITE_BASE_URL` | repository variable | Public origin checked for the new revision |
 | `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` | `production` secrets | Access service token for the deploy hostname |
 | `DEPLOY_WEBHOOK_SECRET` | `production` secret | HMAC key for deploy requests |
 
