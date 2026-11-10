@@ -9,8 +9,11 @@ const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? ''
 if (!/^https:\/\/[^\s/]+$/.test(supabaseUrl)) {
   throw new Error('Set SUPABASE_URL to the https origin of the Supabase API.')
 }
-if (!/^[\w.-]{8,}$/.test(supabaseAnonKey)) {
-  throw new Error('Set SUPABASE_ANON_KEY to the public Supabase anon key.')
+if (supabaseAnonKey && !/^[\w.-]{8,}$/.test(supabaseAnonKey)) {
+  throw new Error('SUPABASE_ANON_KEY must be the public Supabase anon key.')
+}
+if (!supabaseAnonKey) {
+  console.warn('SUPABASE_ANON_KEY is unset: shared lists will show an error.')
 }
 
 const config = { supabaseUrl, supabaseAnonKey }

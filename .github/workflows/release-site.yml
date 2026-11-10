@@ -48,7 +48,8 @@ jobs:
           SUPABASE_URL: ${{ vars.SITE_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ vars.SITE_SUPABASE_ANON_KEY }}
         run: |
-          [[ -n "$SUPABASE_URL" && -n "$SUPABASE_ANON_KEY" ]] || { echo '::error::Set the SITE_SUPABASE_URL and SITE_SUPABASE_ANON_KEY repository variables.'; exit 1; }
+          [[ -n "$SUPABASE_URL" ]] || { echo '::error::Set the SITE_SUPABASE_URL repository variable.'; exit 1; }
+          [[ -n "$SUPABASE_ANON_KEY" ]] || echo '::warning::SITE_SUPABASE_ANON_KEY is unset, so shared list links will show an error.'
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
