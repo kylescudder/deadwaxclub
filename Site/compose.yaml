@@ -14,12 +14,7 @@ services:
     mem_limit: 64m
     cpus: 0.5
     pids_limit: 64
-    healthcheck:
-      test: ['CMD', 'wget', '--quiet', '--spider', 'http://127.0.0.1:8080/']
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+    # Inherit the health check shipped with the application image.
     logging:
       driver: json-file
       options:
