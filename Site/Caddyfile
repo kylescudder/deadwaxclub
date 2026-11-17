@@ -11,8 +11,14 @@
     header /_astro/* Cache-Control "public, max-age=31536000, immutable"
     header /assets/* Cache-Control "public, max-age=31536000, immutable"
     header /.well-known/apple-app-site-association Content-Type application/json
-    # Every share link /l/<token> is served by one page; list.js reads the token.
-    rewrite /l/* /l/index.html
-    try_files {path} {path}/index.html =404
-    file_server
+    handle /healthz {
+        header Cache-Control no-store
+        respond "ok" 200
+    }
+    handle {
+        # Every share link /l/<token> is served by one page; list.js reads the token.
+        rewrite /l/* /l/index.html
+        try_files {path} {path}/index.html =404
+        file_server
+    }
 }
