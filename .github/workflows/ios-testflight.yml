@@ -47,7 +47,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Show Xcode version
-        run: xcodebuild -version
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Install iOS platform (if missing)
         run: |
@@ -62,13 +64,33 @@ jobs:
       - name: Write Secrets.xcconfig
         env:
           IOS_SECRETS: ${{ secrets.IOS_SECRETS_XCCONFIG }}
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          POWERSYNC_BASE_URL: ${{ vars.POWERSYNC_BASE_URL }}
         run: |
           if [ -z "${IOS_SECRETS}" ]; then
             echo "::error::IOS_SECRETS_XCCONFIG secret is empty"
             exit 1
           fi
           mkdir -p Config
-          printf '%s\n' "$IOS_SECRETS" > Config/Secrets.xcconfig
+          python3 - <<'PYCONFIG'
+          import os
+          import re
+          from pathlib import Path
+
+          config = os.environ["IOS_SECRETS"]
+          origins = {
+              "SUPABASE_URL": "API_BASE_URL",
+              "POWERSYNC_URL": "POWERSYNC_BASE_URL",
+          }
+          for setting, variable in origins.items():
+              origin = os.environ[variable]
+              if not re.fullmatch(r"https://[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", origin):
+                  raise SystemExit(f"::error::{variable} must be a public HTTPS origin")
+              config = re.sub(rf"(?m)^[ \t]*{setting}[ \t]*=[^\n]*(?:\n|$)", "", config)
+              escaped = origin.replace("//", "/$()/", 1)
+              config = f"{config.rstrip(chr(10))}\n{setting} = {escaped}\n"
+          Path("Config/Secrets.xcconfig").write_text(config)
+          PYCONFIG
 
       - name: Write App Store Connect API key
         env:
