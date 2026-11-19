@@ -11,8 +11,8 @@ on:
         description: Upload a TestFlight build with backend endpoints disabled
         type: boolean
         default: false
-      verify_build_number:
-        description: Check App Store Connect processing for an existing 0.1.3 build
+      verify_delivery_id:
+        description: Check App Store Connect processing for an uploaded delivery UUID
         type: string
         required: false
   push:
@@ -29,13 +29,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ inputs.verify_build_number && format('ios-testflight-status-{0}', inputs.verify_build_number) || 'ios-testflight' }}
+  group: ${{ inputs.verify_delivery_id && format('ios-testflight-status-{0}', inputs.verify_delivery_id) || 'ios-testflight' }}
   cancel-in-progress: false
 
 jobs:
   build:
     name: Archive & upload
-    if: ${{ !inputs.verify_build_number }}
+    if: ${{ !inputs.verify_delivery_id }}
     runs-on: xcode-27
     timeout-minutes: 45
     env:
@@ -235,11 +235,11 @@ jobs:
 
   processing:
     name: Verify Apple processing
-    if: ${{ inputs.verify_build_number != '' }}
+    if: ${{ inputs.verify_delivery_id != '' }}
     runs-on: xcode-27
     timeout-minutes: 30
     env:
-      BUILD_NUMBER: ${{ inputs.verify_build_number }}
+      DELIVERY_ID: ${{ inputs.verify_delivery_id }}
       APP_STORE_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
       API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
@@ -247,15 +247,12 @@ jobs:
       - name: Wait for the submitted build to process
         run: |
           set -euo pipefail
-          [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]
+          [[ "$DELIVERY_ID" =~ ^[[:xdigit:]]{8}(-[[:xdigit:]]{4}){3}-[[:xdigit:]]{12}$ ]]
           umask 077
           mkdir -p ~/.appstoreconnect/private_keys
           printf '%s\n' "$API_KEY_P8" > "$HOME/.appstoreconnect/private_keys/AuthKey_${APP_STORE_KEY_ID}.p8"
           xcrun altool --build-status \
-            --apple-id 6766997873 \
-            --bundle-short-version-string 0.1.3 \
-            --bundle-version "$BUILD_NUMBER" \
-            --platform ios \
+            --delivery-id "$DELIVERY_ID" \
             --apiKey "$APP_STORE_KEY_ID" \
             --apiIssuer "$APP_STORE_ISSUER_ID" \
             --wait --output-format json
