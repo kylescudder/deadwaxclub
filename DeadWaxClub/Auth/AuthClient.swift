@@ -48,6 +48,7 @@ final class AuthClient: ObservableObject {
     }
 
     private static let authOperationTimeoutSeconds = 20
+    private static let offlineOwnerKey = "sync.boundOwner"
 
     @Published private(set) var state: State = .unknown
     @Published var lastError: String?
@@ -75,8 +76,28 @@ final class AuthClient: ObservableObject {
 
     deinit { stateTask?.cancel() }
 
-    func bootstrap() async {
+    func bootstrap(offlineAccount: () async throws -> (owners: Set<UUID>, hasPendingWrites: Bool)) async {
         Log.breadcrumb("auth bootstrap started", category: "auth")
+        do {
+            let cachedUser = supabase.auth.currentSession?.user.id
+            let account = try await offlineAccount()
+            var owners = account.owners
+            if let owner = offlineOwner { owners.insert(owner) }
+            guard owners.count <= 1 else {
+                lastError = "Offline data belongs to more than one account. Contact support before clearing it."
+                return
+            }
+            if let owner = owners.first ?? cachedUser {
+                UserDefaults.standard.set(owner.lowerUUID, forKey: Self.offlineOwnerKey)
+            } else if account.hasPendingWrites {
+                lastError = "The original account for the offline changes couldn't be identified. Contact support to recover them."
+                return
+            }
+        } catch {
+            lastError = "Couldn't check the offline account. Reopen Deadwax Club to try again."
+            Log.error(error, category: "auth.offlineOwner")
+            return
+        }
         // Read current session up front so the UI doesn't hang on `.unknown`.
         do {
             let session = try await supabase.auth.session
@@ -110,12 +131,26 @@ final class AuthClient: ObservableObject {
 
     private func apply(session: Session?) {
         if let session, !session.isExpired {
+            guard offlineOwner == nil || offlineOwner == session.user.id else {
+                lastError = "Sign in with the original account to recover its offline changes."
+                state = .signedOut
+                return
+            }
+            UserDefaults.standard.set(session.user.id.lowerUUID, forKey: Self.offlineOwnerKey)
             state = .signedIn(userID: session.user.id, email: session.user.email)
             Log.breadcrumb("session active", category: "auth")
         } else {
             state = .signedOut
             Log.breadcrumb("signed out", category: "auth")
         }
+    }
+
+    private var offlineOwner: UUID? {
+        UserDefaults.standard.string(forKey: Self.offlineOwnerKey).flatMap(UUID.init(uuidString:))
+    }
+
+    func clearOfflineOwner() {
+        UserDefaults.standard.removeObject(forKey: Self.offlineOwnerKey)
     }
 
     var currentUserID: UUID? {
@@ -125,8 +160,16 @@ final class AuthClient: ObservableObject {
 
     /// Used by PowerSync to fetch a fresh JWT for sync.
     func currentAccessToken() async -> String? {
+        guard let owner = currentUserID else { return nil }
+        return await currentAccessToken(for: owner)
+    }
+
+    func currentAccessToken(for owner: UUID) async -> String? {
         do {
-            return try await supabase.auth.session.accessToken
+            let session = try await supabase.auth.session
+            guard !isPasswordRecovery, session.user.id == currentUserID,
+                  session.user.id == offlineOwner, session.user.id == owner else { return nil }
+            return session.accessToken
         } catch {
             return nil
         }

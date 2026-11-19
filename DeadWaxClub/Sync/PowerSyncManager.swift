@@ -43,6 +43,20 @@ final class PowerSyncManager: ObservableObject {
         pendingCountTask?.cancel()
     }
 
+    func offlineAccount() async throws -> (owners: Set<UUID>, hasPendingWrites: Bool) {
+        let owners = try await database.getAll(
+            sql: "select id from profiles union select user_id as id from pending_record_creations",
+            parameters: [],
+            mapper: { try $0.getString(name: "id") }
+        )
+        let ids = Set(try owners.map { owner in
+            guard let id = UUID(uuidString: owner) else { throw CocoaError(.fileReadCorruptFile) }
+            return id
+        })
+        let hasPendingWrites = try await database.getCrudBatch() != nil
+        return (ids, hasPendingWrites)
+    }
+
     func startObservingAuth() async {
         auth.$state.removeDuplicates().sink { [weak self] state in
             Task { @MainActor [weak self] in await self?.reconcile(state) }
@@ -86,7 +100,9 @@ final class PowerSyncManager: ObservableObject {
     }
 
     private func connectIfNeeded() async {
-        guard connector == nil else { return }
+        guard connector == nil, let owner = auth.currentUserID,
+              await auth.currentAccessToken(for: owner) != nil else { return }
+        guard connector == nil, auth.currentUserID == owner else { return }
         if UserDefaults.standard.bool(forKey: Self.requiresWipeKey) {
             do {
                 try await database.disconnectAndClear()
@@ -99,7 +115,7 @@ final class PowerSyncManager: ObservableObject {
             }
         }
         status = .connecting
-        let connector = SupabaseConnector(auth: auth, issues: issues)
+        let connector = SupabaseConnector(auth: auth, issues: issues, owner: owner)
         self.connector = connector
         do { try await database.connect(connector: connector) }
         catch {
@@ -124,6 +140,7 @@ final class PowerSyncManager: ObservableObject {
         UserDefaults.standard.set(true, forKey: Self.requiresWipeKey)
         do {
             try await database.disconnectAndClear()
+            auth.clearOfflineOwner()
             UserDefaults.standard.removeObject(forKey: Self.requiresWipeKey)
             connector = nil
             status = .idle

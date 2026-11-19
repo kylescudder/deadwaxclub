@@ -10,14 +10,30 @@ final class SupabaseConnector: PowerSyncBackendConnectorProtocol, @unchecked Sen
 
     private let auth: AuthClient
     private let issues: SyncIssueStore
+    private let owner: UUID
+    private let uploadClient: PostgrestClient
 
-    init(auth: AuthClient, issues: SyncIssueStore) {
+    init(auth: AuthClient, issues: SyncIssueStore, owner: UUID) {
         self.auth = auth
         self.issues = issues
+        self.owner = owner
+        uploadClient = PostgrestClient(
+            url: AppSecrets.supabaseURL.appending(path: "rest/v1"),
+            schema: "public",
+            headers: ["apikey": AppSecrets.supabaseAnonKey],
+            fetch: { request in
+                guard let token = await auth.currentAccessToken(for: owner) else {
+                    throw URLError(.userAuthenticationRequired)
+                }
+                var authorized = request
+                authorized.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                return try await URLSession.shared.data(for: authorized)
+            }
+        )
     }
 
     func fetchCredentials() async throws -> PowerSyncCredentials? {
-        guard let token = await auth.currentAccessToken() else { return nil }
+        guard let token = await auth.currentAccessToken(for: owner) else { return nil }
         return PowerSyncCredentials(endpoint: AppSecrets.powerSyncURL.absoluteString, token: token)
     }
 
@@ -54,7 +70,7 @@ final class SupabaseConnector: PowerSyncBackendConnectorProtocol, @unchecked Sen
     }
 
     private func upload(_ entry: CrudEntry) async throws {
-        let table = auth.supabase.from(entry.table)
+        let table = uploadClient.from(entry.table)
         switch entry.op {
         case .put:
             var payload = entry.opData ?? [:]
@@ -84,7 +100,7 @@ final class SupabaseConnector: PowerSyncBackendConnectorProtocol, @unchecked Sen
 
     private func serverRecordExists(id: String) async throws -> Bool {
         struct ExistingID: Decodable { let id: String }
-        let rows: [ExistingID] = try await auth.supabase.from("records")
+        let rows: [ExistingID] = try await uploadClient.from("records")
             .select("id").eq("id", value: id).limit(1).execute().value
         return !rows.isEmpty
     }

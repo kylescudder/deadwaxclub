@@ -10,7 +10,11 @@ struct RootView: View {
         Group {
             switch services.auth.state {
             case .unknown:
-                LoadingView()
+                if let error = services.auth.lastError {
+                    ContentUnavailableView("Offline account unavailable", systemImage: "exclamationmark.lock", description: Text(error))
+                } else {
+                    LoadingView()
+                }
             case .signedOut:
                 NavigationStack { SignInView() }
             case .signedIn:
@@ -48,7 +52,7 @@ struct RootView: View {
                 }
             }
         }
-        .task { await services.auth.bootstrap() }
+        .task { await services.auth.bootstrap(offlineAccount: services.sync.offlineAccount) }
         .onChange(of: services.profile.profile?.displayName) { _, _ in
             services.evaluateOnboarding()
         }

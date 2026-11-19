@@ -164,8 +164,10 @@ final class AppServices: ObservableObject {
     }
 
     private func openRecordByID(_ recordID: String) async {
+        guard let owner = auth.currentUserID, !auth.isPasswordRecovery else { return }
         // Find from local SQLite — works offline because PowerSync syncs.
         if let record = await records.findByID(recordID) {
+            guard auth.currentUserID == owner, !auth.isPasswordRecovery else { return }
             Log.event("record deeplink resolved", category: "app.deeplink", metadata: ["recordID": recordID])
             await MainActor.run { self.pendingDeepLinkRecord = record }
         } else {
