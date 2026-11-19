@@ -170,17 +170,6 @@ final class CollectionsRepository: ObservableObject {
                 """,
                 parameters: [id, name, createdBy, nowString, nowString]
             )
-            // The owner row in collection_members must come from the server
-            // (RLS lets the creator insert when they own the collection).
-            try await auth.supabase
-                .from("collection_members")
-                .insert([
-                    "collection_id": id,
-                    "user_id": createdBy,
-                    "role": "owner",
-                    "invited_by": createdBy,
-                ])
-                .execute()
             Log.event("collection create completed", category: "collections.create", metadata: ["collectionID": id])
             return VinylCollection(
                 id: id, name: name, createdBy: createdBy,
@@ -228,14 +217,11 @@ final class CollectionsRepository: ObservableObject {
             "role": role.rawValue,
         ])
         struct InviteResult: Decodable { let status: String }
-        let result: InviteResult = try await auth.supabase
-            .rpc("invite_to_collection", params: [
+        let result: InviteResult = try await auth.api.library("invite_to_collection", [
                 "p_collection_id": collectionID,
                 "p_email": email,
                 "p_role": role.rawValue,
             ])
-            .execute()
-            .value
         Log.event("collection invite completed", category: "collections.invite", metadata: [
             "collectionID": collectionID,
             "status": result.status,
@@ -252,12 +238,9 @@ final class CollectionsRepository: ObservableObject {
 
     func removeMember(collectionID: String, userID: String) async {
         do {
-            try await auth.supabase
-                .from("collection_members")
-                .delete()
-                .eq("collection_id", value: collectionID)
-                .eq("user_id", value: userID)
-                .execute()
+            _ = try await auth.api.json("api/library/remove_collection_member", values: [
+                "parent_id": collectionID, "user_id": userID
+            ])
         } catch {
             Log.error(error, category: "collections.removeMember")
         }
@@ -265,10 +248,7 @@ final class CollectionsRepository: ObservableObject {
 
     func refreshMemberProfiles(collectionID: String) async {
         do {
-            let profiles: [CollectionMemberProfile] = try await auth.supabase
-                .rpc("get_collection_member_profiles", params: ["p_collection_id": collectionID])
-                .execute()
-                .value
+            let profiles: [CollectionMemberProfile] = try await auth.api.library("get_collection_member_profiles", ["p_collection_id": collectionID])
             var updated = memberProfilesByID
             for profile in profiles {
                 updated[profile.id] = profile
@@ -287,9 +267,7 @@ final class CollectionsRepository: ObservableObject {
 
     func revokePendingInvite(inviteID: String) async {
         do {
-            _ = try await auth.supabase
-                .rpc("revoke_collection_invite", params: ["p_invite_id": inviteID])
-                .execute()
+            _ = try await auth.api.json("api/library/revoke_collection_invite", values: ["p_invite_id": inviteID])
         } catch {
             Log.error(error, category: "collections.revokePendingInvite")
         }

@@ -131,7 +131,7 @@ final class AppServices: ObservableObject {
         }
         let status: RecordCreationStatus
         do {
-            if sync.status == .offline {
+            if sync.status == .offline || auth.requiresReauthentication {
                 status = try await records.localRecordCreationStatus(userID: userID)
             } else {
                 do {

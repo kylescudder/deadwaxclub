@@ -1,30 +1,20 @@
 import Foundation
 
-/// Build-time secrets read from Info.plist (which pulls from Config/Secrets.xcconfig).
-/// See README for setup. Empty strings are treated as "not configured" and the
-/// dependent feature is disabled gracefully.
 enum AppSecrets {
-    static let supabaseURL: URL = {
-        guard let raw = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String,
-              let url = URL(string: raw), !raw.isEmpty else {
-            assertionFailure("SUPABASE_URL is not set in Secrets.xcconfig")
-            return URL(string: "https://placeholder.supabase.co")!
-        }
-        return url
-    }()
+    private static func httpsOrigin(_ key: String) -> URL? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String,
+              let parts = URLComponents(string: value),
+              parts.scheme == "https", let host = parts.host, !host.isEmpty,
+              parts.user == nil, parts.password == nil, parts.query == nil,
+              parts.fragment == nil, parts.path.isEmpty else { return nil }
+        return parts.url
+    }
 
-    static let supabaseAnonKey: String = {
-        Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String ?? ""
-    }()
+    private static let configuredAPI = httpsOrigin("API_URL")
+    static let apiURL = configuredAPI ?? URL(string: "https://invalid.invalid")!
+    static let apiConfigurationError = configuredAPI == nil ? "The Deadwax API is not configured." : nil
+    static let powerSyncURL = httpsOrigin("POWERSYNC_URL")
 
-    static let powerSyncURL: URL = {
-        let raw = Bundle.main.object(forInfoDictionaryKey: "POWERSYNC_URL") as? String ?? ""
-        return URL(string: raw) ?? URL(string: "https://placeholder.powersync.journeyapps.com")!
-    }()
-
-    static let sentryDSN: String = {
-        Bundle.main.object(forInfoDictionaryKey: "SENTRY_DSN") as? String ?? ""
-    }()
-
-    static let authRedirectURL: URL = URL(string: "deadwaxclub://auth-callback")!
+    static let sentryDSN = Bundle.main.object(forInfoDictionaryKey: "SENTRY_DSN") as? String ?? ""
+    static let authRedirectURL = URL(string: "deadwaxclub://auth-callback")!
 }

@@ -40,7 +40,7 @@ enum IntentBridge {
 
     @MainActor
     static func searchRecords(query: String) async throws -> [VinylRecordEntity] {
-        guard let services, services.auth.currentUserID != nil,
+        guard let services, !services.sync.isMigrating, !services.sync.requiresReload, services.auth.currentUserID != nil,
               !services.auth.isPasswordRecovery else { return [] }
         let q = "%\(query.lowercased())%"
         let rows = try await services.sync.database.getAll(
@@ -60,7 +60,7 @@ enum IntentBridge {
 
     @MainActor
     static func recordsByID(_ ids: [String]) async throws -> [VinylRecordEntity] {
-        guard let services, services.auth.currentUserID != nil,
+        guard let services, !services.sync.isMigrating, !services.sync.requiresReload, services.auth.currentUserID != nil,
               !services.auth.isPasswordRecovery, !ids.isEmpty else { return [] }
         let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ", ")
         let rows = try await services.sync.database.getAll(
@@ -73,7 +73,7 @@ enum IntentBridge {
 
     @MainActor
     static func recentRecords(limit: Int) async throws -> [VinylRecordEntity] {
-        guard let services, services.auth.currentUserID != nil,
+        guard let services, !services.sync.isMigrating, !services.sync.requiresReload, services.auth.currentUserID != nil,
               !services.auth.isPasswordRecovery else { return [] }
         let rows = try await services.sync.database.getAll(
             sql: """
@@ -90,7 +90,7 @@ enum IntentBridge {
 
     @MainActor
     static func logPrice(recordID: String, priceMajor: Double, currency: String, shop: String?) async throws {
-        guard let services, let ownerID = services.auth.currentUserID?.lowerUUID else {
+        guard let services, !services.sync.isMigrating, !services.sync.requiresReload, let ownerID = services.auth.currentUserID?.lowerUUID else {
             throw NSError(domain: "deadwaxclub.intents", code: 401, userInfo: [
                 NSLocalizedDescriptionKey: "Sign in to Deadwax Club to log prices."
             ])

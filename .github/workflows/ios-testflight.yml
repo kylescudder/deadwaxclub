@@ -26,7 +26,7 @@ concurrency:
 jobs:
   build:
     name: Archive & upload
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 45
     env:
       SCHEME: DeadWaxClub
@@ -46,16 +46,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show Xcode version
+      - name: Verify Xcode 27 and iOS 27 SDK
         run: |
           xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
+          xcodebuild -version | grep -Eq '^Xcode 27([.]|$)'
+          sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
+          echo "iOS SDK: $sdk_version"
+          [[ "$sdk_version" == 27 || "$sdk_version" == 27.* ]]
 
       - name: Install iOS platform (if missing)
         run: |
-          # Idempotent — no-op if already present. Apple now requires
-          # builds to ship the iOS 26 SDK (Xcode 26) for App Store
-          # submission, hence runs-on: macos-26.
           sudo xcodebuild -downloadPlatform iOS || true
 
       - name: Install xcodegen
@@ -79,7 +79,7 @@ jobs:
 
           config = os.environ["IOS_SECRETS"]
           origins = {
-              "SUPABASE_URL": "API_BASE_URL",
+              "API_URL": "API_BASE_URL",
               "POWERSYNC_URL": "POWERSYNC_BASE_URL",
           }
           for setting, variable in origins.items():
@@ -91,6 +91,18 @@ jobs:
               config = f"{config.rstrip(chr(10))}\n{setting} = {escaped}\n"
           Path("Config/Secrets.xcconfig").write_text(config)
           PYCONFIG
+
+      - name: Verify public release endpoints
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          POWERSYNC_BASE_URL: ${{ vars.POWERSYNC_BASE_URL }}
+        run: |
+          set -euo pipefail
+          api_status="$(curl --silent --show-error --max-time 20 -w '%{http_code}' -o "$RUNNER_TEMP/deadwax-api-health.json" "$API_BASE_URL/health/ready")"
+          [[ "$api_status" == 200 ]]
+          jq -e '.ok == true' "$RUNNER_TEMP/deadwax-api-health.json" >/dev/null
+          sync_status="$(curl --silent --show-error --max-time 20 -w '%{http_code}' -o /dev/null "$POWERSYNC_BASE_URL/probes/readiness")"
+          [[ "$sync_status" == 200 ]]
 
       - name: Write App Store Connect API key
         env:

@@ -304,10 +304,7 @@ final class RecordsRepository: ObservableObject {
         guard let userID = auth.currentUserID?.lowerUUID else {
             throw RecordCreationError.unauthenticated
         }
-        let rows: [RecordCreationStatus] = try await auth.supabase
-            .rpc("get_record_creation_status")
-            .execute()
-            .value
+        let rows: [RecordCreationStatus] = try await auth.api.library("get_record_creation_status")
         guard let status = rows.first else {
             throw RecordCreationError.serverValidationFailure
         }

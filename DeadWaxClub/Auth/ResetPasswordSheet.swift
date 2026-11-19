@@ -51,12 +51,8 @@ struct ResetPasswordSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Back to sign in") {
-                        Task {
-                            if await services.auth.signOut() {
-                                services.auth.isPasswordRecovery = false
-                            }
-                        }
+                    Button("Cancel") {
+                        services.auth.cancelPasswordRecovery()
                     }
                 }
             }

@@ -207,14 +207,11 @@ final class ListsRepository: ObservableObject {
     /// "Added" vs "Invitation sent" accordingly.
     func invite(listID: String, email: String, role: ListMemberRole) async throws -> InviteOutcome {
         struct InviteResult: Decodable { let status: String }
-        let result: InviteResult = try await auth.supabase
-            .rpc("invite_to_list", params: [
+        let result: InviteResult = try await auth.api.library("invite_to_list", [
                 "p_list_id": listID,
                 "p_email": email,
                 "p_role": role.rawValue,
             ])
-            .execute()
-            .value
         switch result.status {
         case "added":   return .added
         case "pending": return .pending
@@ -227,12 +224,9 @@ final class ListsRepository: ObservableObject {
 
     func removeMember(listID: String, userID: String) async {
         do {
-            try await auth.supabase
-                .from("list_members")
-                .delete()
-                .eq("list_id", value: listID)
-                .eq("user_id", value: userID)
-                .execute()
+            _ = try await auth.api.json("api/library/remove_list_member", values: [
+                "parent_id": listID, "user_id": userID
+            ])
         } catch {
             Log.error(error, category: "lists.removeMember")
         }
@@ -240,9 +234,7 @@ final class ListsRepository: ObservableObject {
 
     func revokePendingInvite(inviteID: String) async {
         do {
-            _ = try await auth.supabase
-                .rpc("revoke_pending_invite", params: ["p_invite_id": inviteID])
-                .execute()
+            _ = try await auth.api.json("api/library/revoke_pending_invite", values: ["p_invite_id": inviteID])
         } catch {
             Log.error(error, category: "lists.revokePendingInvite")
         }

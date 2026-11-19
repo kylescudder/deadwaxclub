@@ -1,5 +1,4 @@
 import XCTest
-import Supabase
 @testable import DeadWaxClub
 
 final class RecordCreationQuotaTests: XCTestCase {
@@ -49,22 +48,22 @@ final class RecordCreationQuotaTests: XCTestCase {
     }
 
     func testOnlyKnownPermanentUploadErrorsAreAcknowledged() {
-        XCTAssertTrue(SupabaseConnector.isPermanentRejection(
-            PostgrestError(code: "DW001", message: "quota reached")
+        XCTAssertTrue(APIConnector.isPermanentRejection(
+            APIError(code: "DW001", message: "quota reached")
         ))
-        XCTAssertTrue(SupabaseConnector.isPermanentRejection(
-            PostgrestError(code: "DW002", message: "invalid ownership")
+        XCTAssertTrue(APIConnector.isPermanentRejection(
+            APIError(code: "DW002", message: "invalid ownership")
         ))
-        XCTAssertTrue(SupabaseConnector.isPermanentRejection(
-            PostgrestError(code: "23514", message: "constraint failed")
+        XCTAssertTrue(APIConnector.isPermanentRejection(
+            APIError(code: "23514", message: "constraint failed")
         ))
-        XCTAssertFalse(SupabaseConnector.isPermanentRejection(
-            PostgrestError(code: "42501", message: "row-level security violation")
+        XCTAssertFalse(APIConnector.isPermanentRejection(
+            APIError(code: "42501", message: "row-level security violation")
         ))
-        XCTAssertFalse(SupabaseConnector.isPermanentRejection(
-            PostgrestError(code: "PGRST001", message: "database unavailable")
+        XCTAssertFalse(APIConnector.isPermanentRejection(
+            APIError(code: "PGRST001", message: "database unavailable")
         ))
-        XCTAssertFalse(SupabaseConnector.isPermanentRejection(
+        XCTAssertFalse(APIConnector.isPermanentRejection(
             NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)
         ))
     }
