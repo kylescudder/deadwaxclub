@@ -4,9 +4,6 @@ import PowerSync
 
 @MainActor
 final class PowerSyncManager: ObservableObject {
-    private static let serviceReadyKey = "sync.hermanDatabaseReady"
-    private static let legacyDatabase = "deadwaxclub.sqlite"
-    private static let hermanDatabase = "deadwaxclub-v2.sqlite"
     private static let requiresWipeKey = "sync.requiresWipeBeforeConnect"
 
     enum SyncStatus: Equatable {
@@ -27,9 +24,6 @@ final class PowerSyncManager: ObservableObject {
     @Published private(set) var status: SyncStatus = .idle
     @Published private(set) var pendingUploadCount = 0
 
-    @Published private(set) var isMigrating = false
-    @Published private(set) var requiresReload = false
-
     let database: PowerSyncDatabaseProtocol
     private let auth: AuthClient
     private let issues: SyncIssueStore
@@ -41,7 +35,7 @@ final class PowerSyncManager: ObservableObject {
     init(authClient: AuthClient, issues: SyncIssueStore) {
         auth = authClient
         self.issues = issues
-        database = PowerSyncDatabase(schema: DatabaseSchema.schema, dbFilename: UserDefaults.standard.bool(forKey: Self.serviceReadyKey) ? Self.hermanDatabase : Self.legacyDatabase)
+        database = PowerSyncDatabase(schema: DatabaseSchema.schema, dbFilename: "deadwaxclub-v2.sqlite")
     }
 
     deinit {
@@ -108,7 +102,7 @@ final class PowerSyncManager: ObservableObject {
     }
 
     private func connectIfNeeded() async {
-        guard connector == nil, !isMigrating, !requiresReload, let owner = auth.currentUserID,
+        guard connector == nil, let owner = auth.currentUserID,
               await auth.currentAccessToken(for: owner) != nil else { return }
         guard connector == nil, auth.currentUserID == owner else { return }
         if UserDefaults.standard.bool(forKey: Self.requiresWipeKey) {
@@ -126,10 +120,6 @@ final class PowerSyncManager: ObservableObject {
             status = .error("PowerSync is not configured.")
             return
         }
-        if !UserDefaults.standard.bool(forKey: Self.serviceReadyKey) {
-            await migrateService(owner: owner)
-            return
-        }
         status = .connecting
         let connector = APIConnector(auth: auth, issues: issues, owner: owner)
         self.connector = connector
@@ -143,75 +133,6 @@ final class PowerSyncManager: ObservableObject {
 
     func retryConnection() async {
         await connectIfNeeded()
-    }
-
-    private func migrateService(owner: UUID) async {
-        isMigrating = true
-        status = .connecting
-        defer { isMigrating = false }
-
-        let staged = PowerSyncDatabase(schema: DatabaseSchema.schema, dbFilename: Self.hermanDatabase)
-        do {
-            struct Profile: Decodable { let id: UUID }
-            let profile = try JSONDecoder().decode(Profile.self, from: await auth.api.request("api/me"))
-            guard profile.id == owner else { throw URLError(.userAuthenticationRequired) }
-
-            let uploader = APIConnector(auth: auth, issues: issues, owner: owner, preserveRejected: true)
-            while try await database.getCrudBatch() != nil {
-                try await uploader.uploadData(database: database)
-            }
-            try await staged.connect(connector: APIConnector(auth: auth, issues: issues, owner: owner))
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask { try await staged.waitForFirstSync() }
-                group.addTask {
-                    try await Task.sleep(for: .seconds(30))
-                    throw URLError(.timedOut)
-                }
-                _ = try await group.next()
-                group.cancelAll()
-            }
-
-            while try await database.getCrudBatch() != nil {
-                try await uploader.uploadData(database: database)
-            }
-            let reservations = try await database.getAll(
-                sql: "select id, user_id, expected_lifetime_count, state, created_at from pending_record_creations where user_id = ?",
-                parameters: [owner.lowerUUID]
-            ) { row in
-                (try row.getString(name: "id"), try row.getString(name: "user_id"),
-                 try row.getInt(name: "expected_lifetime_count"), try row.getString(name: "state"),
-                 try row.getString(name: "created_at"))
-            }
-            try await staged.writeTransaction { transaction in
-                try transaction.execute(sql: "delete from pending_record_creations", parameters: [])
-                for (id, user, count, state, created) in reservations {
-                    try transaction.execute(
-                        sql: "insert into pending_record_creations (id, user_id, expected_lifetime_count, state, created_at) values (?, ?, ?, ?, ?)",
-                        parameters: [id, user, count, state, created]
-                    )
-                }
-            }
-            try await staged.disconnect()
-            try await staged.close()
-            guard await auth.currentAccessToken(for: owner) != nil else {
-                throw URLError(.userAuthenticationRequired)
-            }
-
-            // Close the old connection before checking for a write that was
-            // already in flight when the migration view replaced the app.
-            try await database.close()
-            requiresReload = true
-            let legacy = PowerSyncDatabase(schema: DatabaseSchema.schema, dbFilename: Self.legacyDatabase)
-            let pending = try await legacy.getCrudBatch() != nil
-            try await legacy.close()
-            guard !pending else { return }
-            UserDefaults.standard.set(true, forKey: Self.serviceReadyKey)
-        } catch {
-            try? await staged.disconnect()
-            try? await staged.close()
-            status = .error("Couldn't sync offline changes. Your changes are still on this device.")
-            Log.error(error, category: "sync.serviceMigration")
-        }
     }
 
     private func disconnect() async {
@@ -229,10 +150,6 @@ final class PowerSyncManager: ObservableObject {
         UserDefaults.standard.set(true, forKey: Self.requiresWipeKey)
         do {
             try await database.disconnectAndClear()
-            let alternate = UserDefaults.standard.bool(forKey: Self.serviceReadyKey) ? Self.legacyDatabase : Self.hermanDatabase
-            let other = PowerSyncDatabase(schema: DatabaseSchema.schema, dbFilename: alternate)
-            try await other.disconnectAndClear()
-            try await other.close()
             auth.clearOfflineOwner()
             UserDefaults.standard.removeObject(forKey: Self.requiresWipeKey)
             connector = nil

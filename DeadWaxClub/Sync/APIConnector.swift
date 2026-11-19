@@ -6,13 +6,11 @@ final class APIConnector: PowerSyncBackendConnectorProtocol {
     private let auth: AuthClient
     private let issues: SyncIssueStore
     private let owner: UUID
-    private let preserveRejected: Bool
 
-    init(auth: AuthClient, issues: SyncIssueStore, owner: UUID, preserveRejected: Bool = false) {
+    init(auth: AuthClient, issues: SyncIssueStore, owner: UUID) {
         self.auth = auth
         self.issues = issues
         self.owner = owner
-        self.preserveRejected = preserveRejected
     }
 
     func fetchCredentials() async throws -> PowerSyncCredentials? {
@@ -53,7 +51,7 @@ final class APIConnector: PowerSyncBackendConnectorProtocol {
                     )
                 }
             } catch {
-                guard !preserveRejected, Self.isPermanentRejection(error) else { throw error }
+                guard Self.isPermanentRejection(error) else { throw error }
                 Log.error(error, category: "sync.upload.rejected")
                 if entry.table == "records" {
                     try await database.execute(sql: "delete from pending_record_creations where id = ?", parameters: [entry.id])

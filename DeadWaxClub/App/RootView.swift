@@ -8,18 +8,7 @@ struct RootView: View {
     @State private var showingReauthentication = false
 
     var body: some View {
-        Group {
-            if services.sync.requiresReload {
-                ContentUnavailableView(
-                    "Reopen Deadwax Club", systemImage: "arrow.clockwise",
-                    description: Text("Close and reopen the app to continue syncing.")
-                )
-            } else if services.sync.isMigrating {
-                ProgressView("Moving offline changes…")
-            } else {
-                accountContent
-            }
-        }
+        accountContent
         .sheet(isPresented: $showingReauthentication) {
             NavigationStack { SignInView() }
         }
@@ -53,13 +42,13 @@ struct RootView: View {
             NavigationStack { PublicListView(token: presentation.token) }
         }
         .sheet(item: Binding(
-            get: { services.sync.isMigrating || services.sync.requiresReload ? nil : services.pendingDeepLinkRecord },
+            get: { services.pendingDeepLinkRecord },
             set: { services.pendingDeepLinkRecord = $0 }
         )) { record in
             NavigationStack { RecordDetailView(record: record) }
         }
         .sheet(item: Binding(
-            get: { services.sync.isMigrating || services.sync.requiresReload ? nil : services.pendingDeepLinkCollectionID.map(CollectionDeepLinkPresentation.init) },
+            get: { services.pendingDeepLinkCollectionID.map(CollectionDeepLinkPresentation.init) },
             set: { services.pendingDeepLinkCollectionID = $0?.id }
         )) { _ in
             // ManageCollectionsView reads pendingDeepLinkCollectionID from
