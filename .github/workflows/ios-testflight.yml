@@ -7,10 +7,6 @@ name: iOS · TestFlight
 on:
   workflow_dispatch:
     inputs:
-      offline_preview:
-        description: Upload a TestFlight build with backend endpoints disabled
-        type: boolean
-        default: false
       verify_delivery_id:
         description: Check App Store Connect processing for an uploaded delivery UUID
         type: string
@@ -74,7 +70,6 @@ jobs:
       - name: Write Secrets.xcconfig
         env:
           IOS_SECRETS: ${{ secrets.IOS_SECRETS_XCCONFIG }}
-          OFFLINE_PREVIEW: ${{ inputs.offline_preview }}
           API_BASE_URL: ${{ vars.API_BASE_URL }}
           POWERSYNC_BASE_URL: ${{ vars.POWERSYNC_BASE_URL }}
         run: |
@@ -94,9 +89,8 @@ jobs:
               "POWERSYNC_URL": "POWERSYNC_BASE_URL",
           }
           for setting, variable in origins.items():
-              offline_preview = os.environ.get("OFFLINE_PREVIEW") == "true"
-              origin = "" if offline_preview else os.environ[variable]
-              if not offline_preview and not re.fullmatch(r"https://[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", origin):
+              origin = os.environ[variable]
+              if not re.fullmatch(r"https://[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", origin):
                   raise SystemExit(f"::error::{variable} must be a public HTTPS origin")
               config = re.sub(rf"(?m)^[ \t]*{setting}[ \t]*=[^\n]*(?:\n|$)", "", config)
               escaped = origin.replace("//", "/$()/", 1)
@@ -105,7 +99,6 @@ jobs:
           PYCONFIG
 
       - name: Verify public release endpoints
-        if: ${{ !inputs.offline_preview }}
         env:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
           POWERSYNC_BASE_URL: ${{ vars.POWERSYNC_BASE_URL }}
@@ -204,6 +197,24 @@ jobs:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath "$ARCHIVE_PATH"
+
+      - name: Verify archived backend configuration
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          POWERSYNC_BASE_URL: ${{ vars.POWERSYNC_BASE_URL }}
+        run: |
+          python3 - <<'PYCONFIG'
+          import os
+          import plistlib
+          from pathlib import Path
+
+          info_path = Path(os.environ["ARCHIVE_PATH"]) / "Products/Applications/DeadWaxClub.app/Info.plist"
+          with info_path.open("rb") as info_file:
+              info = plistlib.load(info_file)
+          for key, variable in (("API_URL", "API_BASE_URL"), ("POWERSYNC_URL", "POWERSYNC_BASE_URL")):
+              if not os.environ[variable] or info.get(key) != os.environ[variable]:
+                  raise SystemExit(f"::error::Archived {key} does not match {variable}")
+          PYCONFIG
 
       - name: Export IPA
         run: |
