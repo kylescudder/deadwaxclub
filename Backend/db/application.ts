@@ -48,6 +48,16 @@ export async function migrateApplication(client: PoolClient) {
       );
   }
   await upgradeLegacyPrivileges(client);
+  // Supabase ran security-definer functions as a superuser, which bypasses the
+  // record ledger's FORCE ROW LEVEL SECURITY. On Herman they run as the app's
+  // owner role, so only the table owner gets a policy; request roles stay denied.
+  await client.query(`do $$ begin
+    if not exists (select 1 from pg_policy where polrelid = 'public.record_creation_events'::regclass
+                   and polname = 'record_creation_events_owner') then
+      execute format('create policy record_creation_events_owner on public.record_creation_events for all to %I using (true) with check (true)',
+        (select pg_get_userbyid(relowner) from pg_class where oid = 'public.record_creation_events'::regclass));
+    end if;
+  end $$`);
   await client.query(`create or replace function auth.role() returns text language sql stable as $$
     select case current_setting('role',true)
       when 'deadwax_api' then 'authenticated'
