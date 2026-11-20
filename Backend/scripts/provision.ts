@@ -23,7 +23,7 @@ async function provisionRolesBody(
     ).rows[0]
     if (!existing)
       await client.query(
-        `create role ${identifier(role)} ${role === config.runtimeRole ? 'login noinherit' : 'nologin'} nosuperuser nocreatedb nocreaterole noreplication nobypassrls`
+        `create role ${identifier(role)} ${role === config.runtimeRole ? 'login noinherit connection limit 8' : 'nologin'} nosuperuser nocreatedb nocreaterole noreplication nobypassrls`
       )
     else {
       if (
@@ -61,6 +61,29 @@ async function provisionRolesBody(
     .rows[0].name as string
   await client.query(
     `grant connect on database ${identifier(database)} to ${identifier(config.runtimeRole)}`
+  )
+  // Herman's platform provisioning gives <db>_runtime direct rights on every new
+  // table and sequence by default. Remove that default before migrations so the
+  // runtime gets only the grants each app's migrations make, and can never write
+  // tables such as recovery_lease. Existing explicit grants are left alone.
+  if (
+    (
+      await client.query('select 1 from pg_roles where rolname=$1', [
+        config.ownerRole
+      ])
+    ).rowCount
+  )
+    for (const kind of ['tables', 'sequences'])
+      await client.query(
+        `alter default privileges for role ${identifier(config.ownerRole)} in schema public revoke all on ${kind} from ${identifier(config.runtimeRole)}`
+      )
+  // The platform revokes schema access from PUBLIC, so each app-scoped request
+  // and recovery role needs explicit USAGE; table rights still come from migrations.
+  await client.query(
+    `grant usage on schema public to ${roles
+      .filter((role) => role !== config.runtimeRole)
+      .map(identifier)
+      .join(', ')}`
   )
   const groups = roles.filter(
     (role) => role !== config.runtimeRole && role !== config.recoveryRole
@@ -105,7 +128,7 @@ async function provisionSyncBody(client: PoolClient, config: DeploymentConfig) {
   ).rows[0]
   if (!existing)
     await client.query(
-      `create role ${role} login replication bypassrls nosuperuser nocreatedb nocreaterole`
+      `create role ${role} login noinherit connection limit 8 replication bypassrls nosuperuser nocreatedb nocreaterole`
     )
   else if (
     !existing.rolreplication ||
@@ -166,7 +189,8 @@ export async function provisionDatabases(
     ).rows[0]
     if (!exists)
       await client.query(
-        `create role ${identifier(name)} login nosuperuser nocreatedb nocreaterole noreplication nobypassrls`
+        // Matches Herman's platform login roles: NOINHERIT, eight connections.
+        `create role ${identifier(name)} login noinherit connection limit 8 nosuperuser nocreatedb nocreaterole noreplication nobypassrls`
       )
     else if (Object.values(exists).some(Boolean))
       throw new Error('Existing database owner has administrative privileges')

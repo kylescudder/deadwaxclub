@@ -17,7 +17,8 @@ def configuration():
 
 
 def accept(image):
-    core.compose('exec', '-T', 'api', 'bun', 'deploy/verify.ts', image=image)
+    # The registry names the app-prefixed Compose service (e.g. diald-api).
+    core.compose('exec', '-T', core.CONFIG.service, 'bun', 'deploy/verify.ts', image=image)
 
 
 def prepare(candidate, current):

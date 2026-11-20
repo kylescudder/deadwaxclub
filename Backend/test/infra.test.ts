@@ -110,6 +110,12 @@ integration(
         [config.runtimeRole]
       )
       expect(Object.values(roles.rows[0]).some(Boolean)).toBe(false)
+      // CI mirrors Herman's platform defaults; provisioning must strip them.
+      const defaults = await client.query(
+        'select 1 from pg_default_acl d, aclexplode(d.defaclacl) a where a.grantee=(select oid from pg_roles where rolname=$1)',
+        [config.runtimeRole]
+      )
+      expect(defaults.rowCount).toBe(0)
     } finally {
       client.release()
     }

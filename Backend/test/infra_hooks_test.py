@@ -35,7 +35,7 @@ class BackendHooksTest(unittest.TestCase):
                 self.assertEqual(env.read_text(), 'DATABASE_URL=postgresql://fixture_owner:test%3Aowner%2Fpassword@postgres:5432/fixture\n')
                 self.assertNotIn('test:owner/password', ' '.join(command))
 
-            core = types.SimpleNamespace(APP=app, protected_file=lambda path, _: path,
+            core = types.SimpleNamespace(APP=app, CONFIG=types.SimpleNamespace(service='fixture-api'), protected_file=lambda path, _: path,
                 backup_database=lambda database: events.append('backup:' + database),
                 run=run, compose=lambda *args, **kwargs: events.append(('accept', args)))
             previous = sys.modules.get('deploy_core')
@@ -49,7 +49,7 @@ class BackendHooksTest(unittest.TestCase):
                 module.prepare('candidate-image', 'current-image')
                 module.accept('candidate-image')
                 self.assertEqual(events[:3], ['backup:fixture', 'verify-offhost', 'migrate'])
-                self.assertEqual(events[3][1], ('exec', '-T', 'api', 'bun', 'deploy/verify.ts'))
+                self.assertEqual(events[3][1], ('exec', '-T', 'fixture-api', 'bun', 'deploy/verify.ts'))
                 (app / 'backend.json').write_text(json.dumps({'database': '../other', 'ownerRole': 'fixture_owner'}))
                 with self.assertRaises(RuntimeError):
                     module.prepare('candidate-image', 'current-image')
