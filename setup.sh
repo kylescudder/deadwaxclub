@@ -2,12 +2,11 @@
 # Deadwax Club — first-run setup
 #
 # Walks through everything that doesn't require Apple Developer:
-#   1. Required CLI tools (xcodegen, supabase CLI, optional netlify CLI)
+#   1. Required CLI tools (xcodegen, bun, optional netlify CLI)
 #   2. Local secrets files (Config/Secrets.xcconfig, Site/public/js/config.js)
-#   3. Supabase migrations
-#   4. PowerSync sync rules pointer
-#   5. Xcode project generation
-#   6. Sanity verification
+#   3. Backend pointer (Herman API, PostgreSQL and PowerSync)
+#   4. Xcode project generation
+#   5. Sanity verification
 #
 # Steps that depend on Apple (App ID, APNs key, AASA team ID, signing) are
 # clearly flagged at the end.
@@ -27,7 +26,7 @@ note()  { printf "${DIM}  %s${NC}\n" "$1"; }
 
 # --- platform check --------------------------------------------------------
 if [[ "${OSTYPE:-}" != darwin* ]]; then
-    warn "This script is designed for macOS. Web/Supabase steps work elsewhere; Xcode steps will be skipped."
+    warn "This script is designed for macOS. Web and backend steps work elsewhere; Xcode steps will be skipped."
 fi
 
 is_mac() { [[ "${OSTYPE:-}" == darwin* ]]; }
@@ -52,7 +51,6 @@ if is_mac; then
     fi
     need xcodegen "brew install xcodegen"
 fi
-need supabase  "brew install supabase/tap/supabase"
 need bun       "brew install oven-sh/bun/bun"
 
 # Optional tools — warn but don't fail.
@@ -60,11 +58,6 @@ if command -v netlify >/dev/null 2>&1; then
     ok "netlify CLI present (optional)"
 else
     note "netlify CLI not installed (optional). Use \`npx netlify\` or install via \`brew install netlify-cli\`."
-fi
-if command -v psql >/dev/null 2>&1; then
-    ok "psql present (optional, used to apply migrations)"
-else
-    note "psql not installed. Migrations applied via 'supabase db push' instead."
 fi
 
 if (( ${#MISSING_TOOLS[@]} > 0 )); then
@@ -78,7 +71,7 @@ step "Local secrets"
 if [[ ! -f Config/Secrets.xcconfig ]]; then
     cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
     warn "Created Config/Secrets.xcconfig from the example — fill in real values before building."
-    note "  SUPABASE_URL, SUPABASE_ANON_KEY, POWERSYNC_URL, optional SENTRY_DSN"
+    note "  API_URL, POWERSYNC_URL, optional SENTRY_DSN"
 else
     ok "Config/Secrets.xcconfig already exists"
 fi
@@ -91,50 +84,20 @@ else
 fi
 
 # Detect placeholder values.
-if grep -q "your-supabase-anon-key\|your-project.supabase.co" Config/Secrets.xcconfig 2>/dev/null; then
+if grep -q "api.example.com\|your-instance.powersync" Config/Secrets.xcconfig 2>/dev/null; then
     warn "Config/Secrets.xcconfig still contains placeholders. Edit it before building."
 fi
 if grep -q "your-supabase-anon-key\|your-project.supabase.co" Site/public/js/config.js 2>/dev/null; then
     warn "Site/public/js/config.js still contains placeholders. Edit it before deploying."
 fi
 
-# --- 3. Supabase project ---------------------------------------------------
-step "Supabase project"
+# --- 3. Backend -----------------------------------------------------------
+step "Backend"
 
-if [[ ! -f supabase/config.toml ]]; then
-    note "Creating supabase/config.toml via supabase init"
-    supabase init >/dev/null
-fi
+note "The API, PostgreSQL schema and PowerSync sync config live in Backend/."
+note "Local checks and the Herman deployment order: Backend/deploy/README.md"
 
-if ! supabase projects list >/dev/null 2>&1; then
-    warn "supabase CLI is not logged in. Run \`supabase login\` and \`supabase link --project-ref <ref>\`, then re-run."
-    note "Find the project ref at: supabase.com → your project → Settings → General"
-else
-    ok "supabase CLI is logged in"
-
-    read -p "Apply Supabase migrations from supabase/migrations/ to your linked project now? [y/N] " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        supabase db push
-        ok "Migrations applied"
-    else
-        note "Skipped. To apply manually:"
-        note "  supabase db push"
-        note "Or paste each file in supabase/migrations/ into the Supabase SQL editor in order."
-    fi
-fi
-
-# --- 4. PowerSync ----------------------------------------------------------
-step "PowerSync"
-
-note "Sync rules live at supabase/powersync/sync_rules.yaml."
-note "Apply via the PowerSync dashboard:"
-note "  1. https://powersync.com → your instance → Sync rules"
-note "  2. Paste the contents of supabase/powersync/sync_rules.yaml"
-note "  3. Validate, then Deploy"
-note "(Or use the powersync CLI: \`powersync sync-rules apply supabase/powersync/sync_rules.yaml\`)"
-
-# --- 5. Xcode project ------------------------------------------------------
+# --- 4. Xcode project ------------------------------------------------------
 if is_mac; then
     step "Generate Xcode project"
     if [[ -d DeadWaxClub.xcodeproj ]]; then
@@ -160,7 +123,7 @@ if is_mac; then
     fi
 fi
 
-# --- 6. Summary ------------------------------------------------------------
+# --- 5. Summary ------------------------------------------------------------
 step "Done — what's next"
 cat <<'EOF'
 
@@ -171,16 +134,13 @@ Local setup is finished. The remaining work needs Apple Developer access:
   2. Create an APNs Auth Key (.p8) — note the Key ID, Team ID.
   3. Create a Services ID com.deadwaxclub.app.signin and a separate
      Sign in with Apple .p8 key.
-  4. Supabase → Authentication → Providers → Apple: paste the Services
-     ID, Team ID, Key ID, and the Sign in with Apple .p8 contents.
-  5. Supabase → Edge Functions → Secrets:
-       APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY, APNS_BUNDLE_ID
-     Then `supabase functions deploy notify-price-change` and create
-     the price_entries Insert webhook pointing at the function.
-  6. Replace TEAMID in Site/public/.well-known/apple-app-site-association
+  4. Put the Apple sign-in values in the Herman API's protected api.env
+     (Backend/deploy/api.env.example lists them). Push notifications go
+     through the shared APNs gateway (docs/push-gateway/README.md).
+  5. Replace TEAMID in Site/public/.well-known/apple-app-site-association
      with your real Apple Team ID, then `bun run build`
      and `npx netlify deploy --dir=Site/dist --prod`.
-  7. In Xcode → Signing & Capabilities, pick your paid team,
+  6. In Xcode → Signing & Capabilities, pick your paid team,
      plug your phone in, ⌘R.
 
 See README.md for the full step-by-step.

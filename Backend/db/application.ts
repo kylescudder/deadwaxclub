@@ -11,7 +11,8 @@ export async function migrateApplication(client: PoolClient) {
   await client.query(
     "create schema if not exists deadwax_migrations; create table if not exists deadwax_migrations.applied(name text primary key)",
   );
-  const legacy = new URL("../../supabase/migrations/", import.meta.url);
+  // Historical Supabase migrations, replayed under their original ledger names.
+  const legacy = new URL("./legacy/", import.meta.url);
   const files = [
     ["identity.sql", new URL("./identity.sql", import.meta.url)],
     ...(await readdir(legacy))
