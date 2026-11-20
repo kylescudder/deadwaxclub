@@ -1,5 +1,4 @@
 import Foundation
-import Supabase
 
 enum RecordCreationError: Error, Equatable, Sendable {
     case quotaSnapshotUnavailable
@@ -41,8 +40,8 @@ enum RecordCreationAuthorization {
 enum RecordCreationFailure {
     static func isConnectivityFailure(_ error: Error) -> Bool {
         if error is URLError || (error as NSError).domain == NSURLErrorDomain { return true }
-        guard let error = error as? PostgrestError else { return false }
-        return ["PGRST000", "PGRST001", "PGRST002", "PGRST003"].contains(error.code)
+        guard let error = error as? APIError else { return false }
+        return error.code == "temporarily_unavailable"
     }
 }
 

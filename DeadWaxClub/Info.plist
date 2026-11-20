@@ -41,10 +41,8 @@
 	<string>$(POWERSYNC_URL)</string>
 	<key>SENTRY_DSN</key>
 	<string>$(SENTRY_DSN)</string>
-	<key>SUPABASE_ANON_KEY</key>
-	<string>$(SUPABASE_ANON_KEY)</string>
-	<key>SUPABASE_URL</key>
-	<string>$(SUPABASE_URL)</string>
+	<key>API_URL</key>
+	<string>$(API_URL)</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Roboto-Medium.ttf</string>

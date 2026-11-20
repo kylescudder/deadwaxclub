@@ -40,7 +40,8 @@ enum IntentBridge {
 
     @MainActor
     static func searchRecords(query: String) async throws -> [VinylRecordEntity] {
-        guard let services else { return [] }
+        guard let services, services.auth.currentUserID != nil,
+              !services.auth.isPasswordRecovery else { return [] }
         let q = "%\(query.lowercased())%"
         let rows = try await services.sync.database.getAll(
             sql: """
@@ -59,7 +60,8 @@ enum IntentBridge {
 
     @MainActor
     static func recordsByID(_ ids: [String]) async throws -> [VinylRecordEntity] {
-        guard let services, !ids.isEmpty else { return [] }
+        guard let services, services.auth.currentUserID != nil,
+              !services.auth.isPasswordRecovery, !ids.isEmpty else { return [] }
         let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ", ")
         let rows = try await services.sync.database.getAll(
             sql: "\(recordSelectSQL) where r.id in (\(placeholders)) and r.deleted_at is null",
@@ -71,7 +73,8 @@ enum IntentBridge {
 
     @MainActor
     static func recentRecords(limit: Int) async throws -> [VinylRecordEntity] {
-        guard let services else { return [] }
+        guard let services, services.auth.currentUserID != nil,
+              !services.auth.isPasswordRecovery else { return [] }
         let rows = try await services.sync.database.getAll(
             sql: """
             \(recordSelectSQL)

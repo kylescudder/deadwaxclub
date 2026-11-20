@@ -73,10 +73,7 @@ final class PushManager: NSObject, ObservableObject {
             "environment": Self.apnsEnvironment,
         ]
         do {
-            try await auth.supabase
-                .from("device_tokens")
-                .upsert(payload, onConflict: "user_id,apns_token")
-                .execute()
+            _ = try await auth.api.json("api/devices", values: payload)
             Log.breadcrumb("apns token uploaded", category: "push")
         } catch {
             Log.error(error, category: "push.upload")

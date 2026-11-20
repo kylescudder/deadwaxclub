@@ -1,0 +1,42 @@
+# Deadwax's isolated test stack uses a dedicated database and ingress network.
+services:
+  deadwax-api:
+    image: ${DEADWAX_API_IMAGE:?immutable API digest required}
+    user: '1000:1000'
+    env_file: ./secrets/api.env
+    environment:
+      NOTIFICATION_SPOOL: /var/lib/deadwax/notifications
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    mem_limit: 256m
+    volumes:
+      - ./state/notifications:/var/lib/deadwax/notifications
+    networks: [database, ingress, sync]
+  deadwax-sync:
+    image: ${DEADWAX_SYNC_IMAGE:?verified PowerSync digest required}
+    command: [start, -r, unified]
+    user: '1000:1000'
+    env_file: ./secrets/powersync.env
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/powersync.yaml
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    mem_limit: 512m
+    volumes:
+      - ./powersync.yaml:/config/powersync.yaml:ro
+      - ./sync_rules.yaml:/config/sync_rules.yaml:ro
+    networks: [database, ingress, sync]
+
+networks:
+  database:
+    external: true
+    name: ${DEADWAX_DATABASE_NETWORK:?dedicated database network required}
+  ingress:
+    external: true
+    name: ${DEADWAX_INGRESS_NETWORK:?reviewed tunnel network required}
+  sync:
+    internal: true

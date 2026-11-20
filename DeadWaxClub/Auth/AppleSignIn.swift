@@ -3,7 +3,7 @@ import CryptoKit
 import Foundation
 
 /// Generates and SHA-256 hashes the nonce required by Sign in with Apple
-/// when exchanging the identity token with Supabase.
+/// when exchanging the identity token with the Deadwax API.
 enum AppleNonce {
     static func random(length: Int = 32) -> String {
         let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._")

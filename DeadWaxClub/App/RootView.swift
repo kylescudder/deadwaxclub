@@ -5,50 +5,17 @@ struct RootView: View {
     @EnvironmentObject private var services: AppServices
     @Environment(\.scenePhase) private var scenePhase
     @State private var publicListToken: String?
+    @State private var showingReauthentication = false
 
     var body: some View {
-        Group {
-            switch services.auth.state {
-            case .unknown:
-                LoadingView()
-            case .signedOut:
-                NavigationStack { SignInView() }
-            case .signedIn:
-                // While a password-recovery session is active, keep the user
-                // on the sign-in screen underneath the recovery sheet — we
-                // don't want to leak the main app to someone holding a
-                // recovery link, and after they set a new password they're
-                // signed out and have to come back through this screen anyway.
-                if services.auth.isPasswordRecovery {
-                    NavigationStack { SignInView() }
-                } else {
-                    MainTabView()
-                        .sheet(isPresented: Binding(
-                            get: { services.onboarding.isOnboarding },
-                            set: { _ in }
-                        )) {
-                            OnboardingSheet(
-                                initialSteps: services.onboarding.pendingSteps,
-                                onCompleteDiscogsToken: {
-                                    services.onboarding.markDiscogsTokenSeen()
-                                    services.evaluateOnboarding()
-                                },
-                                onSkipDiscogsToken: {
-                                    services.onboarding.markDiscogsTokenSeen()
-                                    services.evaluateOnboarding()
-                                },
-                                onCompleteNotifications: {
-                                    services.onboarding.markNotificationsSeen()
-                                    services.evaluateOnboarding()
-                                }
-                            )
-                            .presentationDetents([.large])
-                            .interactiveDismissDisabled()
-                        }
-                }
-            }
+        accountContent
+        .sheet(isPresented: $showingReauthentication) {
+            NavigationStack { SignInView() }
         }
-        .task { await services.auth.bootstrap() }
+        .onChange(of: services.auth.requiresReauthentication) { _, required in
+            if !required { showingReauthentication = false }
+        }
+        .task { await services.auth.bootstrap(offlineAccount: services.sync.offlineAccount) }
         .onChange(of: services.profile.profile?.displayName) { _, _ in
             services.evaluateOnboarding()
         }
@@ -94,8 +61,7 @@ struct RootView: View {
         )) { issue in
             Alert(title: Text(issue.title), message: Text(issue.message), dismissButton: .default(Text("OK")))
         }
-        // Password-recovery sheet: shown whenever Supabase has handed us a
-        // recovery session (the user just clicked the email reset link).
+        // Password reset links carry a short-lived recovery token.
         // Stacked at the end so it sits above every other sheet, including
         // sign-in if the user wasn't already authenticated.
         .sheet(isPresented: Binding(
@@ -110,6 +76,56 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 QuickActionRouter.activate()
+                Task { await services.sync.retryConnection() }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var accountContent: some View {
+        switch services.auth.state {
+        case .unknown:
+            if let error = services.auth.lastError {
+                ContentUnavailableView("Offline account unavailable", systemImage: "exclamationmark.lock", description: Text(error))
+            } else {
+                LoadingView()
+            }
+        case .signedOut:
+            NavigationStack { SignInView() }
+        case .signedIn:
+            if services.auth.isPasswordRecovery {
+                NavigationStack { SignInView() }
+            } else {
+                MainTabView()
+                    .safeAreaInset(edge: .top) {
+                        if services.auth.requiresReauthentication {
+                            Button("Sign in to sync offline changes") {
+                                showingReauthentication = true
+                            }
+                        }
+                    }
+                    .sheet(isPresented: Binding(
+                        get: { services.onboarding.isOnboarding },
+                        set: { _ in }
+                    )) {
+                        OnboardingSheet(
+                            initialSteps: services.onboarding.pendingSteps,
+                            onCompleteDiscogsToken: {
+                                services.onboarding.markDiscogsTokenSeen()
+                                services.evaluateOnboarding()
+                            },
+                            onSkipDiscogsToken: {
+                                services.onboarding.markDiscogsTokenSeen()
+                                services.evaluateOnboarding()
+                            },
+                            onCompleteNotifications: {
+                                services.onboarding.markNotificationsSeen()
+                                services.evaluateOnboarding()
+                            }
+                        )
+                        .presentationDetents([.large])
+                        .interactiveDismissDisabled()
+                    }
             }
         }
     }
