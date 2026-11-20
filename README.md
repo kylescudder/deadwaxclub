@@ -4,8 +4,8 @@ Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl y
 
 ## Features
 
-- Email/password, Sign in with Apple, and Google sign-in (Supabase Auth)
-- Offline-first SQLite mirrored to Supabase Postgres via PowerSync
+- Email/password, Sign in with Apple, and Google sign-in (Better Auth on the Herman API)
+- Offline-first SQLite mirrored to PostgreSQL on Herman via self-hosted PowerSync
 - Owned / Wishlist tabs with sort + filter (year, colour way, has-price)
 - Manual entry, barcode scanning, and Discogs lookup for cover art / artist / colour way
 - Per-record price history with a Swift Charts line graph
@@ -13,7 +13,7 @@ Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl y
 - **Shareable lists** — private, public link, invite-only, or fully collaborative
 - **Push notifications** when any wishlist record (yours or one a list-mate added) hits a new all-time low price
 - **Stats** — total spent, collection value, breakdown by decade and colour way, top owned, lowest wishlist
-- Cover art cached on device **and** mirrored to Supabase Storage so cover art works fully offline and other devices fetch from your bucket instead of Discogs
+- Cover art cached on device **and** mirrored to the API (`/api/covers/`) so cover art works fully offline and other devices fetch it instead of Discogs
 - **AppIntents + Spotlight** — find records from system search, "Hey Siri, log a price in Deadwax Club"
 - **Onboarding sheets** for display name, Discogs token, and notification permission
 - Light / Dark / System appearance toggle
@@ -25,13 +25,13 @@ Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl y
 | Concern        | Tool                                                              |
 | -------------- | ----------------------------------------------------------------- |
 | UI             | SwiftUI, iOS 17+                                                  |
-| Backend        | Supabase (Postgres + Auth + Storage + Edge Functions)             |
+| Backend        | Bun/TypeScript API in `Backend/` with PostgreSQL on Herman        |
 | Sync           | [PowerSync Swift SDK](https://github.com/powersync-ja/powersync-swift) |
-| Auth           | `supabase-swift` (email, Sign in with Apple, Google)              |
+| Auth           | Better Auth (email, Sign in with Apple, Google)                   |
 | Metadata       | [Discogs API](https://www.discogs.com/developers) (release + marketplace stats) |
 | Charts         | Swift Charts                                                      |
 | Barcode        | VisionKit `DataScannerViewController`                             |
-| Push           | APNs via Supabase Edge Function (Deno)                            |
+| Push           | APNs via the shared push gateway (`docs/push-gateway/`)           |
 | Search         | CoreSpotlight + AppIntents                                        |
 | Error logging  | `sentry-cocoa`                                                    |
 | Project gen    | [XcodeGen](https://github.com/yonaskolb/XcodeGen)                 |
@@ -44,12 +44,12 @@ The fastest path is the bundled script:
 ./setup.sh
 ```
 
-It checks for required tools, copies the secrets templates, applies Supabase migrations against your linked project, generates the Xcode project, and prints what's still left (anything Apple-Developer-related). The detailed steps below are what the script automates — useful as a reference if you want to do anything by hand.
+It checks for required tools, copies the secrets templates, generates the Xcode project, and prints what's still left (anything Apple-Developer-related). The detailed steps below are what the script automates — useful as a reference if you want to do anything by hand.
 
 ### 1. Install tools
 
 ```sh
-brew install xcodegen supabase/tap/supabase
+brew install xcodegen oven-sh/bun/bun
 ```
 
 ### 2. Configure secrets
@@ -60,65 +60,29 @@ cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
 
 Fill in:
 
-- `SUPABASE_URL` and `SUPABASE_ANON_KEY` from your Supabase project settings.
-- `POWERSYNC_URL` from the PowerSync dashboard once you've created an instance.
+- `API_URL`: the Deadwax API origin (for example `https://auth.deadwaxclub.app`).
+- `POWERSYNC_URL`: the PowerSync origin (for example `https://sync.deadwaxclub.app`).
 - `SENTRY_DSN` from a Sentry project (optional — leave blank to disable).
 
-### 3. Provision Supabase
+### 3. Backend
 
-With the project linked, apply every migration in `Supabase/migrations/` in one go:
+The API, database schema and PowerSync sync config live in `Backend/`. The historical Supabase migrations are replayed from `Backend/db/legacy/` under their original names. `Backend/deploy/README.md` covers local checks and the Herman deployment order: shared PostgreSQL, PowerSync, recovery proofs and releases.
 
-```sh
-supabase db push
-```
+Sign-in providers (email, Apple, Google) and the redirect URI `deadwaxclub://auth-callback` are configured in the API's protected `api.env`; `Backend/deploy/api.env.example` lists the values.
 
-(Or paste each `Supabase/migrations/*.sql` file into the Supabase SQL editor in numeric order if you'd rather run them by hand.)
+### 4. Push notifications
 
-In **Authentication → Providers**:
-- Enable **Email**.
-- Enable **Apple** (paste a Services ID + key).
-- Enable **Google** (Google Cloud OAuth client ID + secret).
-- Set redirect URI to `deadwaxclub://auth-callback`.
+Lowest-price alerts and invites are delivered through the shared APNs gateway. See `docs/push-gateway/README.md`.
 
-### 4. Provision PowerSync
-
-1. Create an instance at <https://powersync.com>.
-2. Connect it to your Supabase project.
-3. Apply `supabase/powersync/sync_rules.yaml`.
-4. Copy the instance URL into `POWERSYNC_URL` in `Secrets.xcconfig`.
-
-### 5. Push notifications (optional but recommended)
-
-For lowest-price alerts:
-
-1. In the Apple Developer portal, create an APNs Auth Key (`.p8`).
-2. In the Supabase dashboard, go to **Edge Functions → Secrets** and set:
-   - `APNS_TEAM_ID` — your team ID
-   - `APNS_KEY_ID` — the key's ID
-   - `APNS_PRIVATE_KEY` — full contents of the `.p8` file (newlines preserved)
-   - `APNS_BUNDLE_ID` — `com.deadwaxclub.app` (or your own)
-3. Deploy the Edge Function:
-   ```sh
-   supabase functions deploy notify-price-change
-   ```
-4. In **Database → Webhooks**, create a webhook on `price_entries` `INSERT` events pointing at `https://<project>.supabase.co/functions/v1/notify-price-change`, with header `Authorization: Bearer <SUPABASE_ANON_KEY>`.
-
-The function only sends when `is_new_low` is true (set by a `BEFORE INSERT` trigger), so you won't get spammed.
-
-### 6. In-app subscriptions
+### 5. In-app subscriptions
 
 Deadwax Club uses StoreKit for the `club.deadwax.supporter.monthly` auto-renewable subscription. The bundled StoreKit configuration file lets simulator builds load the product locally; App Store Connect is still the source for TestFlight/App Store pricing.
 
 1. In App Store Connect, create an auto-renewable subscription with product ID `club.deadwax.supporter.monthly`.
 2. Set the UK monthly price to £1.99 or the nearest App Store pricing equivalent.
-3. Deploy the entitlement mirror functions:
-   ```sh
-   supabase functions deploy iap-sync-transaction
-   supabase functions deploy iap-app-store-notifications
-   ```
-4. Configure App Store Server Notifications V2 to `https://<project>.supabase.co/functions/v1/iap-app-store-notifications`.
+3. Configure App Store Server Notifications V2 to the API's `/api/iap/notifications` endpoint. The app mirrors verified transactions to `/api/iap/transactions`.
 
-### 7. Website and public list viewer
+### 6. Website and public list viewer
 
 The Astro site under `Site/` serves the marketing page, support, privacy and terms pages, public list links (`/l/<token>`) and the Universal Links manifest at **https://deadwaxclub.app**. For local work:
 
@@ -130,11 +94,11 @@ bun run dev
 
 See `Site/README.md` for the site commands and checks.
 
-### 8. Discogs token
+### 7. Discogs token
 
 In the running app: **Settings → Discogs API**, paste a personal token from <https://www.discogs.com/settings/developers>. Stored in the keychain. The onboarding sheet prompts for this on first launch.
 
-### 9. Generate the Xcode project
+### 8. Generate the Xcode project
 
 ```sh
 xcodegen generate
@@ -147,7 +111,7 @@ In Xcode:
 - Set your Development Team under **Signing & Capabilities**.
 - Confirm the **Sign in with Apple**, **Push Notifications**, and **Associated Domains** capabilities are present (XcodeGen wires them via `DeadWaxClub.entitlements`).
 
-### 10. Build
+### 9. Build
 
 ```sh
 xcodebuild build \
@@ -196,7 +160,7 @@ DeadWaxClub/
   Records/         list, detail, add, log price, sort, filter, repos
   Scanner/         VisionKit DataScanner + permission handling
   Discogs/         release + marketplace stats client
-  CoverArt/        on-device + Supabase Storage cache
+  CoverArt/        on-device + API cover cache
   Lists/           lists CRUD, share modes, public viewer
   Stats/           aggregates + Swift Charts
   Notifications/   APNs registration + token upload
@@ -208,12 +172,10 @@ DeadWaxClub/
   Logging/         Sentry/OSLog wrapper, Keychain helper
   Resources/       Assets.xcassets
 
-supabase/
-  config.toml      supabase CLI config
-  migrations/      schema, RLS, triggers, RPCs
-  powersync/       sync rules
-  functions/
-    notify-price-change/  Edge Function: APNs fan-out on new lows
+Backend/            Bun/TypeScript API (Better Auth, uploads, IAP, covers)
+  db/               app SQL adapters; legacy/ holds the historical Supabase migrations
+  deploy/           Compose, PowerSync service + sync config, Herman runbook
+  test/             backend, infrastructure and quota tests
 
 Site/               Astro marketing site + public list viewer
   src/pages/        routes for /, /l, /privacy, and /terms
@@ -230,13 +192,12 @@ Site/               Astro marketing site + public list viewer
 This is a comprehensive scaffold. The architecture is in place across all features, but the project has not yet been built against a real Mac/Xcode toolchain — expect a small round of compile-time fixes when you run `xcodegen generate && open DeadWaxClub.xcodeproj` and hit ⌘B for the first time. Areas where SDK API names move between minor versions and may need a tweak:
 
 - **PowerSync Swift SDK** — `DeadWaxClub/Sync/*` and the repos use names matching the documented 1.x API.
-- **`supabase-swift` 2.x** — OAuth helpers and `signInWithIdToken` occasionally rename. `DeadWaxClub/Auth/AuthClient.swift` is the focal point.
 - **AppIntents** — the `DisplayRepresentation.Image(url:)` initializer and the parameter syntax have evolved across iOS 17.x; small adjustments may be needed.
 
 ## Development notes
 
 - `AppServices` constructs and owns long-lived objects. Views read them via `@EnvironmentObject`.
 - All deletions are soft (`deleted_at`) so PowerSync propagates tombstones reliably.
-- Cover art lookup order on display: local Caches file → Supabase Storage public URL → Discogs URL → SF Symbol placeholder. First display of any record both writes the bytes to disk and uploads to Supabase Storage so subsequent launches and other devices render it without Discogs.
+- Cover art lookup order on display: local Caches file → API cover URL → Discogs URL → SF Symbol placeholder. First display of any record both writes the bytes to disk and uploads it to the API so subsequent launches and other devices render it without Discogs.
 - Sharing a list with `link_public` mode mints a 12-char token and a public URL. The unauthenticated `get_shared_list` and `get_shared_list_records` RPCs serve the data — no Deadwax Club account required to view.
 - DeadWaxClub.xcodeproj is regenerated from `project.yml`. Don't commit it.
