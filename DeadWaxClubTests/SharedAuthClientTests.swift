@@ -118,6 +118,34 @@ final class SharedAuthClientTests: XCTestCase {
         }
     }
 
+    func testSignOutDuringPasswordRecoveryRevokesTheServerSession() async throws {
+        let owner = UUID()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnauthorizedProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let client = APIClient(session: session, baseURL: URL(string: "https://auth.example.test")!, configurationError: nil)
+        let store = MemoryStore()
+        store.data = self.session(user: owner, token: "valid-session")
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let auth = AuthClient(sessionStore: store, defaults: defaults, api: client)
+        await auth.bootstrap(offlineAccount: { ([owner], false) })
+        auth.isPasswordRecovery = true
+        let revoked = expectation(description: "server sign-out")
+        UnauthorizedProtocol.onStart = { urlProtocol in
+            XCTAssertEqual(urlProtocol.request.url?.path, "/api/auth/sign-out")
+            XCTAssertEqual(urlProtocol.request.value(forHTTPHeaderField: "Authorization"), "Bearer valid-session")
+            revoked.fulfill()
+            urlProtocol.finish(status: 200, data: Data("{}".utf8))
+        }
+        let signedOut = await auth.signOut()
+        await fulfillment(of: [revoked], timeout: 5)
+        XCTAssertTrue(signedOut)
+        XCTAssertNil(store.data)
+        XCTAssertEqual(auth.state, .signedOut)
+        UnauthorizedProtocol.onStart = nil
+    }
+
     private func session(user: UUID, token: String) -> Data {
         try! JSONSerialization.data(withJSONObject: ["token": token, "user": ["id": user.uuidString, "email": "auth@example.test"]])
     }

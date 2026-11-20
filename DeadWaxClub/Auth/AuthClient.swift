@@ -132,7 +132,9 @@ final class AuthClient: ObservableObject {
     @discardableResult func signOut() async -> Bool {
         do {
             return try await performSessionInvalidation {
-                if await currentAccessToken() != nil { _ = try await api.json("api/auth/sign-out", values: [:]) }
+                // Revoke the stored session even during password recovery, where
+                // currentAccessToken() withholds it from normal authenticated work.
+                if api.token != nil, !requiresReauthentication { _ = try await api.json("api/auth/sign-out", values: [:]) }
                 try sessionStore.write(nil)
                 api.token = nil
                 state = .signedOut
