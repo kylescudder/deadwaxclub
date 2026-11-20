@@ -258,6 +258,109 @@ final class PushRegistrationLifecycleTests: XCTestCase {
         XCTAssertEqual(store.writeCount, 1)
     }
 
+    func testRefreshCallbackAndLogoutUseRotatedBearerTokens() async {
+        let identity = FakePushIdentityProvider(identity: accountA)
+        let transport = SpyPushRegistrationTransport()
+        let lifecycle = makeLifecycle(identity: identity, transport: transport)
+        await lifecycle.receivedDeviceToken(Data([0x01]))
+        await lifecycle.activate(isAuthorized: true)
+        identity.identity = PushIdentity(principalID: "account-a", accessToken: "refreshed")
+        await lifecycle.refreshRegistration(isAuthorized: true)
+        identity.identity = PushIdentity(principalID: "account-a", accessToken: "callback")
+        await lifecycle.receivedDeviceToken(Data([0x02]))
+        identity.identity = PushIdentity(principalID: "account-a", accessToken: "logout")
+        await lifecycle.deactivate()
+        let tokens = await transport.accessTokens
+        XCTAssertEqual(tokens, ["token-a", "refreshed", "callback", "logout"])
+    }
+
+    func testLogoutDrainsInflightPUTAndInvalidatesQueuedRefresh() async {
+        let identity = FakePushIdentityProvider(identity: accountA)
+        let gate = AsyncPushGate()
+        let transport = SpyPushRegistrationTransport(registerGate: gate)
+        let lifecycle = makeLifecycle(identity: identity, transport: transport)
+        await lifecycle.activate(isAuthorized: true)
+        let registration = Task { await lifecycle.receivedDeviceToken(Data([0x01])) }
+        await gate.waitUntilEntered()
+        let refresh = Task { await lifecycle.refreshRegistration(isAuthorized: true) }
+        var logoutStarted = false
+        let logout = Task {
+            logoutStarted = true
+            await lifecycle.deactivate()
+        }
+        while !logoutStarted { await Task.yield() }
+        let callsBeforeRelease = await transport.calls
+        XCTAssertEqual(callsBeforeRelease, [.register(principalID: "account-a", token: Data([0x01]))])
+        await gate.release()
+        await registration.value
+        await refresh.value
+        await logout.value
+        await lifecycle.refreshRegistration(isAuthorized: true)
+        let calls = await transport.calls
+        XCTAssertEqual(calls, [
+            .register(principalID: "account-a", token: Data([0x01])),
+            .unregister(principalID: "account-a")
+        ])
+    }
+
+    func testNewAccountWaitsForOldAccountUnbind() async {
+        let identity = FakePushIdentityProvider(identity: accountA)
+        let gate = AsyncPushGate()
+        let transport = SpyPushRegistrationTransport(unregisterGate: gate)
+        let lifecycle = makeLifecycle(identity: identity, transport: transport)
+        await lifecycle.receivedDeviceToken(Data([0x01]))
+        await lifecycle.activate(isAuthorized: true)
+        let logout = Task { await lifecycle.deactivate() }
+        await gate.waitUntilEntered()
+        identity.identity = accountB
+        let activation = Task { await lifecycle.activate(isAuthorized: true) }
+        await gate.release()
+        await logout.value
+        await activation.value
+        let calls = await transport.calls
+        XCTAssertEqual(calls, [
+            .register(principalID: "account-a", token: Data([0x01])),
+            .unregister(principalID: "account-a"),
+            .register(principalID: "account-b", token: Data([0x01]))
+        ])
+    }
+
+    func testSessionEndDuringIdentityLookupCannotRestoreRegistration() async {
+        let identity = FakePushIdentityProvider(identity: accountA)
+        let gate = AsyncPushGate()
+        identity.gate = gate
+        let transport = SpyPushRegistrationTransport()
+        let registrar = SpyRemoteNotificationRegistrar()
+        let lifecycle = makeLifecycle(identity: identity, transport: transport, registrar: registrar)
+        await lifecycle.receivedDeviceToken(Data([0x01]))
+        let activation = Task { await lifecycle.activate(isAuthorized: true) }
+        await gate.waitUntilEntered()
+        lifecycle.sessionEnded()
+        await gate.release()
+        await activation.value
+        let calls = await transport.calls
+        XCTAssertTrue(calls.isEmpty)
+        XCTAssertEqual(registrar.registrationCount, 0)
+    }
+
+    func testAPISignOutRunsHooksAndRestoresAfterPersistenceFailure() async {
+        let store = PushTestSessionStore()
+        let auth = AuthClient(sessionStore: store)
+        var events: [String] = []
+        auth.beforeSessionInvalidation = { events.append("unbind") }
+        auth.afterSessionInvalidationFailure = { events.append("restore") }
+        store.shouldFail = true
+        let failed = await auth.signOut()
+        XCTAssertFalse(failed)
+        XCTAssertEqual(events, ["unbind", "restore"])
+        store.shouldFail = false
+        events = []
+        let succeeded = await auth.signOut()
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(events, ["unbind"])
+        XCTAssertEqual(auth.state, .signedOut)
+    }
+
     private func makeLifecycle(
         identity: FakePushIdentityProvider,
         transport: any PushRegistrationTransport,
@@ -278,12 +381,17 @@ final class PushRegistrationLifecycleTests: XCTestCase {
 @MainActor
 private final class FakePushIdentityProvider: PushIdentityProviding {
     var identity: PushIdentity?
+    var gate: AsyncPushGate?
 
     init(identity: PushIdentity?) {
         self.identity = identity
     }
 
-    func currentPushIdentity() async -> PushIdentity? { identity }
+    func currentPushIdentity() async -> PushIdentity? {
+        let captured = identity
+        await gate?.enter()
+        return captured
+    }
 }
 
 private struct FixedInstallationIDProvider: PushInstallationIDProviding {
@@ -306,8 +414,13 @@ private actor SpyPushRegistrationTransport: PushRegistrationTransport {
     private(set) var calls: [Call] = []
     private(set) var installationIDs: [UUID] = []
     private let failUnregister: Bool
+    private(set) var accessTokens: [String] = []
+    private let registerGate: AsyncPushGate?
+    private let unregisterGate: AsyncPushGate?
 
-    init(failUnregister: Bool = false) {
+    init(failUnregister: Bool = false, registerGate: AsyncPushGate? = nil, unregisterGate: AsyncPushGate? = nil) {
+        self.registerGate = registerGate
+        self.unregisterGate = unregisterGate
         self.failUnregister = failUnregister
     }
 
@@ -319,6 +432,8 @@ private actor SpyPushRegistrationTransport: PushRegistrationTransport {
     ) async throws {
         installationIDs.append(installationID)
         calls.append(.register(principalID: identity.principalID, token: deviceToken))
+        accessTokens.append(identity.accessToken)
+        await registerGate?.enter()
     }
 
     func unregister(
@@ -327,6 +442,8 @@ private actor SpyPushRegistrationTransport: PushRegistrationTransport {
     ) async throws {
         installationIDs.append(installationID)
         calls.append(.unregister(principalID: identity.principalID))
+        accessTokens.append(identity.accessToken)
+        await unregisterGate?.enter()
         if failUnregister { throw TestPushError.expected }
     }
 }
@@ -377,4 +494,35 @@ private final class ErrorCapture {
 
 private enum TestPushError: Error, Equatable {
     case expected
+}
+
+private actor AsyncPushGate {
+    private var entered = false
+    private var enteredWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+    func enter() async {
+        await withCheckedContinuation { continuation in
+            releaseWaiter = continuation
+            entered = true
+            enteredWaiter?.resume()
+            enteredWaiter = nil
+        }
+    }
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { enteredWaiter = $0 }
+    }
+    func release() {
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+}
+
+@MainActor
+private final class PushTestSessionStore: SessionStore {
+    var shouldFail = false
+    func read() throws -> Data? { nil }
+    func write(_ data: Data?) throws {
+        if shouldFail { throw TestPushError.expected }
+    }
 }

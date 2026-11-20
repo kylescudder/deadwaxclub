@@ -93,9 +93,9 @@ final class AppServices: ObservableObject {
 
         // When the user signs in, start watching their profile and trigger
         // onboarding evaluation. When they sign out, stop watching.
-        auth.$state
-            .removeDuplicates()
-            .sink { [weak self] state in
+        auth.$state.combineLatest(auth.$requiresReauthentication)
+            .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
+            .sink { [weak self] state, _ in
                 guard let self else { return }
                 Task { @MainActor in self.applyAuth(state: state) }
             }
@@ -111,6 +111,7 @@ final class AppServices: ObservableObject {
     }
 
     private func applyAuth(state: AuthClient.State) {
+        guard auth.state == state else { return }
         Log.event("app services applying auth state", category: "app.auth", metadata: ["state": state.loggingDescription])
         guard case let .signedIn(userID, _) = state else {
             PushManager.shared.sessionEnded()
@@ -129,7 +130,10 @@ final class AppServices: ObservableObject {
         notifications.startWatching(userID: id)
         Task { await billing.syncEntitlements() }
         evaluateOnboarding()
-        Task { await PushManager.shared.activate() }
+        Task {
+            guard auth.state == state else { return }
+            await PushManager.shared.activate()
+        }
     }
 
     func canCreateNewRecord() async -> Bool {
@@ -139,7 +143,7 @@ final class AppServices: ObservableObject {
         }
         let status: RecordCreationStatus
         do {
-            if sync.status == .offline {
+            if sync.status == .offline || auth.requiresReauthentication {
                 status = try await records.localRecordCreationStatus(userID: userID)
             } else {
                 do {
@@ -172,8 +176,10 @@ final class AppServices: ObservableObject {
     }
 
     private func openRecordByID(_ recordID: String) async {
+        guard let owner = auth.currentUserID, !auth.isPasswordRecovery else { return }
         // Find from local SQLite — works offline because PowerSync syncs.
         if let record = await records.findByID(recordID) {
+            guard auth.currentUserID == owner, !auth.isPasswordRecovery else { return }
             Log.event("record deeplink resolved", category: "app.deeplink", metadata: ["recordID": recordID])
             await MainActor.run { self.pendingDeepLinkRecord = record }
         } else {

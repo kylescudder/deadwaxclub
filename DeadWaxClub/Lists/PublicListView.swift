@@ -58,18 +58,16 @@ struct PublicListView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            let infoRows: [PublicListInfo] = try await services.auth.supabase
-                .rpc("get_shared_list", params: ["token": token])
-                .execute()
-                .value
+            let infoRows: [PublicListInfo] = try await JSONDecoder().decode([PublicListInfo].self, from: services.auth.api.json(
+                "api/public/get_shared_list", values: ["token": token], authenticated: false
+            ))
             guard let first = infoRows.first else {
                 error = "This list isn't available — the owner may have made it private or deleted it."
                 return
             }
-            let recs: [PublicListRecord] = try await services.auth.supabase
-                .rpc("get_shared_list_records", params: ["token": token])
-                .execute()
-                .value
+            let recs: [PublicListRecord] = try await JSONDecoder().decode([PublicListRecord].self, from: services.auth.api.json(
+                "api/public/get_shared_list_records", values: ["token": token], authenticated: false
+            ))
             self.info = first
             self.records = recs
         } catch let e {

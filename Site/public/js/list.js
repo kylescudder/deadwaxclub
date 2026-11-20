@@ -2,47 +2,47 @@
 // `get_shared_list_records` Postgres RPCs from Supabase using the project's
 // anon key (which is safe to ship in the browser — RLS still applies).
 
-const config = window.DEADWAXCLUB_CONFIG ?? {};
-const main = document.getElementById("main");
+const config = window.DEADWAXCLUB_CONFIG ?? {}
+const main = document.getElementById('main')
 
-const token = location.pathname.split("/").filter(Boolean).pop();
+const token = location.pathname.split('/').filter(Boolean).pop()
 
 async function rpc(name, params) {
-  const url = `${config.supabaseUrl}/rest/v1/rpc/${name}`;
+  const url = `${config.supabaseUrl}/rest/v1/rpc/${name}`
   const res = await fetch(url, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
       apikey: config.supabaseAnonKey,
-      Authorization: `Bearer ${config.supabaseAnonKey}`,
+      Authorization: `Bearer ${config.supabaseAnonKey}`
     },
-    body: JSON.stringify(params),
-  });
+    body: JSON.stringify(params)
+  })
   if (!res.ok) {
-    throw new Error(`Supabase RPC ${name} returned ${res.status}`);
+    throw new Error(`Supabase RPC ${name} returned ${res.status}`)
   }
-  return res.json();
+  return res.json()
 }
 
 function escape(s) {
-  return String(s ?? "").replace(
+  return String(s ?? '').replace(
     /[&<>"']/g,
     (c) =>
       ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[c],
-  );
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[c]
+  )
 }
 
 function coverURL(record) {
   if (record.cover_art_storage_path) {
-    return `${config.supabaseUrl}/storage/v1/object/public/covers/${record.cover_art_storage_path}`;
+    return `${config.supabaseUrl}/storage/v1/object/public/covers/${record.cover_art_storage_path}`
   }
-  return record.cover_art_source_url || null;
+  return record.cover_art_source_url || null
 }
 
 function renderError(message) {
@@ -58,44 +58,44 @@ function renderError(message) {
             <h2>Couldn't load list</h2>
             <p>${escape(message)}</p>
         </div>
-    `;
+    `
 }
 
 function renderList(info, records) {
   const owner = info.owner_display_name
     ? `Shared by ${escape(info.owner_display_name)}`
-    : "";
+    : ''
   const description = info.description
     ? `<p class="list-copy">${escape(info.description)}</p>`
-    : "";
+    : ''
   const tiles = records
     .map((r) => {
-      const cover = coverURL(r);
+      const cover = coverURL(r)
       const coverHTML = cover
         ? `<img src="${escape(cover)}" alt="${escape(r.title)}" loading="lazy" />`
-        : `<svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 14a4 4 0 110-8 4 4 0 010 8zm0-2.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>`;
+        : `<svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 14a4 4 0 110-8 4 4 0 010 8zm0-2.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>`
       const colour = r.colourway
         ? `<p class="colour">${escape(r.colourway)}</p>`
-        : "";
+        : ''
       return `
                 <div class="record-tile">
                     <div class="cover">${coverHTML}</div>
                     <div class="meta">
                         <p class="title">${escape(r.title)}</p>
-                        <p class="artist">${escape(r.artist)}${r.year ? ` · ${r.year}` : ""}</p>
+                        <p class="artist">${escape(r.artist)}${r.year ? ` · ${r.year}` : ''}</p>
                         ${colour}
                     </div>
                 </div>
-            `;
+            `
     })
-    .join("");
+    .join('')
 
   main.innerHTML = `
         <section class="list-hero">
-            <p class="list-kicker">${owner ? owner : "Shared list"}</p>
+            <p class="list-kicker">${owner ? owner : 'Shared list'}</p>
             <div class="list-title-row">
                 <h1>${escape(info.name)}</h1>
-                <span class="record-count">${records.length} record${records.length === 1 ? "" : "s"}</span>
+                <span class="record-count">${records.length} record${records.length === 1 ? '' : 's'}</span>
             </div>
             ${description}
             <div class="button-row list-actions">
@@ -109,37 +109,37 @@ function renderList(info, records) {
             ? `<div class="state"><h2>Empty list</h2><p>The owner hasn't added any records yet.</p></div>`
             : `<section class="records">${tiles}</section>`
         }
-    `;
+    `
 }
 
 async function load() {
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
     renderError(
-      "This site isn't configured. Copy Site/public/js/config.example.js to Site/public/js/config.js and fill in your Supabase URL + anon key.",
-    );
-    return;
+      "This site isn't configured. Copy Site/public/js/config.example.js to Site/public/js/config.js and fill in your Supabase URL + anon key."
+    )
+    return
   }
   if (!token) {
-    renderError("No list token in URL.");
-    return;
+    renderError('No list token in URL.')
+    return
   }
   try {
     const [infoRows, records] = await Promise.all([
-      rpc("get_shared_list", { token }),
-      rpc("get_shared_list_records", { token }),
-    ]);
-    const info = Array.isArray(infoRows) ? infoRows[0] : infoRows;
+      rpc('get_shared_list', { token }),
+      rpc('get_shared_list_records', { token })
+    ])
+    const info = Array.isArray(infoRows) ? infoRows[0] : infoRows
     if (!info) {
       renderError(
-        "This list isn't available — the owner may have made it private or deleted it.",
-      );
-      return;
+        "This list isn't available — the owner may have made it private or deleted it."
+      )
+      return
     }
-    document.title = `${info.name} · Deadwax Club`;
-    renderList(info, Array.isArray(records) ? records : []);
+    document.title = `${info.name} · Deadwax Club`
+    renderList(info, Array.isArray(records) ? records : [])
   } catch (err) {
-    renderError(err.message ?? String(err));
+    renderError(err.message ?? String(err))
   }
 }
 
-load();
+load()

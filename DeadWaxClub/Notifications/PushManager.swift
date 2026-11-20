@@ -13,7 +13,7 @@ protocol PushNotifications: AnyObject {
 }
 
 /// Coordinates notification authorization, APNs registration, and the active
-/// registration transport. The legacy Supabase transport remains the fallback
+/// registration transport. The legacy API transport remains the fallback
 /// while the shared gateway URL is empty.
 @MainActor
 final class PushManager: NSObject, ObservableObject, PushNotifications {
@@ -21,6 +21,7 @@ final class PushManager: NSObject, ObservableObject, PushNotifications {
 
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
     private var registrationLifecycle: PushRegistrationLifecycle?
+    private var sessionGeneration = UUID()
 
     private override init() {
         super.init()
@@ -76,15 +77,19 @@ final class PushManager: NSObject, ObservableObject, PushNotifications {
     }
 
     func activate() async {
+        let generation = sessionGeneration
         await refreshAuthorizationStatus()
+        guard generation == sessionGeneration else { return }
         await registrationLifecycle?.activate(isAuthorized: isAuthorized)
     }
 
     func deactivate() async {
+        sessionGeneration = UUID()
         await registrationLifecycle?.deactivate()
     }
 
     func sessionEnded() {
+        sessionGeneration = UUID()
         registrationLifecycle?.sessionEnded()
     }
 

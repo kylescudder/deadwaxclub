@@ -22,6 +22,10 @@ final class PushRegistrationLifecycle {
     private let environment: APNSEnvironment
     private let reportError: (Error, String) -> Void
 
+    private var pendingOperation: Task<Void, Never>?
+    private var generation = UUID()
+    private var isActive = false
+
     private var identity: PushIdentity?
     private var latestDeviceToken: Data?
 
@@ -42,53 +46,78 @@ final class PushRegistrationLifecycle {
     }
 
     func activate(isAuthorized: Bool) async {
-        identity = await identityProvider.currentPushIdentity()
-        await registerLatestTokenIfPossible()
-        registerWithAPNsIfAuthorized(isAuthorized)
+        isActive = true
+        await refreshIdentityAndRegistration(isAuthorized: isAuthorized)
     }
 
     func deactivate() async {
-        guard let identity else { return }
-        defer { self.identity = nil }
-
-        do {
-            try await transport.unregister(
-                installationID: try installationIDProvider.installationID(),
-                identity: identity
-            )
-        } catch {
-            reportError(error, "push.unregister")
+        let previousIdentity = identity
+        sessionEnded()
+        // Drain the PUT before DELETE; canceling a request cannot undo a
+        // registration that the remote gateway has already accepted.
+        await enqueue {
+            guard let previousIdentity else { return }
+            guard let identity = await self.identityProvider.currentPushIdentity(),
+                  identity.principalID == previousIdentity.principalID else {
+                self.reportError(PushLifecycleError.identityUnavailable, "push.unregister")
+                return
+            }
+            do {
+                try await self.transport.unregister(
+                    installationID: self.installationIDProvider.installationID(),
+                    identity: identity
+                )
+            } catch {
+                self.reportError(error, "push.unregister")
+            }
         }
     }
 
     func sessionEnded() {
+        generation = UUID()
+        isActive = false
         identity = nil
     }
 
     func receivedDeviceToken(_ data: Data) async {
         latestDeviceToken = data
-        await registerLatestTokenIfPossible()
+        guard isActive else { return }
+        await refreshIdentityAndRegistration(isAuthorized: false)
     }
 
     func refreshRegistration(isAuthorized: Bool) async {
-        guard isAuthorized else { return }
-        if identity == nil {
-            identity = await identityProvider.currentPushIdentity()
-        }
-        await registerLatestTokenIfPossible()
-        remoteNotificationRegistrar.registerForRemoteNotifications()
+        guard isActive, isAuthorized else { return }
+        await refreshIdentityAndRegistration(isAuthorized: true)
     }
 
-    private func registerWithAPNsIfAuthorized(_ isAuthorized: Bool) {
-        guard isAuthorized else { return }
-        remoteNotificationRegistrar.registerForRemoteNotifications()
+    private func refreshIdentityAndRegistration(isAuthorized: Bool) async {
+        let generation = generation
+        await enqueue {
+            guard self.generation == generation else { return }
+            let identity = await self.identityProvider.currentPushIdentity()
+            guard self.generation == generation else { return }
+            self.identity = identity
+            await self.registerLatestTokenIfPossible()
+            guard self.generation == generation, isAuthorized else { return }
+            self.remoteNotificationRegistrar.registerForRemoteNotifications()
+        }
+    }
+
+    private func enqueue(_ operation: @escaping @MainActor () async -> Void) async {
+        let previous = pendingOperation
+        let task = Task { @MainActor in
+            await previous?.value
+            await operation()
+        }
+        pendingOperation = task
+        await task.value
     }
 
     private func registerLatestTokenIfPossible() async {
         guard let identity, let latestDeviceToken else { return }
         do {
             try await transport.register(
-                installationID: try installationIDProvider.installationID(),
+                installationID: installationIDProvider.installationID(),
                 deviceToken: latestDeviceToken,
                 environment: environment,
                 identity: identity
@@ -97,4 +126,8 @@ final class PushRegistrationLifecycle {
             reportError(error, "push.registration")
         }
     }
+}
+
+private enum PushLifecycleError: Error {
+    case identityUnavailable
 }

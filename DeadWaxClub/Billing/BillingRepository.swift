@@ -186,27 +186,12 @@ final class BillingRepository: ObservableObject {
 
     private func sync(_ transaction: Transaction, jwsRepresentation: String) async -> Bool {
         Log.event("billing transaction sync started", category: "billing.syncTransaction", metadata: ["productID": transaction.productID])
-        guard let token = await auth.currentAccessToken() else { return false }
+        guard await auth.currentAccessToken() != nil else { return false }
         for attempt in 0..<3 {
             do {
-                let url = AppSecrets.supabaseURL
-                    .appendingPathComponent("functions")
-                    .appendingPathComponent("v1")
-                    .appendingPathComponent("iap-sync-transaction")
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                request.setValue(AppSecrets.supabaseAnonKey, forHTTPHeaderField: "apikey")
-                request.httpBody = try JSONEncoder().encode(TransactionSyncRequest(
-                    signedTransactionInfo: jwsRepresentation,
-                    source: "ios"
-                ))
-
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                    throw BillingSyncError.badStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
-                }
+                let data = try await auth.api.json("api/iap/transactions", values: [
+                    "signedTransactionInfo": jwsRepresentation
+                ])
                 let result = try JSONDecoder().decode(TransactionSyncResponse.self, from: data)
                 guard result.active else { throw BillingSyncError.serverDidNotConfirm }
                 lastError = nil
@@ -224,23 +209,15 @@ final class BillingRepository: ObservableObject {
     }
 }
 
-private struct TransactionSyncRequest: Encodable {
-    let signedTransactionInfo: String
-    let source: String
-}
-
 private struct TransactionSyncResponse: Decodable {
     let active: Bool
 }
 
 private enum BillingSyncError: LocalizedError {
-    case badStatus(Int)
     case serverDidNotConfirm
 
     var errorDescription: String? {
         switch self {
-        case .badStatus(let status):
-            return "Subscription sync failed with status \(status)."
         case .serverDidNotConfirm:
             return "The server did not confirm the subscription."
         }

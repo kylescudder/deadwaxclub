@@ -13,7 +13,7 @@ final class PushGatewayConfigurationTests: XCTestCase {
     }
 
     func testMalformedURLDisablesGatewayWithoutCrashing() {
-        for value in ["not a url", "push.example.com", "ftp://push.example.com"] {
+        for value in ["not a url", "push.example.com", "ftp://push.example.com", "http://push.example.com", "http://localhost:8080"] {
             XCTAssertNil(PushGatewayConfiguration.from(infoDictionary: [
                 "PUSH_GATEWAY_URL": value,
                 "PUSH_GATEWAY_APPLICATION_ID": "deadwaxclub",

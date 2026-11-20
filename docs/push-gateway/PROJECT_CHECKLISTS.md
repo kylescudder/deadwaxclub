@@ -84,6 +84,21 @@ not suggestions.
 
 ## Deadwax Club
 
+Current native integration after the Herman API port:
+
+- Empty gateway configuration uses the existing `POST /api/devices` API path.
+  Deploy the owner-scoped `DELETE /api/devices` API update before the client.
+- The identity adapter supplies a current Better Auth opaque bearer session.
+  Before activation, the gateway must validate that session against the trusted
+  Deadwax API; the former Supabase JWT/JWKS adapter cannot validate it.
+- Gateway configuration requires HTTPS. Rollback clears the URL and selects
+  the API transport, with no Supabase SDK restored in the native app.
+- Retain the canonical inbox, tap routes and historical source infrastructure.
+  Physical-device, TestFlight and live gateway acceptance remain release gates.
+
+The Supabase-specific examples elsewhere in this shared package describe the
+original adapters; they are not instructions to restore native Supabase auth.
+
 Working tree root for this execution:
 `/home/kyle/.t3/worktrees/deadwaxclub/t3code-9ad4ea91`.
 
@@ -105,7 +120,7 @@ Working tree root for this execution:
 - Refactor `DeadWaxClub/Notifications/PushManager.swift`. Preserve
   authorization behavior, `.openCollection`/`.openRecord` tap routing, and
   foreground presentation. Remove `device_name` only from the gateway request;
-  legacy fallback must retain its current Supabase payload during rollback.
+  legacy fallback retains the API device-registration payload during rollback.
 - Keep `DeadWaxClub/App/AppDelegate.swift` as a forwarding adapter.
 - Update `DeadWaxClub/App/AppServices.swift`:
   activate from its signed-in branch; install the two session-invalidation

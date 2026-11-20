@@ -27,7 +27,7 @@ final class PowerSyncManager: ObservableObject {
     let database: PowerSyncDatabaseProtocol
     private let auth: AuthClient
     private let issues: SyncIssueStore
-    private var connector: SupabaseConnector?
+    private var connector: APIConnector?
     private var cancellables = Set<AnyCancellable>()
     private var statusTask: Task<Void, Never>?
     private var pendingCountTask: Task<Void, Never>?
@@ -35,7 +35,7 @@ final class PowerSyncManager: ObservableObject {
     init(authClient: AuthClient, issues: SyncIssueStore) {
         auth = authClient
         self.issues = issues
-        database = PowerSyncDatabase(schema: DatabaseSchema.schema, dbFilename: "deadwaxclub.sqlite")
+        database = PowerSyncDatabase(schema: DatabaseSchema.schema, dbFilename: "deadwaxclub-v2.sqlite")
     }
 
     deinit {
@@ -43,9 +43,25 @@ final class PowerSyncManager: ObservableObject {
         pendingCountTask?.cancel()
     }
 
+    func offlineAccount() async throws -> (owners: Set<UUID>, hasPendingWrites: Bool) {
+        let owners = try await database.getAll(
+            sql: "select id from profiles union select user_id as id from pending_record_creations",
+            parameters: [],
+            mapper: { try $0.getString(name: "id") }
+        )
+        let ids = Set(try owners.map { owner in
+            guard let id = UUID(uuidString: owner) else { throw CocoaError(.fileReadCorruptFile) }
+            return id
+        })
+        let hasPendingWrites = try await database.getCrudBatch() != nil
+        return (ids, hasPendingWrites)
+    }
+
     func startObservingAuth() async {
-        auth.$state.removeDuplicates().sink { [weak self] state in
-            Task { @MainActor [weak self] in await self?.reconcile(state) }
+        Publishers.CombineLatest(auth.$state, auth.$requiresReauthentication)
+            .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
+            .sink { [weak self] state, requiresReauthentication in
+            Task { @MainActor [weak self] in await self?.reconcile(requiresReauthentication ? .signedOut : state) }
         }.store(in: &cancellables)
 
         let database = database
@@ -86,7 +102,9 @@ final class PowerSyncManager: ObservableObject {
     }
 
     private func connectIfNeeded() async {
-        guard connector == nil else { return }
+        guard connector == nil, let owner = auth.currentUserID,
+              await auth.currentAccessToken(for: owner) != nil else { return }
+        guard connector == nil, auth.currentUserID == owner else { return }
         if UserDefaults.standard.bool(forKey: Self.requiresWipeKey) {
             do {
                 try await database.disconnectAndClear()
@@ -98,8 +116,12 @@ final class PowerSyncManager: ObservableObject {
                 return
             }
         }
+        guard AppSecrets.powerSyncURL != nil else {
+            status = .error("PowerSync is not configured.")
+            return
+        }
         status = .connecting
-        let connector = SupabaseConnector(auth: auth, issues: issues)
+        let connector = APIConnector(auth: auth, issues: issues, owner: owner)
         self.connector = connector
         do { try await database.connect(connector: connector) }
         catch {
@@ -107,6 +129,10 @@ final class PowerSyncManager: ObservableObject {
             status = .error(error.localizedDescription)
             Log.error(error, category: "sync.connect")
         }
+    }
+
+    func retryConnection() async {
+        await connectIfNeeded()
     }
 
     private func disconnect() async {
@@ -124,6 +150,7 @@ final class PowerSyncManager: ObservableObject {
         UserDefaults.standard.set(true, forKey: Self.requiresWipeKey)
         do {
             try await database.disconnectAndClear()
+            auth.clearOfflineOwner()
             UserDefaults.standard.removeObject(forKey: Self.requiresWipeKey)
             connector = nil
             status = .idle

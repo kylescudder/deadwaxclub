@@ -72,7 +72,7 @@ final class CoverArtCache: ObservableObject {
         if needsRemote {
             do {
                 let path = primaryCoverPath(for: record)
-                try await uploadToSupabase(bytes: bytes, path: path)
+                try await uploadCover(bytes: bytes, path: path)
                 onStoragePathPersisted(path)
             } catch {
                 Log.error(error, category: "coverart.upload")
@@ -103,13 +103,8 @@ final class CoverArtCache: ObservableObject {
         }
     }
 
-    private func uploadToSupabase(bytes: Data, path: String) async throws {
-        let storage = auth.supabase.storage.from("covers")
-        _ = try await storage.upload(
-            path,
-            data: bytes,
-            options: .init(contentType: "image/jpeg", upsert: true)
-        )
+    private func uploadCover(bytes: Data, path: String) async throws {
+        _ = try await auth.api.request("api/covers/\(path)", method: "PUT", body: bytes, contentType: "image/jpeg")
     }
 
     nonisolated static func localFile(for recordID: String) -> URL {
@@ -117,9 +112,8 @@ final class CoverArtCache: ObservableObject {
     }
 
     nonisolated static func publicStorageURL(path: String) -> URL? {
-        // covers is a public bucket; URL form is /storage/v1/object/public/covers/<path>
-        var components = URLComponents(url: AppSecrets.supabaseURL, resolvingAgainstBaseURL: false)
-        components?.path = "/storage/v1/object/public/covers/\(path)"
+        var components = URLComponents(url: AppSecrets.apiURL, resolvingAgainstBaseURL: false)
+        components?.path = "/api/covers/\(path)"
         return components?.url
     }
 
@@ -159,7 +153,7 @@ final class CoverArtCache: ObservableObject {
         guard let bytes = await fetchBytes(fromURL: source) else { return }
         do {
             let path = recordImagePath(image: image, record: record)
-            try await uploadToSupabase(bytes: bytes, path: path)
+            try await uploadCover(bytes: bytes, path: path)
             onStoragePathPersisted(path)
         } catch {
             Log.error(error, category: "coverart.mirror")
@@ -175,7 +169,7 @@ final class CoverArtCache: ObservableObject {
         imageID: String
     ) async throws -> String {
         let path = "\(catalogPrefix(for: record))/user/\(imageID).jpg"
-        try await uploadToSupabase(bytes: bytes, path: path)
+        try await uploadCover(bytes: bytes, path: path)
         return path
     }
 
