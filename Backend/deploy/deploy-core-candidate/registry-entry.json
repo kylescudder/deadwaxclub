@@ -4,7 +4,7 @@
   "repo": "kylescudder/deadwaxclub",
   "image": "ghcr.io/kylescudder/deadwaxclub-api",
   "image_var": "BACKEND_IMAGE",
-  "service": "api",
+  "service": "deadwax-api",
   "workflow": "release-backend.yml",
   "branch": "main",
   "compose_file": "compose.yaml",

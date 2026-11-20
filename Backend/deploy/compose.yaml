@@ -1,64 +1,12 @@
-# One project per app, attached to Herman's existing PostgreSQL network.
+# One project per app on Herman's existing PostgreSQL network. Service names are
+# app-prefixed because Compose publishes each service name as a DNS alias on
+# every network, including the shared platform-db and ingress networks.
 name: ${BACKEND_PROJECT:?app project name required}
 services:
-  api:
-    image: ${BACKEND_IMAGE:?immutable attested API image required}
-    restart: unless-stopped
-    user: '1000:1000'
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    mem_limit: 256m
-    cpus: 0.5
-    pids_limit: 100
-    env_file: ./secrets/api.env
-    environment:
-      NOTIFICATION_SPOOL: /var/lib/backend/notifications
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=16m
-    volumes:
-      - ./state/notifications:/var/lib/backend/notifications
-    networks:
-      platform-db: {}
-      app-sync:
-        aliases: ['${BACKEND_PROJECT}-api']
-      ingress:
-        aliases: ['${BACKEND_PROJECT}-api']
-  sync:
-    image: ${POWERSYNC_IMAGE:?verified PowerSync image digest required}
-    command: [start, -r, unified]
-    restart: unless-stopped
-    user: '1000:1000'
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    mem_limit: 512m
-    cpus: 1
-    pids_limit: 100
-    env_file: ./secrets/powersync.env
-    environment:
-      POWERSYNC_CONFIG_PATH: /config/service.yaml
-      NODE_OPTIONS: --max-old-space-size=384
-    volumes:
-      - ./powersync:/config:ro
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=16m
-    networks:
-      platform-db: {}
-      app-sync: {}
-      ingress:
-        aliases: ['${BACKEND_PROJECT}-sync']
-    healthcheck:
-      test:
-        [
-          CMD,
-          node,
-          -e,
-          "fetch('http://127.0.0.1:8080/probes/liveness').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-        ]
-      interval: 15s
-      timeout: 5s
-      retries: 3
+  deadwax-api:
+    extends: { file: compose.shared.yaml, service: api }
+  deadwax-sync:
+    extends: { file: compose.shared.yaml, service: sync }
 networks:
   platform-db:
     external: true

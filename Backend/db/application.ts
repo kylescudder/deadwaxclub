@@ -25,6 +25,39 @@ export async function migrateApplication(client: PoolClient) {
       new URL("./" + name, import.meta.url),
     ]),
   ] as [string, URL][];
+  // The legacy Supabase SQL relies on PostgreSQL's default PUBLIC EXECUTE on new
+  // functions (auth.uid(), RLS helpers), as on Deadwax's existing server. Herman's
+  // platform provisioning revokes that default, so restore it only while legacy
+  // files replay. Their explicit revokes still apply, and later functions keep the
+  // platform default.
+  const platformRevokesExecute = (
+    await client.query(
+      "select 1 from pg_default_acl where defaclrole = current_user::text::regrole and defaclnamespace = 0 and defaclobjtype = 'f' and not exists (select 1 from aclexplode(defaclacl) a where a.grantee = 0 and a.privilege_type = 'EXECUTE')",
+    )
+  ).rowCount;
+  if (platformRevokesExecute)
+    await client.query(
+      "alter default privileges grant execute on functions to public",
+    );
+  try {
+    await replayLegacy(client, files);
+  } finally {
+    if (platformRevokesExecute)
+      await client.query(
+        "alter default privileges revoke execute on functions from public",
+      );
+  }
+  await upgradeLegacyPrivileges(client);
+  await client.query(`create or replace function auth.role() returns text language sql stable as $$
+    select case current_setting('role',true)
+      when 'deadwax_api' then 'authenticated'
+      when 'deadwax_anon' then 'anon'
+      when 'deadwax_service' then 'service_role'
+      else coalesce(nullif(current_setting('role',true),'none'),'anon') end
+  $$`);
+}
+
+async function replayLegacy(client: PoolClient, files: [string, URL][]) {
   for (const [name, file] of files) {
     const marker = await client.query(
       "insert into deadwax_migrations.applied(name) values($1) on conflict do nothing",
@@ -40,12 +73,4 @@ export async function migrateApplication(client: PoolClient) {
       );
     }
   }
-  await upgradeLegacyPrivileges(client);
-  await client.query(`create or replace function auth.role() returns text language sql stable as $$
-    select case current_setting('role',true)
-      when 'deadwax_api' then 'authenticated'
-      when 'deadwax_anon' then 'anon'
-      when 'deadwax_service' then 'service_role'
-      else coalesce(nullif(current_setting('role',true),'none'),'anon') end
-  $$`);
 }
