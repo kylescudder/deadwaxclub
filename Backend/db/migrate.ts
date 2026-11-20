@@ -30,6 +30,7 @@ try {
         .map((name) => [name, new URL(name, legacyDirectory)]),
       ['access.sql', new URL('./access.sql', import.meta.url)],
       ['recovery.sql', new URL('./recovery.sql', import.meta.url)],
+      ['device-unregister.sql', new URL('./device-unregister.sql', import.meta.url)],
     ] as const
 
     for (const [name, file] of files) {

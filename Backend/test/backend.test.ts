@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, beforeEach, expect, test } from 'bun:test'
 import { connectDatabase } from '../src/database'
 import { createApplication } from '../src/application'
 import { createAuth } from '../src/auth'
@@ -21,6 +21,7 @@ const auth = createAuth(db, {
   }
 })
 const app = createApplication(auth, pool, origin)
+beforeEach(() => pool.query('truncate public.auth_rate_limit'))
 afterAll(() => pool.end())
 
 function call(path: string, options?: { body?: unknown; token?: string }) {
@@ -91,4 +92,36 @@ test('verified identity retains its UUID in the profile and sync token, and stal
   await pool.query("update public.recovery_lease set snapshot_started_at = now() - interval '11 minutes'")
   expect((await call('/api/sync/upload', { body: { ...change, data: { display_name: 'Blocked' } }, token })).status).toBe(503)
   expect((await pool.query('select display_name from profiles where id = $1', [user.id])).rows[0]).toEqual({ display_name: 'Updated' })
+})
+
+
+test('device unregister is authenticated, owner-scoped and idempotent', async () => {
+  await pool.query("update public.recovery_lease set snapshot_started_at=now(), verified_at=now()")
+  const accounts: { id: string, token: string }[] = []
+  for (let i = 0; i < 2; i++) {
+    const credentials = { email: crypto.randomUUID() + '@example.test', password: 'test-only-password' }
+    const signup = await call('/api/auth/sign-up/email', { body: { ...credentials, name: 'Device test' } })
+    expect(signup.status).toBe(200)
+    const { user } = await signup.json() as { user: { id: string } }
+    expect((await call(verifyLink!)).status).toBeLessThan(400)
+    const signin = await call('/api/auth/sign-in/email', { body: credentials })
+    const { token } = await signin.json() as { token: string }
+    accounts.push({ id: user.id, token })
+  }
+  const apnsToken = crypto.randomUUID().replaceAll('-', '').repeat(2)
+  for (const account of accounts) {
+    expect((await call('/api/devices', { token: account.token, body: {
+      apns_token: apnsToken, device_name: 'Test device', environment: 'sandbox'
+    } })).status).toBe(200)
+  }
+  const unregister = (token: string, deviceToken = apnsToken) => app(new Request(new URL('/api/devices', origin), {
+    method: 'DELETE', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify({ apns_token: deviceToken })
+  }))
+  expect((await unregister('')).status).toBe(401)
+  expect((await unregister(accounts[0]!.token, 'invalid')).status).toBe(422)
+  expect((await unregister(accounts[0]!.token)).status).toBe(200)
+  expect((await unregister(accounts[0]!.token)).status).toBe(200)
+  const remaining = await pool.query('select user_id from public.device_tokens where apns_token=$1', [apnsToken])
+  expect(remaining.rows).toEqual([{ user_id: accounts[1]!.id }])
 })

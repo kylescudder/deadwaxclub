@@ -62,7 +62,14 @@ final class AppServices: ObservableObject {
                 .store(in: &cancellables)
         }
 
-        PushManager.shared.bind(auth: auth)
+        let pushManager = PushManager.shared
+        pushManager.bind(auth: auth)
+        auth.beforeSessionInvalidation = { [weak pushManager] in
+            await pushManager?.deactivate()
+        }
+        auth.afterSessionInvalidationFailure = { [weak pushManager] in
+            await pushManager?.activate()
+        }
         billing.start()
         Task { await sync.startObservingAuth() }
 
@@ -86,9 +93,9 @@ final class AppServices: ObservableObject {
 
         // When the user signs in, start watching their profile and trigger
         // onboarding evaluation. When they sign out, stop watching.
-        auth.$state
-            .removeDuplicates()
-            .sink { [weak self] state in
+        auth.$state.combineLatest(auth.$requiresReauthentication)
+            .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
+            .sink { [weak self] state, _ in
                 guard let self else { return }
                 Task { @MainActor in self.applyAuth(state: state) }
             }
@@ -104,8 +111,10 @@ final class AppServices: ObservableObject {
     }
 
     private func applyAuth(state: AuthClient.State) {
+        guard auth.state == state else { return }
         Log.event("app services applying auth state", category: "app.auth", metadata: ["state": state.loggingDescription])
         guard case let .signedIn(userID, _) = state else {
+            PushManager.shared.sessionEnded()
             onboarding.resetForSignOut()
             billing.resetForSignOut()
             profile.stopWatching()
@@ -121,7 +130,10 @@ final class AppServices: ObservableObject {
         notifications.startWatching(userID: id)
         Task { await billing.syncEntitlements() }
         evaluateOnboarding()
-        Task { await PushManager.shared.registerIfAuthorized() }
+        Task {
+            guard auth.state == state else { return }
+            await PushManager.shared.activate()
+        }
     }
 
     func canCreateNewRecord() async -> Bool {

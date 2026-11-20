@@ -105,6 +105,18 @@ export function createApplication(auth: Auth, pool: Pool, origin: string, spool?
         return Response.json({ accepted: true })
       }
 
+      if (request.method === 'DELETE' && pathname === '/api/devices') {
+        const body = await request.json() as { apns_token?: unknown } | null
+        if (typeof body?.apns_token !== 'string' || !/^[0-9a-f]{32,256}$/.test(body.apns_token)) {
+          return errorResponse('invalid_request', 422)
+        }
+        await asAccount(pool, userId, (client) => client.query(
+          'delete from public.device_tokens where user_id = $1 and apns_token = $2',
+          [userId, body.apns_token]
+        ))
+        return Response.json({ accepted: true })
+      }
+
       if (request.method === 'POST' && pathname === '/api/devices') {
         const body = await request.json() as { apns_token?: string, device_name?: string, environment?: string } | null
         if (!body || typeof body.apns_token !== 'string' || !/^[0-9a-f]{32,256}$/.test(body.apns_token) ||

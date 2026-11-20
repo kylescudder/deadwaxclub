@@ -10,6 +10,8 @@ final class AuthClient: ObservableObject {
     @Published var lastError: String?
     @Published var isPasswordRecovery = false
     @Published private(set) var requiresReauthentication = false
+    var beforeSessionInvalidation: (() async -> Void)?
+    var afterSessionInvalidationFailure: (() async -> Void)?
     let api = APIClient()
     private let sessionStore: any SessionStore
     private let defaults: UserDefaults
@@ -127,21 +129,25 @@ final class AuthClient: ObservableObject {
 
     @discardableResult func signOut() async -> Bool {
         do {
-            if await currentAccessToken() != nil { _ = try await api.json("api/auth/sign-out", values: [:]) }
-            try sessionStore.write(nil)
-            api.token = nil
-            state = .signedOut
-            requiresReauthentication = false
-            defaults.removeObject(forKey: Self.recoveryPendingKey)
-            // The owner binding is removed by PowerSyncManager only after a successful wipe.
-            return true
+            return try await performSessionInvalidation {
+                if await currentAccessToken() != nil { _ = try await api.json("api/auth/sign-out", values: [:]) }
+                try sessionStore.write(nil)
+                api.token = nil
+                state = .signedOut
+                requiresReauthentication = false
+                defaults.removeObject(forKey: Self.recoveryPendingKey)
+                // The owner binding is removed by PowerSyncManager only after a successful wipe.
+                return true
+            }
         } catch { lastError = error.localizedDescription; return false }
     }
     func deleteAccount() async throws {
-        _ = try await api.request("api/account", method: "DELETE")
-        try sessionStore.write(nil)
-        api.token = nil
-        state = .signedOut
+        try await performSessionInvalidation {
+            _ = try await api.request("api/account", method: "DELETE")
+            try sessionStore.write(nil)
+            api.token = nil
+            state = .signedOut
+        }
     }
     func sendPasswordReset(email: String) async -> Bool {
         do {
@@ -152,22 +158,33 @@ final class AuthClient: ObservableObject {
     }
     func updatePassword(newPassword: String) async -> Bool {
         do {
-            guard let resetToken else { throw APIError(code: "invalid_link", message: "Open the password reset link from your email again.") }
-            _ = try await api.json("api/auth/reset-password", values: ["token": resetToken, "newPassword": newPassword], authenticated: false)
-            self.resetToken = nil
-            isPasswordRecovery = false
-            defaults.removeObject(forKey: Self.recoveryPendingKey)
-            try sessionStore.write(nil)
-            api.token = nil
-            requiresReauthentication = true
-            // Keep cached account data and its pending queue for reauthentication.
-            return true
+            return try await performSessionInvalidation {
+                guard let resetToken else { throw APIError(code: "invalid_link", message: "Open the password reset link from your email again.") }
+                _ = try await api.json("api/auth/reset-password", values: ["token": resetToken, "newPassword": newPassword], authenticated: false)
+                self.resetToken = nil
+                isPasswordRecovery = false
+                defaults.removeObject(forKey: Self.recoveryPendingKey)
+                try sessionStore.write(nil)
+                api.token = nil
+                requiresReauthentication = true
+                // Keep cached account data and its pending queue for reauthentication.
+                return true
+            }
         } catch { lastError = error.localizedDescription; return false }
     }
     func cancelPasswordRecovery() {
         resetToken = nil
         isPasswordRecovery = false
         defaults.removeObject(forKey: Self.recoveryPendingKey)
+    }
+
+    func performSessionInvalidation<T>(_ operation: () async throws -> T) async rethrows -> T {
+        await beforeSessionInvalidation?()
+        do { return try await operation() }
+        catch {
+            await afterSessionInvalidationFailure?()
+            throw error
+        }
     }
 
     func handle(callbackURL url: URL) async {
