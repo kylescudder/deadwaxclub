@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Deadwax Club — native iOS 17+ SwiftUI app for tracking owned/wishlist vinyl, plus an Astro marketing site and public list viewer backed by Supabase (Postgres + Auth + Storage + Edge Functions). Offline-first via PowerSync.
+Deadwax Club — native iOS 17+ SwiftUI app for tracking owned/wishlist vinyl, plus an Astro marketing site and public list viewer. The backend is the Bun API in `Backend/` with PostgreSQL and self-hosted PowerSync on Herman; the public list viewer still reads the legacy Supabase RPCs. Offline-first via PowerSync.
 
 ## Common commands
 
@@ -17,16 +17,10 @@ xcodebuild build \                         # CLI sanity build (no signing requir
   -project DeadWaxClub.xcodeproj \
   -scheme DeadWaxClub \
   -destination 'generic/platform=iOS Simulator'
-./setup.sh                                 # idempotent first-run: tools, secrets templates, migrations, xcodegen
+./setup.sh                                 # idempotent first-run: tools, secrets templates, xcodegen
 ```
 
-Supabase (CLI must be `supabase login`'d and `supabase link`'d):
-
-```sh
-supabase db push                                              # apply supabase/migrations/*.sql
-supabase functions deploy notify-inbox                        # APNs fan-out for any notifications row
-supabase functions deploy notify-price-change                 # legacy producer that writes price-alert rows
-```
+Backend (`Backend/`, Bun API + PostgreSQL + self-hosted PowerSync on Herman): see `Backend/deploy/README.md` for checks, migrations and deployment. The historical Supabase migrations are replayed from `Backend/db/legacy/` under their original ledger names; never rename or edit them.
 
 Web:
 
@@ -50,7 +44,7 @@ contract and rollout gates across all application repositories.
 
 - iOS secrets live in `Config/Secrets.xcconfig` (git-ignored, copied from `Config/Secrets.xcconfig.example`). Values are surfaced into Swift via `Info.plist` → `DeadWaxClub/App/AppSecrets.swift`. **xcconfig escaping gotcha**: a literal `//` in a value (e.g. `https://...`) must be written `https:/$()/...` to keep the parser from treating the rest of the line as a comment. Empty strings are treated as "feature disabled" — don't add fatal errors for unset secrets.
 - Web config lives in `Site/public/js/config.js` (git-ignored). Release images generate it with `Site/scripts/write-config.mjs` from the `SITE_SUPABASE_URL` and `SITE_SUPABASE_ANON_KEY` repository variables. The local copy of `config.js` from `config.example.js` is for running the site against your dev Supabase; don't paste real secrets there. The Supabase anon key is intentionally shipped to the browser; RLS + the `get_shared_list*` RPCs gate what's actually exposed.
-- Supabase Edge Function secrets (`APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY`, `APNS_BUNDLE_ID`) are set in the Supabase dashboard, not in any local file. Both `notify-inbox` and `notify-price-change` read the same set. The IAP functions additionally require `APPLE_ROOT_CERTIFICATES_BASE64` (a JSON array of Apple DER root certificates encoded as base64), `APPLE_BUNDLE_ID`, and `APPLE_APPLE_ID` (the numeric App Store ID required for production verification). Never accept decoded JWS payloads as proof of entitlement.
+- Backend secrets (database URLs, Better Auth, Apple/Google sign-in, IAP verification) live in the API's protected `api.env` on Herman; `Backend/deploy/api.env.example` lists them. Push goes through the shared APNs gateway. Never accept decoded JWS payloads as proof of entitlement.
 
 ## Architecture
 
@@ -60,21 +54,21 @@ contract and rollout gates across all application repositories.
 - `AppServices` (`DeadWaxClub/App/AppServices.swift`) is the composition root. It owns `AuthClient`, `PowerSyncManager`, `DiscogsClient`, `CoverArtCache`, and the repositories `RecordsRepository`, `PriceEntriesRepository`, `RecordImagesRepository`, `ProfileRepository`, `ListsRepository`, `CollectionsRepository`, `NotificationsRepository`, plus `OnboardingCoordinator`. It re-broadcasts each child's `objectWillChange` so the whole tree reacts to any sub-publisher.
 - `RootView` switches on `auth.state` (`.unknown` / `.signedOut` / `.signedIn`) and presents onboarding sheets, deep-link record sheets, deep-link Collection sheets (`pendingDeepLinkCollectionID`), and public-list sheets above `MainTabView` (Records / Scan / Lists / Stats / Settings).
 - Auth-gated lifecycle: `AppServices.applyAuth` reacts to sign-in/out — starts `ProfileRepository`, `ListsRepository`, `CollectionsRepository`, and `NotificationsRepository` watchers, kicks onboarding evaluation, registers for push. `PowerSyncManager` reacts independently via `startObservingAuth`.
-- `AppServices.ingestDiscogsImages(recordID:collectionID:sourceURLs:)` is the single save-time entry point for Discogs images. Call it from any save site (`AddRecordView`, `ScanResultSheet`, `RecordDetailView`) instead of writing to `RecordImagesRepository` directly — it persists rows *and* eagerly mirrors bytes into Supabase Storage so the user doesn't have to swipe to that carousel slide for the upload to happen. `mirrorPendingImages(forRecord:)` is the on-appear catch-up for any rows that didn't get mirrored at save time.
+- `AppServices.ingestDiscogsImages(recordID:collectionID:sourceURLs:)` is the single save-time entry point for Discogs images. Call it from any save site (`AddRecordView`, `ScanResultSheet`, `RecordDetailView`) instead of writing to `RecordImagesRepository` directly — it persists rows *and* eagerly mirrors bytes to the API cover store so the user doesn't have to swipe to that carousel slide for the upload to happen. `mirrorPendingImages(forRecord:)` is the on-appear catch-up for any rows that didn't get mirrored at save time.
 
-### Sync (PowerSync ↔ Supabase)
+### Sync (PowerSync ↔ Herman API)
 
-- Local SQLite schema is declared in `DeadWaxClub/Sync/DatabaseSchema.swift`; the same synced tables exist in Postgres via `supabase/migrations/*.sql`, while `localOnly` tables are device-only. **These must stay in lock-step** — adding a synced column means migrating Postgres, updating `DatabaseSchema.swift`, updating `supabase/powersync/sync_rules.yaml`, and adding the table to the `powersync` publication. Prefer `alter publication ... add table` over rebuilding the publication.
-- Sync rules are **edition 3** (`supabase/powersync/sync_rules.yaml`): use `auth.user_id()` (not `request.user_id()`); only single-level subqueries are allowed (`where x in (select … from t where …)`), no nested joins. The composite-PK tables (`collection_members`, `list_members`) synthesise an `id` via `collection_id || ':' || user_id` so PowerSync can key rows locally.
+- Local SQLite schema is declared in `DeadWaxClub/Sync/DatabaseSchema.swift`; the same synced tables exist in Postgres via `Backend/db/legacy/*.sql` and the `Backend/db/` adapters, while `localOnly` tables are device-only. **These must stay in lock-step** — adding a synced column means migrating Postgres, updating `DatabaseSchema.swift`, updating `Backend/deploy/powersync/sync-config.yaml`, and adding the table to the `powersync` publication. Prefer `alter publication ... add table` over rebuilding the publication.
+- Sync rules are **edition 3** (`Backend/deploy/powersync/sync-config.yaml`): use `auth.user_id()` (not `request.user_id()`); only single-level subqueries are allowed (`where x in (select … from t where …)`), no nested joins. The composite-PK tables (`collection_members`, `list_members`) synthesise an `id` via `collection_id || ':' || user_id` so PowerSync can key rows locally.
 - All repositories read via `database.watch(sql:...)` — UI is reactive on local SQLite, writes go through PowerSync which streams to Postgres in the background. Don't query Postgres directly from the app; write to the local DB and let PowerSync replicate.
 - **PowerSync exposes synced tables as views** so `INSERT … ON CONFLICT … DO UPDATE` is rejected. The repository pattern is `insert or ignore (...) values (...)` followed by an unconditional `update ... where id = ?` — both branches end with the row in the desired state. Repeat that shape in any new repository code.
-- `SupabaseConnector` (`DeadWaxClub/Sync/SupabaseConnector.swift`) implements `PowerSyncBackendConnectorProtocol`. PowerSync keeps the row's primary key in `entry.id` rather than inside `opData`; the connector merges `payload["id"] = entry.id` before each `.put` upsert — without that, PostgREST sends an INSERT with a null id and Postgres rejects it (FK or RLS, surfaced as a misleading 42501).
+- `APIConnector` (`DeadWaxClub/Sync/APIConnector.swift`) implements `PowerSyncBackendConnectorProtocol`. PowerSync keeps the row's primary key in `entry.id` rather than inside `opData`; the connector merges `payload["id"] = entry.id` before each `.put` upsert — without that, PostgREST sends an INSERT with a null id and Postgres rejects it (FK or RLS, surfaced as a misleading 42501).
 - Record creation is enforced by `record_creation_quotas`, the durable `record_creation_events` ledger, and `records_enforce_creation_limit` (`0027` + `0028`), not by a mutable records count. The trigger derives immutable `created_by` from `auth.uid()`, serializes creators, and counts creations for life across soft/hard deletion. Every profile receives a materialized zero quota row. Quotas and verified entitlements are read-only PowerSync snapshots; missing quota means initial sync is incomplete, not zero. Offline creates reserve allowance in local-only `pending_record_creations` in the same SQLite transaction as the record.
-- `SupabaseConnector` uses an explicit writable-table allowlist. Record PUTs use plain INSERT because their BEFORE INSERT trigger has lifetime side effects; a 23505 replay is acknowledged only after confirming the same record ID exists remotely. Known permanent validation/constraint failures are reported and acknowledged, while network, authentication, RLS, availability, and unexpected failures remain queued.
+- `APIConnector` uses an explicit writable-table allowlist. Record PUTs use plain INSERT because their BEFORE INSERT trigger has lifetime side effects; a 23505 replay is acknowledged only after confirming the same record ID exists remotely. Known permanent validation/constraint failures are reported and acknowledged, while network, authentication, RLS, availability, and unexpected failures remain queued.
 - `PowerSyncManager.disconnect()` (used on transient `.signedOut` from session refreshes) does *not* clear local state. `wipe()` calls `disconnectAndClear()` and is reserved for explicit user sign-out from Settings — calling it on every transient state would wipe the local DB and the pending CRUD upload queue. The `.unknown` auth state during bootstrap intentionally leaves PowerSync alone for the same reason.
 - All deletions are soft (`deleted_at` timestamp) — required so PowerSync propagates tombstones reliably across devices. Every `select` filters `where deleted_at is null`.
 - All UUIDs are lowercased at every callsite (`UUID().uuidString.lowercased()`, `currentUserID?.uuidString.lowercased()`). SQLite's `=` is case-sensitive while Postgres normalises to lowercase, so mixing cases produces "row exists in Postgres but not SQLite" desyncs. Match the convention.
-- Cover art lookup order on display: local Caches file → Supabase Storage public URL (`covers` bucket) → Discogs URL → SF Symbol placeholder. First display of any record both writes bytes to disk *and* uploads to Supabase Storage so other devices fetch from the user's bucket instead of Discogs.
+- Cover art lookup order on display: local Caches file → API cover URL (`/api/covers/`) → Discogs URL → SF Symbol placeholder. First display of any record both writes bytes to disk *and* uploads to the API so other devices fetch from the user's bucket instead of Discogs.
 
 ### Collections (records visibility model)
 
@@ -92,7 +86,7 @@ contract and rollout gates across all application repositories.
 
 - Records have an arbitrary number of images via `record_images` (kind ∈ `discogs` / `user_upload`, ordered by `position`). The primary image (position 0) is also kept on `records.cover_art_storage_path` for backwards-compat with Spotlight, the records list, and any consumer of `CoverArtCache.displayURL(for:)`.
 - `record_images.collection_id` is denormalised so PowerSync edition-3 rules can gate visibility with one subquery (the `member_record_images` stream). RLS uses the same `is_collection_member` / `is_collection_writer` helpers.
-- Bytes live in the same `covers` Supabase Storage bucket as the primary cover; `CoverArtCache.mirrorIfNeeded(image:)` handles Discogs → Storage mirroring per row.
+- Bytes live in the same API cover store (`cover_objects`) as the primary cover; `CoverArtCache.mirrorIfNeeded(image:)` handles Discogs → Storage mirroring per row.
 
 ### List sharing
 
@@ -113,22 +107,17 @@ contract and rollout gates across all application repositories.
 
 ## Strict concurrency
 
-`SWIFT_STRICT_CONCURRENCY: complete` is set in `project.yml`. Most singletons are `@MainActor` (services, repositories, view models). When adding new types that cross actor boundaries, expect the compiler to demand `Sendable` conformance — don't paper over with `@unchecked Sendable` unless you've actually reasoned about it. `SupabaseConnector` is `@unchecked Sendable` because PowerSync calls it off-main and the Supabase client it holds is itself thread-safe; new connector-shaped types should justify the same way.
+`SWIFT_STRICT_CONCURRENCY: complete` is set in `project.yml`. Most singletons are `@MainActor` (services, repositories, view models). When adding new types that cross actor boundaries, expect the compiler to demand `Sendable` conformance — don't paper over with `@unchecked Sendable` unless you've actually reasoned about it. Connector types called by PowerSync off-main must justify any `@unchecked Sendable` with a concrete thread-safety argument.
 
 ## SDK drift
 
 The recent commit history (`grep "API drift"` in git log) shows ongoing chase against minor-version SDK renames. Areas most prone to breakage when bumping packages:
 
 - **PowerSync Swift SDK** — `DeadWaxClub/Sync/*` and the repos use names matching the documented 1.x API. The connector adopts `PowerSyncBackendConnectorProtocol` (the post-deprecation name); callbacks like `fetchCredentials` and `uploadData` keep the protocol's signatures. Check `nonisolated` annotations on cover helpers when something fails to build.
-- **`supabase-swift` 2.x** — OAuth helpers and `signInWithIdToken` arg order/labels move between minors. `DeadWaxClub/Auth/AuthClient.swift` is the focal point.
 - **AppIntents** — `DisplayRepresentation.Image(url:)` initializer and parameter syntax shift across iOS 17.x.
 
 When something fails to build after a package bump, investigate the SDK changelog before "fixing" call sites — the renames usually have a single canonical answer rather than each call site needing bespoke treatment.
 
-## Folder casing
-
-The Supabase folder is `supabase/` (lowercase) on disk and the README and `setup.sh` use that casing. macOS is case-insensitive by default so `Supabase/` works locally too — the `.gitignore` keeps both forms for safety — but always write `supabase/migrations/...` in new code, scripts, or docs to stay portable to case-sensitive filesystems.
-
 ## What not to commit
 
-`Config/Secrets.xcconfig`, `Site/public/js/config.js`, `DeadWaxClub.xcodeproj/`, `supabase/.temp/`, `supabase/.branches/`, `.netlify/`. All gitignored already — don't add overrides.
+`Config/Secrets.xcconfig`, `Site/public/js/config.js`, `DeadWaxClub.xcodeproj/`, `.netlify/`. All gitignored already — don't add overrides.

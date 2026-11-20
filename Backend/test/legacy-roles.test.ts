@@ -54,7 +54,7 @@ integration(
         await client.query(
           "create schema deadwax_migrations; create table deadwax_migrations.applied(name text primary key)",
         );
-        const legacy = new URL("../../supabase/migrations/", import.meta.url);
+        const legacy = new URL("../db/legacy/", import.meta.url);
         const files = [
           ["identity.sql", new URL("../db/identity.sql", import.meta.url)],
           ...(await readdir(legacy))
