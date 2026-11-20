@@ -1,24 +1,25 @@
-import AuthenticationServices
 import CryptoKit
 import Foundation
 
-/// Generates and SHA-256 hashes the nonce required by Sign in with Apple
-/// when exchanging the identity token with the Deadwax API.
 enum AppleNonce {
     static func random(length: Int = 32) -> String {
-        let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._")
+        precondition(length > 0)
+        let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
         var result = ""
-        var random: UInt8 = 0
-        while result.count < length {
-            _ = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
-            if random < charset.count { result.append(charset[Int(random)]) }
+        var remaining = length
+        while remaining > 0 {
+            var random: UInt8 = 0
+            let status = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
+            if status == errSecSuccess, random < charset.count {
+                result.append(charset[Int(random)])
+                remaining -= 1
+            }
         }
         return result
     }
 
     static func sha256(_ input: String) -> String {
-        SHA256.hash(data: Data(input.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
+        let digest = SHA256.hash(data: Data(input.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }

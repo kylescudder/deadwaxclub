@@ -6,10 +6,13 @@ on:
     branches: [main]
     paths:
       - 'DeadWaxClub/**'
+      - 'DeadWaxClubTests/**'
       - 'DeadWaxClubWidgets/**'
       - 'project.yml'
       - 'Config/Secrets.xcconfig.example'
       - 'Scripts/ci/**'
+      - 'Scripts/check-shared-auth.sh'
+      - 'Scripts/shared-auth.sha256'
       - '.github/workflows/ios-build.yml'
 
 permissions:
@@ -30,6 +33,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Verify shared auth checksums
+        run: sh Scripts/check-shared-auth.sh
 
       - name: Show Xcode version
         run: xcodebuild -version

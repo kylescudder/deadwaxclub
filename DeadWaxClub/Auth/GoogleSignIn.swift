@@ -2,9 +2,7 @@ import AuthenticationServices
 import UIKit
 
 enum GoogleSignIn {
-    /// Presents an ASWebAuthenticationSession that opens the Supabase OAuth URL
-    /// and waits for the deadwaxclub:// callback. Returns the callback URL so
-    /// supabase-swift can extract the session from it.
+    /// Exchanges the app-specific OAuth proof-bound callback.
     @MainActor
     static func start(authURL: URL, callbackScheme: String) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in

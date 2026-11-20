@@ -1,4 +1,5 @@
 import type { Pool } from 'pg'
+import { authApp } from './auth-app'
 
 const escape = (value: string) =>
   value.replace(
@@ -24,11 +25,11 @@ export function renderEmail(
     throw new Error('Invalid email link')
   const title =
     kind === 'verify'
-      ? 'Confirm your Deadwax Club account'
-      : 'Reset your Deadwax Club password'
+      ? `Confirm your ${authApp.name} account`
+      : `Reset your ${authApp.name} password`
   return {
     subject: title,
-    htmlContent: `<table role="presentation" style="width:100%;font-family:Arial,sans-serif"><tr><td style="padding:32px;text-align:center"><h1>${title}</h1><p><a href="${escape(link.href)}">${title}</a></p><p>If you did not request this, ignore this email.</p><p>Deadwax Club</p></td></tr></table>`
+    htmlContent: `<table role="presentation" style="width:100%;font-family:Arial,sans-serif"><tr><td style="padding:32px;text-align:center"><h1>${title}</h1><p><a href="${escape(link.href)}">${title}</a></p><p>If you did not request this, ignore this email.</p><p>${escape(authApp.emailFooter)}</p></td></tr></table>`
   }
 }
 
@@ -46,9 +47,9 @@ export function createEmailSender(
     try {
       await client.query('begin')
       // One lock per app serializes its budget and prevents parallel overspend.
-      await client.query(
-        "select pg_advisory_xact_lock(hashtext('deadwax-email-budget'))"
-      )
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+        authApp.emailBudgetKey
+      ])
       const limits = [
         { key: 'day', seconds: 86400, max: settings.dailyLimit },
         { key: recipientKey + ':hour', seconds: 3600, max: 5 },
@@ -75,7 +76,7 @@ export function createEmailSender(
           'content-type': 'application/json'
         },
         body: JSON.stringify({
-          sender: { email: settings.from, name: 'Deadwax Club' },
+          sender: { email: settings.from, name: authApp.name },
           to: [{ email }],
           ...rendered
         }),

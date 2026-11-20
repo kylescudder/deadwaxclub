@@ -1,3 +1,5 @@
+import { isPublicAuthPath } from './auth-routes'
+import { NativeAuthError } from './auth-error'
 import type { Pool, PoolClient } from 'pg'
 import type { Auth } from './auth'
 import { UploadError, uploadChange } from './upload'
@@ -7,11 +9,6 @@ import { mirrorEntitlement } from './iap'
 import { nativeOAuth } from './native-oauth'
 import type { NotificationSpool } from './notification-spool'
 
-const authPaths = new Set([
-  'sign-in/email', 'sign-up/email', 'sign-in/social', 'sign-out', 'get-session',
-  'verify-email', 'send-verification-email', 'request-password-reset',
-  'reset-password', 'change-password', 'token', 'callback/google', 'callback/apple'
-])
 
 async function asAccount<T>(pool: Pool, userId: string | null, work: (client: PoolClient) => Promise<T>) {
   const client = await pool.connect()
@@ -50,7 +47,7 @@ export function createApplication(auth: Auth, pool: Pool, origin: string, spool?
 
       if (pathname.startsWith('/api/auth/')) {
         const route = pathname.slice('/api/auth/'.length)
-        if (authPaths.has(route) || /^reset-password\/[A-Za-z0-9_-]+$/.test(route)) {
+        if (isPublicAuthPath(route)) {
           return auth.handler(request)
         }
         return errorResponse('not_found', 404)
@@ -157,6 +154,7 @@ export function createApplication(auth: Auth, pool: Pool, origin: string, spool?
 
       return errorResponse('not_found', 404)
     } catch (error) {
+      if (error instanceof NativeAuthError) return errorResponse(error.code, error.status)
       if (error instanceof UploadError) return errorResponse(error.code, error.status)
       if (error instanceof AppleVerificationError) return errorResponse('apple_verification_failed', 422)
       if (error instanceof SyntaxError) return errorResponse('invalid_request', 400)

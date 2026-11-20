@@ -9,14 +9,22 @@ struct APIError: Error, Decodable, LocalizedError, Sendable {
 
 @MainActor
 final class APIClient {
+    private let session: URLSession
+    private let baseURL: URL
+    private let configurationError: String?
+    init(session: URLSession = .shared, baseURL: URL = AppSecrets.apiURL, configurationError: String? = AppSecrets.apiConfigurationError) {
+        self.session = session
+        self.baseURL = baseURL
+        self.configurationError = configurationError
+    }
     var token: String?
     var onUnauthorized: (() -> Void)?
 
     func request(_ path: String, method: String = "GET", body: Data? = nil, authenticated: Bool = true, contentType: String = "application/json", expectedToken: String? = nil) async throws -> Data {
-        guard AppSecrets.apiConfigurationError == nil else {
+        guard configurationError == nil else {
             throw APIError(code: "configuration", message: "Auth isn't configured for this build. Please install the latest build.")
         }
-        var request = URLRequest(url: AppSecrets.apiURL.appendingPathComponent(path))
+        var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = method
         request.timeoutInterval = 30
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
@@ -27,7 +35,7 @@ final class APIClient {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = body
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard (200..<300).contains(http.statusCode) else {
             if http.statusCode == 401, authenticated,
@@ -39,11 +47,6 @@ final class APIClient {
                 ?? APIError(code: http.statusCode == 401 ? "sign_in_required" : "invalid_request", message: "The request could not be completed.")
         }
         return data
-    }
-
-    func library<T: Decodable>(_ action: String, _ values: [String: String] = [:]) async throws -> T {
-        let data = try await json("api/library/\(action)", values: values)
-        return try JSONDecoder().decode(T.self, from: data)
     }
 
     func json(_ path: String, method: String = "POST", values: [String: Any], authenticated: Bool = true, expectedToken: String? = nil) async throws -> Data {
@@ -86,6 +89,6 @@ enum SessionKeychain {
         guard SecItemAdd(query as CFDictionary, nil) == errSecSuccess else { throw URLError(.cannotWriteToFile) }
     }
     private static var base: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.deadwaxclub.app.auth", kSecAttrAccount as String: "native-session"]
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: AuthAppConfiguration.keychainService, kSecAttrAccount as String: "native-session"]
     }
 }

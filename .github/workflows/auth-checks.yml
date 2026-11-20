@@ -1,0 +1,58 @@
+name: Shared auth checks
+on:
+  pull_request:
+    paths:
+      - 'Backend/**'
+      - '*/Auth/**'
+      - '*Tests/SharedAuthClientTests.swift'
+      - 'Scripts/*auth*'
+      - '.github/workflows/auth-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  auth:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_PASSWORD: auth-ci-only
+          POSTGRES_DB: auth_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:auth-ci-only@localhost:5432/auth_test
+      TEST_DATABASE_URL: postgresql://postgres:auth-ci-only@localhost:5432/auth_test
+      HUSKY: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Verify shared auth checksums
+        run: sh Scripts/check-shared-auth.sh
+      - name: Install backend
+        working-directory: Backend
+        run: bun install --frozen-lockfile
+      - name: Migrate disposable auth database
+        working-directory: Backend
+        run: |
+          if [ -f db/roles.sql ]; then
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/roles.sql
+            bun db/migrate.ts
+          else
+            bun scripts/migrate.ts
+          fi
+      - name: Typecheck
+        working-directory: Backend
+        run: bunx --no-install tsc --noEmit
+      - name: Verify auth contracts
+        working-directory: Backend
+        run: bun test test/shared-auth.test.ts
+      - name: Build backend
+        working-directory: Backend
+        run: bun build src/index.ts --target=bun --outdir=dist --packages=external

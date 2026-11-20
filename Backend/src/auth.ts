@@ -3,7 +3,8 @@ import { drizzleAdapter } from '@better-auth/drizzle-adapter'
 import { APIError, createAuthMiddleware } from 'better-auth/api'
 import { bearer, jwt } from 'better-auth/plugins'
 import type { Database } from './database'
-import * as schema from './schema'
+import * as schema from './auth-schema'
+import { authApp } from './auth-app'
 
 export type AuthSettings = {
   baseURL: string
@@ -24,11 +25,11 @@ export type AuthSettings = {
 
 export function createAuth(db: Database, settings: AuthSettings) {
   return betterAuth({
-    appName: 'Deadwax Club',
+    appName: authApp.name,
     baseURL: settings.baseURL,
     basePath: '/api/auth',
     secret: settings.secret,
-    trustedOrigins: [settings.baseURL, 'deadwaxclub://auth-callback'],
+    trustedOrigins: [settings.baseURL, authApp.callbackURL],
     logger: { disabled: true },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
@@ -51,7 +52,7 @@ export function createAuth(db: Database, settings: AuthSettings) {
             throw new APIError('BAD_REQUEST', { message: 'Invalid redirect.' })
           const parsed = new URL(target, settings.baseURL)
           const native =
-            parsed.protocol === 'deadwaxclub:' &&
+            parsed.protocol === new URL(authApp.callbackURL).protocol &&
             parsed.host === 'auth-callback' &&
             ['', '/'].includes(parsed.pathname) &&
             !parsed.username &&
@@ -87,7 +88,7 @@ export function createAuth(db: Database, settings: AuthSettings) {
     }),
     advanced: {
       database: { generateId: () => crypto.randomUUID() },
-      cookiePrefix: 'deadwaxclub-auth',
+      cookiePrefix: authApp.cookiePrefix,
       useSecureCookies: settings.baseURL.startsWith('https://'),
       ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] }
     },
