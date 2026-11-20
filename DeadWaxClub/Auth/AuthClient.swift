@@ -12,7 +12,7 @@ final class AuthClient: ObservableObject {
     @Published private(set) var requiresReauthentication = false
     var beforeSessionInvalidation: (() async -> Void)?
     var afterSessionInvalidationFailure: (() async -> Void)?
-    let api = APIClient()
+    let api: APIClient
     private let sessionStore: any SessionStore
     private let defaults: UserDefaults
     private var bindingValidated = false
@@ -25,7 +25,8 @@ final class AuthClient: ObservableObject {
     private struct SavedSession: Codable { let token: String; let user: User }
     private struct AuthResponse: Decodable { let token: String?; let user: User? }
     private struct SessionResponse: Decodable { let user: User }
-    init(sessionStore: any SessionStore = KeychainSessionStore(), defaults: UserDefaults = .standard) {
+    init(sessionStore: any SessionStore = KeychainSessionStore(), defaults: UserDefaults = .standard, api: APIClient = APIClient()) {
+        self.api = api
         self.sessionStore = sessionStore
         self.defaults = defaults
         api.onUnauthorized = { [weak self] in self?.requiresReauthentication = true }
@@ -58,7 +59,7 @@ final class AuthClient: ObservableObject {
             guard owners.count <= 1, !owners.isEmpty || !account.hasPendingWrites else {
                 throw APIError(code: "owner_mismatch", message: "The original account for the offline changes could not be verified.")
             }
-            if let owner = owners.first { defaults.set(owner.lowerUUID, forKey: Self.ownerKey) }
+            if let owner = owners.first { defaults.set(owner.uuidString.lowercased(), forKey: Self.ownerKey) }
             bindingValidated = true
             if let stored {
                 try adopt(stored)
@@ -70,6 +71,7 @@ final class AuthClient: ObservableObject {
             }
         } catch {
             lastError = error.localizedDescription
+            state = AuthAppConfiguration.bootstrapFailureState
         }
     }
 
@@ -130,7 +132,9 @@ final class AuthClient: ObservableObject {
     @discardableResult func signOut() async -> Bool {
         do {
             return try await performSessionInvalidation {
-                if await currentAccessToken() != nil { _ = try await api.json("api/auth/sign-out", values: [:]) }
+                // Revoke the stored session even during password recovery, where
+                // currentAccessToken() withholds it from normal authenticated work.
+                if api.token != nil, !requiresReauthentication { _ = try await api.json("api/auth/sign-out", values: [:]) }
                 try sessionStore.write(nil)
                 api.token = nil
                 state = .signedOut
@@ -151,7 +155,7 @@ final class AuthClient: ObservableObject {
     }
     func sendPasswordReset(email: String) async -> Bool {
         do {
-            _ = try await api.json("api/auth/request-password-reset", values: ["email": email, "redirectTo": "deadwaxclub://auth-callback?type=recovery"], authenticated: false)
+            _ = try await api.json("api/auth/request-password-reset", values: ["email": email, "redirectTo": "\(AuthAppConfiguration.callbackScheme)://auth-callback?type=recovery"], authenticated: false)
             defaults.set(Date().addingTimeInterval(3600), forKey: Self.recoveryPendingKey)
             return true
         } catch { lastError = error.localizedDescription; return false }
@@ -188,7 +192,7 @@ final class AuthClient: ObservableObject {
     }
 
     func handle(callbackURL url: URL) async {
-        guard url.scheme == "deadwaxclub", url.host == "auth-callback" else { return }
+        guard url.scheme == AuthAppConfiguration.callbackScheme, url.host == "auth-callback" else { return }
         let now = Date()
         if let last = lastHandledCallback, last.url == url.absoluteString, now.timeIntervalSince(last.at) < 5 { return }
         lastHandledCallback = (url.absoluteString, now)
@@ -207,7 +211,7 @@ final class AuthClient: ObservableObject {
             let verifier = AppleNonce.random(length: 64)
             let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
             let url = AppSecrets.apiURL.appendingPathComponent("api/native/google").appending(queryItems: [URLQueryItem(name: "challenge", value: challenge)])
-            let callback = try await GoogleSignIn.start(authURL: url, callbackScheme: "deadwaxclub")
+            let callback = try await GoogleSignIn.start(authURL: url, callbackScheme: AuthAppConfiguration.callbackScheme)
             guard let code = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "code" })?.value else { throw URLError(.badServerResponse) }
             let data = try await api.json("api/native/exchange", values: ["code": code, "verifier": verifier], authenticated: false)
             struct Exchange: Decodable { let token: String }
@@ -232,7 +236,7 @@ final class AuthClient: ObservableObject {
                   let data = credential.identityToken, let token = String(data: data, encoding: .utf8), let nonce = pendingAppleNonce else { return }
             try await authenticate("api/auth/sign-in/social", values: ["provider": "apple", "idToken": ["token": token, "nonce": nonce]])
             if let name = credential.fullName?.givenName, !name.isEmpty {
-                _ = try? await api.json("api/library/set_initial_display_name", values: ["name": name])
+                _ = try? await api.json(AuthAppConfiguration.initialDisplayNamePath, values: ["name": name])
             }
         } catch { lastError = error.localizedDescription; Log.error(error, category: "auth.apple") }
     }
