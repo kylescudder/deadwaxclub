@@ -17,7 +17,7 @@ async function asAccount<T>(pool: Pool, userId: string | null, work: (client: Po
   const client = await pool.connect()
   try {
     await client.query('begin')
-    await client.query(userId ? 'set local role authenticated' : 'set local role anon')
+    await client.query(userId ? 'set local role deadwax_api' : 'set local role deadwax_anon')
     if (userId) await client.query("select set_config('deadwax.user_id', $1, true)", [userId])
     const result = await work(client)
     await client.query('commit')

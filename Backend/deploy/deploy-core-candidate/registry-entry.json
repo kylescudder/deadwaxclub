@@ -1,0 +1,17 @@
+{
+  "name": "deadwax-api",
+  "title": "Deadwax API",
+  "repo": "kylescudder/deadwaxclub",
+  "image": "ghcr.io/kylescudder/deadwaxclub-api",
+  "image_var": "BACKEND_IMAGE",
+  "service": "deadwax-api",
+  "workflow": "release-backend.yml",
+  "branch": "main",
+  "compose_file": "compose.yaml",
+  "app_dir": "deadwax-api",
+  "enabled": false,
+  "installed_hooks": true,
+  "bind_source_digest": true,
+  "require_host": true,
+  "backups": true
+}
