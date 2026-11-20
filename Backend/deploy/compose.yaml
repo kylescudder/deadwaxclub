@@ -1,42 +1,70 @@
-# Deadwax's isolated test stack uses a dedicated database and ingress network.
+# One project per app, attached to Herman's existing PostgreSQL network.
+name: ${BACKEND_PROJECT:?app project name required}
 services:
-  deadwax-api:
-    image: ${DEADWAX_API_IMAGE:?immutable API digest required}
+  api:
+    image: ${BACKEND_IMAGE:?immutable attested API image required}
+    restart: unless-stopped
     user: '1000:1000'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 100
     env_file: ./secrets/api.env
     environment:
-      NOTIFICATION_SPOOL: /var/lib/deadwax/notifications
+      NOTIFICATION_SPOOL: /var/lib/backend/notifications
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    volumes:
+      - ./state/notifications:/var/lib/backend/notifications
+    networks:
+      platform-db: {}
+      app-sync:
+        aliases: ['${BACKEND_PROJECT}-api']
+      ingress:
+        aliases: ['${BACKEND_PROJECT}-api']
+  sync:
+    image: ${POWERSYNC_IMAGE:?verified PowerSync image digest required}
+    command: [start, -r, unified]
+    restart: unless-stopped
+    user: '1000:1000'
     read_only: true
     cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    restart: unless-stopped
-    mem_limit: 256m
-    volumes:
-      - ./state/notifications:/var/lib/deadwax/notifications
-    networks: [database, ingress, sync]
-  deadwax-sync:
-    image: ${DEADWAX_SYNC_IMAGE:?verified PowerSync digest required}
-    command: [start, -r, unified]
-    user: '1000:1000'
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 100
     env_file: ./secrets/powersync.env
     environment:
-      POWERSYNC_CONFIG_PATH: /config/powersync.yaml
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    restart: unless-stopped
-    mem_limit: 512m
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      NODE_OPTIONS: --max-old-space-size=384
     volumes:
-      - ./powersync.yaml:/config/powersync.yaml:ro
-      - ./sync_rules.yaml:/config/sync_rules.yaml:ro
-    networks: [database, ingress, sync]
-
+      - ./powersync:/config:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    networks:
+      platform-db: {}
+      app-sync: {}
+      ingress:
+        aliases: ['${BACKEND_PROJECT}-sync']
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8080/probes/liveness').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 networks:
-  database:
+  platform-db:
     external: true
-    name: ${DEADWAX_DATABASE_NETWORK:?dedicated database network required}
+    name: platform-db
+  app-sync:
+    internal: true
   ingress:
     external: true
-    name: ${DEADWAX_INGRESS_NETWORK:?reviewed tunnel network required}
-  sync:
-    internal: true
+    name: ${BACKEND_INGRESS_NETWORK:?reviewed tunnel network required}

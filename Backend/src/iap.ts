@@ -26,7 +26,7 @@ export async function mirrorEntitlement(
   const client = await pool.connect()
   try {
     await client.query('begin')
-    await client.query('set local role service_role')
+    await client.query('set local role deadwax_service')
     const { rows } = await client.query<{ active: boolean }>(
       `select coalesce((entitlement).status = 'active'
           and (entitlement).expires_at > now() and (entitlement).revoked_at is null, false) as active

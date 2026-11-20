@@ -11,7 +11,7 @@ storage:
   sslmode: disable
 port: 8080
 sync_config:
-  path: /config/sync_rules.yaml
+  path: sync-config.yaml
 client_auth:
   jwks_uri: !env PS_JWKS_URL
   audience: [!env PS_JWT_AUDIENCE]
