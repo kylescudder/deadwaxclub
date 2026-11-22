@@ -126,7 +126,6 @@ jobs:
   # waits for the host to report it deployed. The host verifies the attestation,
   # backs up the database, runs owner migrations and accepts the container itself,
   # so the webhook secret can only trigger a release this workflow built from main.
-  # Deployment does not import production data or waive native/restore acceptance.
   deploy:
     needs: publish
     runs-on: ubuntu-24.04

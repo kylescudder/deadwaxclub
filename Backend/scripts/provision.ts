@@ -13,7 +13,7 @@ async function provisionRolesBody(
   ].filter(Boolean) as string[]
   for (const role of roles) {
     identifier(role)
-    if (['anon', 'authenticated', 'service_role', 'postgres'].includes(role))
+    if (role === 'postgres')
       throw new Error('Use app-scoped roles')
     const existing = (
       await client.query(
@@ -42,18 +42,6 @@ async function provisionRolesBody(
       )
         throw new Error(
           'Runtime must be LOGIN NOINHERIT and request/recovery roles must be NOLOGIN'
-        )
-    }
-  }
-  if (config.anonymousRole && config.serviceRole) {
-    for (const legacy of ['anon', 'authenticated', 'service_role']) {
-      const member = await client.query(
-        'select 1 from pg_auth_members m join pg_roles parent on parent.oid=m.roleid join pg_roles child on child.oid=m.member where parent.rolname=$1 and child.rolname=$2',
-        [legacy, config.runtimeRole]
-      )
-      if (member.rowCount)
-        await client.query(
-          `revoke ${identifier(legacy)} from ${identifier(config.runtimeRole)}`
         )
     }
   }
@@ -150,7 +138,7 @@ async function provisionSyncBody(client: PoolClient, config: DeploymentConfig) {
     `grant connect on database ${identifier(config.database)} to ${role}`
   )
   await client.query(`grant usage on schema public to ${role}`)
-  for (const schema of ['public', 'auth']) {
+  for (const schema of ['public', 'identity']) {
     if (
       (
         await client.query('select 1 from pg_namespace where nspname=$1', [

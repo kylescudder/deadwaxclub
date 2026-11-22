@@ -108,7 +108,7 @@ export function createAuth(db: Database, settings: AuthSettings) {
       password: {
         hash: (password) =>
           Bun.password.hash(password, { algorithm: 'argon2id' }),
-        // Bun detects the bcrypt format used by imported Supabase accounts.
+        // Bun.password.verify recognises both argon2id and bcrypt hashes.
         verify: ({ hash, password }) => Bun.password.verify(password, hash)
       },
       sendResetPassword: ({ user, url }) =>

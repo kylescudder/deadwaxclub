@@ -23,7 +23,8 @@ services:
       app-sync: {}
       ingress: {}
   sync:
-    image: ${POWERSYNC_IMAGE:?verified PowerSync image digest required}
+    # Pinned here so a Backend release ships the PowerSync version with the API.
+    image: journeyapps/powersync-service@sha256:d044b6c685a1076722cf47ca487adbe5ab758ee778707eca26f2169695f1da64
     command: [start, -r, unified]
     restart: unless-stopped
     user: '1000:1000'

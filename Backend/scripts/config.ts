@@ -59,7 +59,7 @@ export async function deploymentConfig(): Promise<DeploymentConfig> {
   if (
     new Set(roles).size !== roles.length ||
     roles.some((role) =>
-      ['anon', 'authenticated', 'service_role', 'postgres'].includes(role!)
+      role === 'postgres'
     )
   )
     throw new Error('Deployment requires distinct app-scoped roles')

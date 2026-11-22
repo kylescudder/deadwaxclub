@@ -10,7 +10,7 @@ export async function migrateDeployment(
   migrateApplication: (client: PoolClient) => Promise<void>
 ) {
   const config = await deploymentConfig()
-  // Drizzle's existing journal is retained. Application SQL history is never rewritten.
+  // Better Auth tables (drizzle/), then the app's domain migrations, then recovery fencing.
   await migrate(db, {
     migrationsFolder: new URL('../drizzle', import.meta.url).pathname
   })
