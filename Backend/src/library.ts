@@ -12,7 +12,7 @@ const calls = {
   },
   set_initial_display_name: {
     keys: ['name'],
-    sql: "update public.profiles set display_name = $1 where id = auth.uid() and coalesce(trim(display_name), '') = ''"
+    sql: "update public.profiles set display_name = $1 where id = identity.user_id() and coalesce(trim(display_name), '') = ''"
   },
   invite_to_collection: {
     keys: ['p_collection_id', 'p_email', 'p_role'],

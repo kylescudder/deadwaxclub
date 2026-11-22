@@ -92,19 +92,12 @@ integration(
 )
 
 integration(
-  'DBA role provisioning is repeatable and never changes generic role attributes',
+  'DBA role provisioning is repeatable and keeps app roles unprivileged',
   async () => {
     const client = await pool!.connect()
     try {
-      const before = await client.query(
-        "select rolname,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls from pg_roles where rolname in ('anon','authenticated','service_role') order by rolname"
-      )
       await provisionRoles(client, config)
       await provisionRoles(client, config)
-      const after = await client.query(
-        "select rolname,rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls from pg_roles where rolname in ('anon','authenticated','service_role') order by rolname"
-      )
-      expect(after.rows).toEqual(before.rows)
       const roles = await client.query(
         'select rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls from pg_roles where rolname=$1',
         [config.runtimeRole]

@@ -1,33 +1,61 @@
-# Shared Herman backend infrastructure
+# Backend deployment
 
-Both apps use Herman's existing PostgreSQL server on `platform-db`, at `postgres:5432`. Do not create a separate PostgreSQL container or cluster, change shared server settings, or restart it from an application deployment.
+The backend is a Bun API and PowerSync, running on Herman against the shared PostgreSQL server (`postgres:5432` on `platform-db`). There is no per-app PostgreSQL container. Application deployments never change shared server settings or restart the server.
 
-`app.json` is the app-specific database/role/table inventory. The Compose file, API Dockerfile, PowerSync service configuration, migration runner, recovery guards/publisher, verification command and backend release workflow are shared byte for byte. Domain migration histories and PowerSync queries remain app-specific.
+`app.json` is the app-specific inventory: database, roles, recovery and sync tables, receiver URL and headers. Everything else in this directory is shared byte for byte between apps:
+- the Compose files and the API Dockerfile;
+- the PowerSync service configuration;
+- the migration runner, recovery guard and proof publisher;
+- the verification command;
+- the release workflow.
 
-## Provisioning order (DBA, before deployment)
+App-specific pieces are the domain migrations (`db/` and `drizzle/`) and the PowerSync streams (`powersync/sync-config.yaml`).
 
-1. Read the installed platform runbook and audit current capacity, owners, logical WAL, replication slots, role memberships and backups. Passwords remain in protected host files. No secrets are generated, printed or committed by these scripts.
-2. Create the application database with Herman's platform tool, as for every other app: `scripts/provision-project.py <database>` (skip if `projects/<database>/` already exists). It creates `<database>_owner`/`<database>_runtime` (LOGIN NOINHERIT, eight connections), their protected passwords and the backup registration. Then run `PROVISION_DATABASE_URL=<DBA maintenance URL ending /postgres> bun scripts/provision-postgres.ts databases` to add the PowerSync storage role and database. Existing objects are adopted; unexpected ownership or administrative attributes cause a refusal rather than a change. Deadwax keeps its existing runtime login name `deadwax_runtime` from `app.json` (step 3 creates it); the platform's `deadwaxclub_runtime` stays unused.
-3. Connect to the app database with its DBA credential: `PROVISION_DATABASE_URL=... bun scripts/provision-postgres.ts roles`. This creates only app-scoped roles and grants the runtime membership in its own request roles. It removes the platform's default table/sequence grants to the runtime login, so the runtime gets only what migrations grant (never `recovery_lease`), and grants schema USAGE to the request and recovery roles because the platform revokes it from PUBLIC. Run it before migrations. The recovery writer is separate; use a dedicated login with membership in the configured recovery role, never the API login. Set the API connection URL role option to `runtimeDefaultRole` in `app.json` (the example URL shows the encoding); do not enable INHERIT on Deadwax runtime. Set login passwords using the host's existing secure provisioning process, and audit other-database CONNECT/ACL access.
-4. Run `DATABASE_URL=<protected application owner URL> bun scripts/migrate.ts` from the candidate image. Keep existing Drizzle and domain SQL journals. Do not use runtime credentials for migrations. Re-running migrations is idempotent.
-5. With logical WAL already configured by the platform operator, run `PROVISION_DATABASE_URL=<DBA app URL> bun scripts/provision-postgres.ts sync`. It grants the dedicated replication role SELECT on the configured publication tables only. No auth tables are included. It refuses to change WAL settings. Use the separate storage login/database from `app.json`.
+## Releases
 
-Deadwax's historical SQL is imported by an app adapter. Role identifiers are mapped to `deadwax_api`, `deadwax_anon` and `deadwax_service` without changing historical files or their ledger. Existing app-local ACLs/policies are transferred to the scoped roles. Generic roles used by other databases are never created, renamed or altered. Provisioning removes only the old generic memberships from Deadwax's own runtime role. Run this on the app database, never on another project's database.
+Merging to `main` with changes under `Backend/` runs `release-backend.yml`. It builds and attests a multi-platform API image and asks the app's deploy-core receiver (`deployURL` in `app.json`) to deploy that exact digest. The image is the whole backend release, because it carries `deploy/`. Herman's deploy-core hooks then:
+1. verify the image's provenance;
+2. take a local database dump;
+3. require a fresh off-host recovery proof;
+4. run owner migrations from the image;
+5. install `compose.yaml`, `compose.shared.yaml`, `powersync/` and `app.json` from the image;
+6. start `<project>-api` and `<project>-sync` (PowerSync is recreated whenever its configuration or pinned image changes);
+7. accept the release with `bun deploy/verify.ts`.
 
-## Install and release
+A failed health check or acceptance restores the previous image together with its stack. Migrations are not reversed, so each one must stay compatible with the previous runtime.
 
-Build from repository root: `docker build -f Backend/Dockerfile --build-arg SOURCE_REVISION=<commit> .`. The shared image typechecks and bundles the API, installs frozen Bun dependencies and retains both migration adapters. It runs as UID 1000 with a liveness check.
+`compose.yaml` names the services `<project>-api` and `<project>-sync`, because Compose publishes every service name as a DNS alias on every attached network. Each Compose project has:
+- private sync networking;
+- access to the shared `platform-db`;
+- no host ports and no PostgreSQL service.
 
-Use a dedicated deploy-core application entry for each API, Compose service `<project>-api`, and image variable `BACKEND_IMAGE`. Copy the reviewed `app.json` to the deployment directory as protected `backend.json` for the central hooks. Install `compose.yaml` and `compose.shared.yaml` together with the matching registry entry and hooks. Copy `compose.env.example` to the protected deployment `.env`, set immutable image digests and the reviewed ingress network, and keep `api.env` / `powersync.env` mode 0600. `compose.shared.yaml` holds the common service definitions; `compose.yaml` names them `<project>-api` and `<project>-sync` because Compose publishes every service name as a DNS alias on every attached network, so a generic `api` or `sync` would resolve to several apps on `platform-db` and the ingress network. Each Compose project has private sync networking, shared `platform-db` access, no host ports and no PostgreSQL service. Create the notification spool mode 0700 for UID 1000 and back it up encrypted.
+The PowerSync image is pinned by digest in `compose.shared.yaml`. Updating it is a normal Backend change.
 
-Install the app's `powersync/` directory as configuration; its streams remain app-specific. Keep the public JWT audience and internal JWKS URL aligned with that app. PowerSync and API require separate credentials. Monitor connections, slot-retained WAL, storage and memory; configured limits are not evidence of production capacity.
+## Host prerequisites (DBA, once per app)
 
-`release-backend.yml` builds and attests multi-platform images. Every main release deploys; it requires the app's protected receiver URL/Access/HMAC settings. The deploy hooks live in deploy-core (`app_hooks/<project>-api/`). The common prepare hook dumps the correct shared-server app database, validates a fresh verified off-host proof from protected `state/recovery-proof.json`, and uses its protected owner password for migrations. The trusted NAS backup verifier (deploy-core `integrations/shared-backend-recovery.py`, run every five minutes by launchd) must atomically maintain that per-app proof, and its snapshot must include the shared-server database, keys, configuration and spool. A local dump alone never satisfies this gate. The common acceptance command checks liveness, fresh recovery evidence and JWKS before host acceptance.
+1. **Database:** create it with Herman's platform tool, `scripts/provision-project.py <database>`. This creates `<database>_owner`/`<database>_runtime` with protected passwords and backup registration.
+2. **PowerSync storage:** run `PROVISION_DATABASE_URL=<DBA URL ending /postgres> bun scripts/provision-postgres.ts databases`. This adds the PowerSync storage role and database.
+3. **Roles:** run `PROVISION_DATABASE_URL=<DBA URL for the app database> bun scripts/provision-postgres.ts roles`.
+   - It creates the app-scoped runtime, request and recovery roles and grants the runtime membership in its request roles.
+   - It removes the platform's default table grants to the runtime login, so the runtime gets only what migrations grant.
+   - It grants schema USAGE to the app roles.
+   - Run it before the first migration.
+   - The API connection URL sets `runtimeDefaultRole` from `app.json` as its role option.
+4. **Migrations:** run `DATABASE_URL=<owner URL> bun scripts/migrate.ts` from an image. Releases do this automatically afterwards; migrations are idempotent.
+5. **Sync role:** run `PROVISION_DATABASE_URL=<DBA URL for the app database> bun scripts/provision-postgres.ts sync`. This creates the replication role and grants it SELECT on the configured sync tables only. It refuses to run without logical WAL.
+6. **Host files** in the deploy-core deployment directory:
+   - `.env` from `compose.env.example`;
+   - `secrets/api.env` and `secrets/powersync.env` (0600) from the examples;
+   - a notification spool at `state/notifications`, mode 0700 for UID 1000.
+   
+   Releases install the rest.
 
-## Recovery and rollback
+Keep the public JWT audience and the internal JWKS URL aligned with the app. PowerSync and the API use separate credentials. Monitor connections, slot-retained WAL, storage and memory.
 
-The backup verifier supplies a four-field JSON proof (`snapshotStartedAt`, `verifiedAt`, `snapshotID`, `nasVerified: true`) only after an encrypted off-host snapshot is verified. Run `RECOVERY_DATABASE_URL=<dedicated writer> bun scripts/publish-recovery-lease.ts <proof-file>` from the app image. Never use runtime credentials or publish proof merely because a deploy backup command returned.
+## Recovery
 
-The shared publisher rejects malformed/future/stale/unverified evidence and cannot replace a newer snapshot with an older one. The shared database guard fences authoritative writes before execution and at deferred commit if proof is at least 600 seconds old or a transaction reaches 60 seconds. API roles cannot update the lease. Do not fabricate proof or bypass fencing to activate an app.
+The deploy-core backup verifier runs every five minutes from launchd. It dumps the app and PowerSync storage databases, encrypts them to the NAS and checks the NAS copy. Only then does it write the four-field proof (`snapshotStartedAt`, `verifiedAt`, `snapshotID`, `nasVerified: true`) to `state/recovery-proof.json` and publish the lease with `scripts/publish-recovery-lease.ts`, using the dedicated recovery writer and never the runtime login.
 
-Restore drills must include the app database, Better Auth/JWKS keys, spool, migration journals and PowerSync reconstruction. Restore keys independently of the host and verify cross-account isolation and first sync. Record measured RPO/RTO; local tests alone prove neither. Roll back the image through deploy-core; migrations are not reversed and must remain compatible with the previous runtime.
+The publisher rejects malformed, future, stale or unverified evidence. It never replaces a newer snapshot with an older one. The database guard fences writes when the proof is at least 600 seconds old or a transaction reaches 60 seconds, and API roles cannot update the lease.
+
+Restore drills cover the app database, Better Auth/JWKS keys, notification spool, migration ledgers and PowerSync rebuild.

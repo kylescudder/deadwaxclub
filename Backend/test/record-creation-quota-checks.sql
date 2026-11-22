@@ -8,8 +8,8 @@
 
 begin;
 
--- The API calls the entitlement writer as deadwax_service (auth.role() maps it
--- to service_role). This transaction-local wrapper does the same for each call.
+-- The API calls the entitlement writer as deadwax_service. This transaction-local
+-- wrapper does the same for each call.
 create function pg_temp.apply_as_service(p_user_id uuid, p_bundle_id text, p_product_id text,
   p_transaction_id text, p_original_transaction_id text, p_status text,
   p_expires_at timestamptz, p_revoked_at timestamptz, p_environment text,
@@ -130,11 +130,11 @@ begin
   -- Deployed clients still use PostgREST upsert. The BEFORE INSERT trigger
   -- must let an existing record reach ON CONFLICT without touching the ledger.
   insert into public.records (id, record_pressing_id, collection_id, created_by, status, notes)
-  values (v_record_ids[2], v_pressing_id, v_collection_id, v_user_id, 'owned', 'legacy replay')
+  values (v_record_ids[2], v_pressing_id, v_collection_id, v_user_id, 'owned', 'repeat upsert')
   on conflict (id) do update set notes = excluded.notes;
   select lifetime_record_count into v_count
   from public.record_creation_quotas where user_id = v_user_id;
-  if v_count <> 5 then raise exception 'Legacy upsert replay consumed quota'; end if;
+  if v_count <> 5 then raise exception 'Repeated upsert consumed quota'; end if;
 
   -- The trigger derives the creator; spoofing or changing it is rejected.
   v_failed := false;
@@ -151,8 +151,8 @@ begin
   end;
   if not v_failed then raise exception 'Creator reassignment was accepted'; end if;
 
-  -- A legacy active row from the former decoded-payload implementation is
-  -- historical only. Missing verification metadata must not bypass the cap.
+  -- An active row whose payload was never server-verified is
+  -- not trusted. Missing verification metadata must not bypass the cap.
   update public.profiles set is_premium_account = true where id = v_user_id;
   insert into public.records (id, record_pressing_id, collection_id, status)
   values (gen_random_uuid(), v_pressing_id, v_collection_id, 'owned');
@@ -165,7 +165,7 @@ begin
     values (gen_random_uuid(), v_pressing_id, v_collection_id, 'owned');
   exception when sqlstate 'DW001' then v_failed := true;
   end;
-  if not v_failed then raise exception 'Legacy unverified entitlement bypassed the free cap'; end if;
+  if not v_failed then raise exception 'Unverified entitlement bypassed the free cap'; end if;
 
   -- The monthly product must always carry an Apple expiry date, including an
   -- active event. The service-role writer exposes DW003 for malformed claims.
@@ -181,7 +181,7 @@ begin
   end;
   if not v_failed then raise exception 'Active monthly entitlement without expiry was accepted'; end if;
 
-  -- A valid, active, unexpired event can update a legacy row and bypass the
+  -- A valid, active, unexpired event can update an unverified row and bypass the
   -- record cap. Subsequent checks exercise signed-time monotonic ordering.
   perform pg_temp.apply_as_service(
     v_user_id, 'com.deadwaxclub.app', 'club.deadwax.supporter.monthly',
