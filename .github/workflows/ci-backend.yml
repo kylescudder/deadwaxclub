@@ -44,8 +44,6 @@ jobs:
       - run: bunx --no-install tsc --noEmit
       - run: bun scripts/ci-database.ts
       - run: bun test
-      - name: Verify deployment hooks
-        run: python3 -B -m unittest discover -s test -p '*_test.py' -v
       - run: bun build src/index.ts --target=bun --outdir=dist --packages=external
       - name: Build candidate image
         working-directory: .

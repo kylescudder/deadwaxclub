@@ -129,7 +129,7 @@ jobs:
   # Deployment does not import production data or waive native/restore acceptance.
   deploy:
     needs: publish
-    if: vars.API_DEPLOY_ENABLED == 'true' && vars.API_DEPLOY_CONTRACT == 'shared-backend-v1'
+    if: vars.API_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

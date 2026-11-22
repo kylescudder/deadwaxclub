@@ -6,4 +6,4 @@ Run `sh Scripts/check-shared-auth.sh`. Both auth CI and iOS CI run it. Apply com
 
 App-specific values live in Backend/src/auth-app.ts and native Auth/AuthAppConfiguration.swift. These preserve branding, cookie prefixes, callback schemes, email budget locks, Keychain services, profile endpoints and each app's existing bootstrap failure presentation. Offline database queries, UI, API dispatch/error envelopes and domain-specific adapters stay local. The table extraction changes no database columns or migration history.
 
-This alignment preserves existing sign-in methods and open signup. It does not introduce passkeys, OTP, magic links, an allowlist, a provider cutover, or a production deployment. Those require separate product work. Existing secrets and sessions retain their identifiers.
+This alignment preserves existing sign-in methods and open signup. It does not introduce passkeys, OTP, magic links, an allowlist, a provider change, or a production deployment. Those require separate product work. Existing secrets and sessions retain their identifiers.
