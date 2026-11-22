@@ -256,8 +256,8 @@ begin
   end if;
   new.created_by := v_user_id;
 
-  -- Compatibility for deployed clients that still PUT with PostgREST upsert:
-  -- BEFORE INSERT runs before ON CONFLICT, so an already-committed record must
+  -- Sync uploads upsert records (INSERT ... ON CONFLICT). BEFORE INSERT runs
+  -- before ON CONFLICT, so an already-committed record must
   -- bypass the insert-only ledger path. A hard-deleted ID remains absent and
   -- is still rejected by the durable ledger's primary key below.
   if exists (select 1 from public.records where id = new.id) then
