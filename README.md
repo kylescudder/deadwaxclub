@@ -236,7 +236,7 @@ if any of them drift:
 
 | Check | Covers |
 |---|---|
-| `Scripts/check-shared-ios-core.sh` | App scaffolding, shared UI primitives, the billing core, `setup.sh`, iOS workflows ([SHARED_IOS_CORE.md](Scripts/SHARED_IOS_CORE.md)) |
+| `Scripts/check-shared-ios-core.sh` | App scaffolding, shared UI primitives, the billing and sync cores, `setup.sh`, iOS workflows ([SHARED_IOS_CORE.md](Scripts/SHARED_IOS_CORE.md)) |
 | `Scripts/check-shared-auth.sh` | Better Auth backend and native auth ([SHARED_AUTH.md](Scripts/SHARED_AUTH.md)) |
 | `Scripts/check-shared-push-core.sh` | Push registration core ([SHARED_PUSH_CORE.md](Scripts/SHARED_PUSH_CORE.md)) |
 | `Scripts/check-shared-infra.sh` | Backend deployment and provisioning ([SHARED_INFRA.md](Scripts/SHARED_INFRA.md)) |

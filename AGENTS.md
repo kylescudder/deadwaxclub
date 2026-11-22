@@ -13,7 +13,7 @@ Every iOS app uses the same repository layout, app scaffolding and CI. Read
 configuration keys or workflows. Five checksum manifests keep shared files
 byte-for-byte identical with the other apps, and CI runs all of them:
 
-- `Scripts/check-shared-ios-core.sh` — `AppSecrets`, `AppBootstrap`, `Theme`, `LoadingView`, `LottieAnimationView`, `PrimaryButton`, `Logger`, `AppearanceManager`, the billing core (`BillingRepository`, `SubscriptionAccessState`, `CreationQuotaProviding`, `SubscriptionPaywallView`), the `Shared*Tests`, `setup.sh` and the iOS workflows.
+- `Scripts/check-shared-ios-core.sh` — `AppSecrets`, `AppBootstrap`, `Theme`, `LoadingView`, `LottieAnimationView`, `PrimaryButton`, `Logger`, `AppearanceManager`, the billing core (`BillingRepository`, `SubscriptionAccessState`, `CreationQuotaProviding`, `SubscriptionPaywallView`), the sync core (`PowerSyncManager`, `APIConnector`, `SyncIssueStore`), the `Shared*Tests`, `setup.sh` and the iOS workflows.
 - `Scripts/check-shared-auth.sh` — Better Auth backend and native auth (`SHARED_AUTH.md`).
 - `Scripts/check-shared-push-core.sh` — push registration core (`SHARED_PUSH_CORE.md`).
 - `Scripts/check-shared-infra.sh` — backend deployment and provisioning (`SHARED_INFRA.md`).
@@ -21,8 +21,8 @@ byte-for-byte identical with the other apps, and CI runs all of them:
 
 Never edit a shared file in one app only. Put app-specific values behind the
 hooks listed in `SHARED_IOS_CORE.md` (`Theme+App.swift`, `AuthAppConfiguration`,
-`BillingAppConfiguration`, `project.yml`, `Scripts/setup-extras.sh`), or make
-the same change in every app and refresh the manifest with
+`BillingAppConfiguration`, `SyncAppConfiguration`, `project.yml`,
+`Scripts/setup-extras.sh`), or make the same change in every app and refresh the manifest with
 `sh Scripts/check-shared-ios-core.sh --write`.
 
 ## Common commands
@@ -90,6 +90,7 @@ identical across all application repositories.
 - Sync rules are **edition 3** (`Backend/deploy/powersync/sync-config.yaml`): use `auth.user_id()` (not `request.user_id()`); only single-level subqueries are allowed (`where x in (select … from t where …)`), no nested joins. The composite-PK tables (`collection_members`, `list_members`) synthesise an `id` via `collection_id || ':' || user_id` so PowerSync can key rows locally.
 - All repositories read via `database.watch(sql:...)` — UI is reactive on local SQLite, writes go through PowerSync which streams to Postgres in the background. Don't query Postgres directly from the app; write to the local DB and let PowerSync replicate.
 - **PowerSync exposes synced tables as views** so `INSERT … ON CONFLICT … DO UPDATE` is rejected. The repository pattern is `insert or ignore (...) values (...)` followed by an unconditional `update ... where id = ?` — both branches end with the row in the desired state. Repeat that shape in any new repository code.
+- `PowerSyncManager`, `APIConnector` and `SyncIssueStore` are the shared sync core (rules in `Scripts/SHARED_IOS_CORE.md`, tests in `SharedSyncTests`). Deadwax's filename, offline-owner query, writable tables (`DatabaseSchema.writableTableNames`), `DW` codes and `pending_record_creations` replay rules are in `DeadWaxClub/Sync/SyncAppConfiguration.swift`, and its issue copy in `SyncIssueStore+App.swift`.
 - `APIConnector` (`DeadWaxClub/Sync/APIConnector.swift`) implements `PowerSyncBackendConnectorProtocol`. PowerSync keeps the row's primary key in `entry.id` rather than inside `opData`; the connector merges `payload["id"] = entry.id` before each `.put` upsert sent to `/api/sync/upload` — without that, the INSERT has a null id and Postgres rejects it (FK or RLS, surfaced as a misleading 42501).
 - Record creation is enforced by `record_creation_quotas`, the durable `record_creation_events` ledger, and the `records_enforce_creation_limit` trigger, not by a mutable records count. The trigger derives immutable `created_by` from the signed-in user, serializes creators, and counts creations for life across soft/hard deletion. Every profile receives a materialized zero quota row. Quotas and verified entitlements are read-only PowerSync snapshots; missing quota means initial sync is incomplete, not zero. Offline creates reserve allowance in local-only `pending_record_creations` in the same SQLite transaction as the record.
 - `APIConnector` uses an explicit writable-table allowlist. Record PUTs use plain INSERT because their BEFORE INSERT trigger has lifetime side effects; a 23505 replay is acknowledged only after confirming the same record ID exists remotely. Known permanent validation/constraint failures are reported and acknowledged, while network, authentication, RLS, availability, and unexpected failures remain queued.

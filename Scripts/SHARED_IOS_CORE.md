@@ -49,7 +49,7 @@ case-sensitive filesystems.
 <App>/Notifications/       shared push core and the app's push/notification adapters
 <App>/Resources/           Assets.xcassets, <App>.icon, Animations/, StoreKit/<App>.storekit, Fonts/
 <App>/Settings/            SettingsView, AppearanceManager*, ProfileRepository, preferences
-<App>/Sync/                DatabaseSchema, PowerSyncManager, APIConnector, SyncIssueStore
+<App>/Sync/                PowerSyncManager*, APIConnector*, SyncIssueStore*, DatabaseSchema, SyncAppConfiguration, SyncIssueStore+App
 <App>/Utilities/           small app-only helpers (formatters, Keychain wrappers)
 <App>/Widgets/             WidgetSnapshotStore (compiled into the app and the widget)
 <App>/<Feature>/           one folder per product area: its views and repositories together
@@ -71,6 +71,12 @@ The shared files read app-specific values from these places only:
   and the privacy and terms URLs.
 - `AppServices.creationQuota` — the app's creation-quota repository, adopting
   `CreationQuotaProviding`, whose lifetime count the paywall shows.
+- `Sync/DatabaseSchema.swift` — the local PowerSync schema.
+- `Sync/SyncAppConfiguration.swift` — the SQLite filename, the offline-owner
+  query, the writable-table allowlist, the permanent rejection codes, the
+  local-clear failure message, and the `didUpload`/`didReject` callbacks that
+  hold the app's pending-creation ledger and quota replay rules.
+- `Sync/SyncIssueStore+App.swift` — the app's sync issue reports and copy.
 - `Components/Theme+App.swift` — `Theme.loadingAnimation` and any brand
   colours, added as `extension Theme.Colors`. Use the shared semantic colours
   (`textPrimary`, `textSecondary`, `accent`, `separator`, …) rather than aliases.
@@ -139,6 +145,30 @@ Each app's creation-quota gate (server status endpoint, offline quota and
 entitlement snapshot, pending-creation ledger and free limit) stays in its
 feature folder. Billing only reads the lifetime count through
 `CreationQuotaProviding`.
+
+### Sync
+
+`PowerSyncManager`, `APIConnector` and `SyncIssueStore` are the PowerSync
+connection, upload and issue core:
+
+- Signed in connects; signed out, or a session that needs reauthentication,
+  only disconnects and keeps local data and the upload queue. `.unknown`
+  during bootstrap leaves PowerSync alone. `wipe()` is the only path that
+  clears local data and is reserved for explicit sign-out, password-reset
+  sign-out and account deletion. A failed wipe blocks the next connection
+  until it succeeds.
+- `offlineAccount()` reports every owner of local data so `AuthClient` can
+  bind the cache to its original account before adopting a session.
+- The connector is bound to that owner. Credentials and every upload use the
+  owner's current token, and uploads without it throw and stay queued.
+- Only tables in the writable allowlist upload; anything else throws.
+- Only the app's permanent rejection codes are acknowledged (after its
+  `didReject` hook runs). Network, 5xx, authentication, RLS (`42501`) and
+  unknown failures throw so PowerSync retries them. Never add a code without
+  proving it cannot succeed on retry.
+
+Schema, writable tables, error codes and quota replay rules stay in the app's
+hooks.
 
 ## Adding an app
 
