@@ -44,12 +44,6 @@ Site/.astro/
 Site/dist/
 Site/node_modules/
 
-# supabase CLI scratch state (project ref, version pins, branches)
-Supabase/.temp/
-Supabase/.branches/
-supabase/.temp/
-supabase/.branches/
-
 # Local Netlify folder
 .netlify
 
