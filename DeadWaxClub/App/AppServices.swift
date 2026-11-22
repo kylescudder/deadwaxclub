@@ -39,7 +39,7 @@ final class AppServices: ObservableObject {
         Log.breadcrumb("app services initializing", category: "app.lifecycle")
         let auth = AuthClient()
         let syncIssues = SyncIssueStore()
-        let sync = PowerSyncManager(authClient: auth, issues: syncIssues)
+        let sync = PowerSyncManager(auth: auth, issues: syncIssues)
         let billing = BillingRepository(auth: auth)
         let discogs = DiscogsClient()
         let coverArt = CoverArtCache(authClient: auth)
