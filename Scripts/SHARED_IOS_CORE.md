@@ -38,7 +38,7 @@ case-sensitive filesystems.
 ## App target layout
 
 ```text
-<App>/App/                 <App>App, AppDelegate, AppServices, AppBootstrap*, AppSecrets*, RootView, QuickActionRouter
+<App>/App/                 <App>App, AppDelegate*, AppServices, AppBootstrap*, AppSecrets*, RootView, QuickActionRouter
 <App>/Auth/                AuthClient, APIClient, AppleSignIn, GoogleSignIn (shared auth), AuthAppConfiguration, sign-in views
 <App>/Billing/             BillingRepository*, SubscriptionAccessState*, CreationQuotaProviding*, SubscriptionPaywallView*, BillingAppConfiguration
 <App>/Components/          Theme*, LoadingView*, LottieAnimationView*, PrimaryButton*, Theme+App, Card and other app primitives
@@ -46,7 +46,7 @@ case-sensitive filesystems.
 <App>/Intents/             AppIntents and App Shortcuts
 <App>/Logging/             Logger* (`Log`)
 <App>/Models/              Codable/PowerSync row models
-<App>/Notifications/       shared push core and the app's push/notification adapters
+<App>/Notifications/       shared push core and adapters (SHARED_PUSH_CORE.md), PushAppConfiguration, app-only notification features
 <App>/Resources/           Assets.xcassets, <App>.icon, Animations/, StoreKit/<App>.storekit, Fonts/
 <App>/Settings/            SettingsView, AppearanceManager*, ProfileRepository, preferences
 <App>/Sync/                PowerSyncManager*, APIConnector*, SyncIssueStore*, DatabaseSchema, SyncAppConfiguration, SyncIssueStore+App
@@ -77,6 +77,9 @@ The shared files read app-specific values from these places only:
   local-clear failure message, and the `didUpload`/`didReject` callbacks that
   hold the app's pending-creation ledger and quota replay rules.
 - `Sync/SyncIssueStore+App.swift` — the app's sync issue reports and copy.
+- `Notifications/PushAppConfiguration.swift` — the installation-ID Keychain
+  item, the fallback bundle ID and the notification-tap routes
+  (`SHARED_PUSH_CORE.md`).
 - `Components/Theme+App.swift` — `Theme.loadingAnimation` and any brand
   colours, added as `extension Theme.Colors`. Use the shared semantic colours
   (`textPrimary`, `textSecondary`, `accent`, `separator`, …) rather than aliases.
