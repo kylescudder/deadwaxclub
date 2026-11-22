@@ -13,7 +13,7 @@ Every iOS app uses the same repository layout, app scaffolding and CI. Read
 configuration keys or workflows. Five checksum manifests keep shared files
 byte-for-byte identical with the other apps, and CI runs all of them:
 
-- `Scripts/check-shared-ios-core.sh` — `AppSecrets`, `AppBootstrap`, `Theme`, `LoadingView`, `LottieAnimationView`, `PrimaryButton`, `Logger`, `AppearanceManager`, `SharedAppSecretsTests`, `setup.sh` and the iOS workflows.
+- `Scripts/check-shared-ios-core.sh` — `AppSecrets`, `AppBootstrap`, `Theme`, `LoadingView`, `LottieAnimationView`, `PrimaryButton`, `Logger`, `AppearanceManager`, the billing core (`BillingRepository`, `SubscriptionAccessState`, `CreationQuotaProviding`, `SubscriptionPaywallView`), the `Shared*Tests`, `setup.sh` and the iOS workflows.
 - `Scripts/check-shared-auth.sh` — Better Auth backend and native auth (`SHARED_AUTH.md`).
 - `Scripts/check-shared-push-core.sh` — push registration core (`SHARED_PUSH_CORE.md`).
 - `Scripts/check-shared-infra.sh` — backend deployment and provisioning (`SHARED_INFRA.md`).
@@ -21,8 +21,9 @@ byte-for-byte identical with the other apps, and CI runs all of them:
 
 Never edit a shared file in one app only. Put app-specific values behind the
 hooks listed in `SHARED_IOS_CORE.md` (`Theme+App.swift`, `AuthAppConfiguration`,
-`project.yml`, `Scripts/setup-extras.sh`), or make the same change in every app
-and refresh the manifest with `sh Scripts/check-shared-ios-core.sh --write`.
+`BillingAppConfiguration`, `project.yml`, `Scripts/setup-extras.sh`), or make
+the same change in every app and refresh the manifest with
+`sh Scripts/check-shared-ios-core.sh --write`.
 
 ## Common commands
 
@@ -129,7 +130,7 @@ identical across all application repositories.
 - Sentry/OSLog wrapper is `DeadWaxClub/Logging/Logger.swift` (`Log.error`, `Log.breadcrumb`, `Log.event`). Sentry is no-op when `SENTRY_DSN` is empty; keep repository and service errors going through `Log` rather than ad hoc prints.
 - `Theme`, `Card`, `PrimaryButton`, `EmptyState` and `LoadingView` under `DeadWaxClub/Components/` are the UI primitives. Reuse them before introducing one-off colors, spacing, or loading treatments. App-only tokens (the loading animation) live in `Theme+App.swift`.
 - The Discogs personal token is per-user, entered in Settings, stored in the keychain (`Utilities/Keychain.swift`). The onboarding flow nags on first launch.
-- StoreKit's local `VerificationResult.verified` is device evidence only. `BillingRepository.isSubscribed` grants database-backed unlimited creation only after `/api/iap/transactions` has mirrored an Apple-cryptographically-verified active JWS; it retries failed mirrors and surfaces a temporary verification error instead of promising an unlock. The API's `/api/iap/transactions` and App Store Server Notifications (`/api/iap/notifications`) paths use Apple's `SignedDataVerifier` with online certificate checks and call the service-only `apply_verified_iap_entitlement` function. A bypass must have the exact Deadwax bundle/product, Sandbox or Production environment, a verified source, transaction ID, signed timestamp, verified timestamp, and an active non-revoked, unexpired monthly subscription state (with a non-null Apple expiry). Entitlement updates are ordered by Apple's signed timestamp, so a delayed older event cannot undo a newer state. Never backfill these verification fields: pre-contract entitlement rows remain untrusted until a newly verified transaction or notification refreshes them.
+- `BillingRepository`, `SubscriptionAccessState` and `SubscriptionPaywallView` are the shared billing core (rules in `Scripts/SHARED_IOS_CORE.md`, tests in `SharedBillingTests`). Deadwax's values (`club.deadwax.supporter.monthly`, the verification message and paywall copy) live in `DeadWaxClub/Billing/BillingAppConfiguration.swift`; the paywall reads the lifetime record count through `AppServices.creationQuota` (`RecordsRepository`), and `profiles.is_premium_account` reaches billing as `setAccessOverride`. StoreKit's local `VerificationResult.verified` is device evidence only. `BillingRepository.isSubscribed` grants database-backed unlimited creation only after `/api/iap/transactions` has mirrored an Apple-cryptographically-verified active JWS (or the premium override is set); until then the state is `.verifying`, the paywall and Settings offer "Retry verification", and the transaction stays unfinished so StoreKit re-delivers it. The API's `/api/iap/transactions` and App Store Server Notifications (`/api/iap/notifications`) paths use Apple's `SignedDataVerifier` with online certificate checks and call the service-only `apply_verified_iap_entitlement` function. A bypass must have the exact Deadwax bundle/product, Sandbox or Production environment, a verified source, transaction ID, signed timestamp, verified timestamp, and an active non-revoked, unexpired monthly subscription state (with a non-null Apple expiry). Entitlement updates are ordered by Apple's signed timestamp, so a delayed older event cannot undo a newer state. Never backfill these verification fields: pre-contract entitlement rows remain untrusted until a newly verified transaction or notification refreshes them.
 - `Preferences.currency` (`DeadWaxClub/Settings/Preferences.swift`) is the single source for the user's preferred ISO 4217 code; it falls back to the device locale and finally GBP. Use it instead of reading `UserDefaults` directly when displaying or persisting prices.
 - The app is locked to portrait and hides the status bar (`UISupportedInterfaceOrientations` + `UIStatusBarHidden` in `DeadWaxClub/Info.plist`). The `Info.plist` is committed (XcodeGen rewrites it with sorted keys); `project.yml`'s `info.properties` only adds the secrets/scenes/background-modes keys on top.
 

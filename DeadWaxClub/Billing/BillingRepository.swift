@@ -2,23 +2,46 @@ import Foundation
 import StoreKit
 import UIKit
 
+/// Shared StoreKit 2 billing core. This file is identical in every app; the
+/// product ID and copy live in `BillingAppConfiguration.swift`.
+///
+/// StoreKit's local verification is device evidence only. Server-backed access
+/// (`subscriptionState == .active`) is granted only after the API has mirrored
+/// an Apple-verified transaction through `/api/iap/transactions`. A locally
+/// verified entitlement that the server has not confirmed stays `.verifying`.
+/// Transactions are finished only after that confirmation, so StoreKit
+/// re-delivers an unconfirmed one through `Transaction.updates` and it is
+/// mirrored again on the next launch.
 @MainActor
 final class BillingRepository: ObservableObject {
-    static let supporterMonthlyProductID = "club.deadwax.supporter.monthly"
+    nonisolated static let productID = BillingAppConfiguration.productID
 
     @Published private(set) var subscriptionProduct: Product?
     @Published private(set) var isLoadingProducts = false
-    @Published private(set) var isSubscribed = false
-    @Published private(set) var hasPremiumAccount = false
-    @Published private(set) var hasStoreKitSubscription = false
-    @Published private(set) var hasServerConfirmedEntitlement = false
+    /// StoreKit reports an active, locally verified entitlement for `productID`.
+    @Published private(set) var hasLocalSubscription = false
+    @Published private(set) var subscriptionState: SubscriptionAccessState = .free
+    /// Access granted outside StoreKit, such as a server-side premium account.
+    @Published private(set) var hasAccessOverride = false
     @Published private(set) var lastError: String?
 
+    var isSubscribed: Bool { hasAccessOverride || subscriptionState == .active }
+    var isVerifyingSubscription: Bool { subscriptionState == .verifying }
+    var verificationStatusMessage: String { BillingAppConfiguration.verificationPendingMessage }
+
     private let auth: AuthClient
+    private let mirror: any TransactionMirroring
+    private let pause: @Sendable (UInt64) async -> Void
     private var transactionTask: Task<Void, Never>?
 
-    init(auth: AuthClient) {
+    init(
+        auth: AuthClient,
+        mirror: (any TransactionMirroring)? = nil,
+        pause: @escaping @Sendable (UInt64) async -> Void = { try? await Task.sleep(nanoseconds: $0) }
+    ) {
         self.auth = auth
+        self.mirror = mirror ?? APITransactionMirror(auth: auth)
+        self.pause = pause
     }
 
     deinit { transactionTask?.cancel() }
@@ -27,39 +50,43 @@ final class BillingRepository: ObservableObject {
         Log.breadcrumb("billing observer starting", category: "billing")
         transactionTask?.cancel()
         transactionTask = Task { [weak self] in
-            guard let self else { return }
             for await result in Transaction.updates {
+                guard let self else { return }
                 await self.handle(result)
             }
         }
         Task {
             await loadProducts()
-            await syncEntitlements()
+            if auth.currentUserID != nil {
+                await syncEntitlements()
+            }
         }
     }
 
     func resetForSignOut() {
         Log.breadcrumb("billing state reset for sign out", category: "billing")
-        hasStoreKitSubscription = false
-        hasServerConfirmedEntitlement = false
-        hasPremiumAccount = false
-        isSubscribed = false
+        hasLocalSubscription = false
+        hasAccessOverride = false
+        subscriptionState = .free
         lastError = nil
     }
 
-    func setPremiumAccount(_ premium: Bool) {
-        guard hasPremiumAccount != premium else { return }
-        hasPremiumAccount = premium
-        updateSubscriptionState(source: "premiumOverride")
+    func setAccessOverride(_ granted: Bool) {
+        guard hasAccessOverride != granted else { return }
+        hasAccessOverride = granted
+        Log.event("billing access override updated", category: "billing.entitlements", metadata: [
+            "granted": granted,
+            "isSubscribed": isSubscribed,
+        ])
     }
 
     func loadProducts() async {
         Log.breadcrumb("billing products load started", category: "billing.products")
-        lastError = nil
         isLoadingProducts = true
+        lastError = nil
         defer { isLoadingProducts = false }
         do {
-            let products = try await Product.products(for: [Self.supporterMonthlyProductID])
+            let products = try await Product.products(for: [Self.productID])
             subscriptionProduct = products.first
             Log.event("billing products load completed", category: "billing.products", metadata: ["count": products.count])
         } catch {
@@ -82,15 +109,18 @@ final class BillingRepository: ObservableObject {
             let result = try await product.purchase(options: [.appAccountToken(userID)])
             switch result {
             case .success(let verification):
-                guard case .verified(let transaction) = verification else {
-                    lastError = "The purchase could not be verified."
+                guard case .verified(let transaction) = verification,
+                      transaction.productID == Self.productID,
+                      transaction.isActiveSubscriptionEntitlement else {
+                    lastError = "The purchase could not be verified by Apple."
                     return false
                 }
-                await sync(transaction, jwsRepresentation: verification.jwsRepresentation)
-                await transaction.finish()
-                await syncEntitlements()
+                let confirmed = await confirmLocallyVerifiedEntitlement(
+                    jwsRepresentation: verification.jwsRepresentation,
+                    finish: { await transaction.finish() }
+                )
                 Log.event("purchase completed", category: "billing.purchase", metadata: ["isSubscribed": isSubscribed])
-                return isSubscribed
+                return confirmed
             case .userCancelled, .pending:
                 Log.breadcrumb("purchase cancelled or pending", category: "billing.purchase")
                 return false
@@ -135,101 +165,192 @@ final class BillingRepository: ObservableObject {
         }
     }
 
+    /// Re-checks StoreKit's current entitlements and mirrors any active one.
+    /// Current entitlements are not finished here; purchases and
+    /// `Transaction.updates` own finishing.
     func syncEntitlements() async {
         Log.breadcrumb("billing entitlement sync started", category: "billing.entitlements")
-        var active = false
-        var serverConfirmed = false
+        var activeEntitlements: [String] = []
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result,
-                  transaction.productID == Self.supporterMonthlyProductID else { continue }
-            if transaction.isActiveSubscriptionEntitlement {
-                active = true
-                serverConfirmed = await sync(transaction, jwsRepresentation: result.jwsRepresentation) || serverConfirmed
-            }
+                  transaction.productID == Self.productID,
+                  transaction.isActiveSubscriptionEntitlement else { continue }
+            activeEntitlements.append(result.jwsRepresentation)
         }
-        hasStoreKitSubscription = active
-        hasServerConfirmedEntitlement = active && serverConfirmed
-        if active && !hasServerConfirmedEntitlement && lastError == nil {
-            lastError = "Your subscription is active, but we could not verify it with the server yet. Please try again shortly."
-        } else if !active {
-            lastError = nil
-        }
-        updateSubscriptionState(source: "storeKit")
-        Log.event("billing entitlement sync completed", category: "billing.entitlements", metadata: [
-            "isSubscribed": isSubscribed,
-            "storeKit": active,
-            "serverConfirmed": hasServerConfirmedEntitlement,
-        ])
+        await reconcileEntitlements(activeJWSRepresentations: activeEntitlements)
     }
 
-    private func updateSubscriptionState(source: String) {
-        // StoreKit verification is immediate device evidence, but record
-        // creation is enforced by Postgres. Do not promise unlimited database
-        // creation until the verified transaction has been mirrored there.
-        isSubscribed = hasPremiumAccount || (hasStoreKitSubscription && hasServerConfirmedEntitlement)
-        Log.event("billing subscription state updated", category: "billing.entitlements", metadata: [
-            "source": source,
-            "storeKit": hasStoreKitSubscription,
-            "premiumAccount": hasPremiumAccount,
-            "isSubscribed": isSubscribed,
-        ])
+    /// Applies the locally verified, active entitlements found by
+    /// `syncEntitlements`. Internal so tests can drive it without StoreKit.
+    func reconcileEntitlements(activeJWSRepresentations: [String]) async {
+        lastError = nil
+        for jwsRepresentation in activeJWSRepresentations {
+            if await confirmLocallyVerifiedEntitlement(jwsRepresentation: jwsRepresentation, finish: {}) {
+                logEntitlementSync()
+                return
+            }
+        }
+
+        if activeJWSRepresentations.isEmpty {
+            hasLocalSubscription = false
+            subscriptionState = .free
+            lastError = nil
+        } else {
+            subscriptionState = .verifying
+            lastError = BillingAppConfiguration.verificationPendingMessage
+        }
+        logEntitlementSync()
+    }
+
+    /// Moves a locally verified, active entitlement to `.verifying`, mirrors it
+    /// to the server and, only once the server confirms it, finishes the
+    /// transaction and grants `.active`. Internal so tests can drive it.
+    @discardableResult
+    func confirmLocallyVerifiedEntitlement(
+        jwsRepresentation: String,
+        finish: () async -> Void
+    ) async -> Bool {
+        hasLocalSubscription = true
+        subscriptionState = .verifying
+        guard await confirmWithServer(jwsRepresentation: jwsRepresentation) else { return false }
+        await finish()
+        subscriptionState = .active
+        lastError = nil
+        return true
     }
 
     private func handle(_ result: VerificationResult<Transaction>) async {
         Log.breadcrumb("billing transaction update received", category: "billing.transactions")
-        guard case .verified(let transaction) = result else { return }
-        guard transaction.productID == Self.supporterMonthlyProductID else { return }
-        await sync(transaction, jwsRepresentation: result.jwsRepresentation)
-        await transaction.finish()
-        await syncEntitlements()
+        guard case .verified(let transaction) = result,
+              transaction.productID == Self.productID else { return }
+
+        if transaction.isActiveSubscriptionEntitlement {
+            await confirmLocallyVerifiedEntitlement(
+                jwsRepresentation: result.jwsRepresentation,
+                finish: { await transaction.finish() }
+            )
+        } else {
+            // A refund, revocation or expiry has nothing to unlock. Finish it
+            // and re-check current entitlements so access ends in this session.
+            await transaction.finish()
+            await syncEntitlements()
+        }
     }
 
-    private func sync(_ transaction: Transaction, jwsRepresentation: String) async -> Bool {
-        Log.event("billing transaction sync started", category: "billing.syncTransaction", metadata: ["productID": transaction.productID])
-        guard await auth.currentAccessToken() != nil else { return false }
-        for attempt in 0..<3 {
+    private func confirmWithServer(jwsRepresentation: String) async -> Bool {
+        Log.breadcrumb("billing transaction sync started", category: "billing.syncTransaction")
+        var finalError: Error?
+        for attempt in 0..<TransactionMirrorPolicy.maxAttempts {
             do {
-                let data = try await auth.api.json("api/iap/transactions", values: [
-                    "signedTransactionInfo": jwsRepresentation
-                ])
-                let result = try JSONDecoder().decode(TransactionSyncResponse.self, from: data)
-                guard result.active else { throw BillingSyncError.serverDidNotConfirm }
-                lastError = nil
-                Log.event("billing transaction sync completed", category: "billing.syncTransaction", metadata: ["productID": transaction.productID])
+                let response = try await mirror.mirror(jwsRepresentation: jwsRepresentation)
+                guard response.confirmsActiveEntitlement else {
+                    throw BillingSyncError.entitlementNotActive
+                }
+                Log.breadcrumb("billing transaction sync completed", category: "billing.syncTransaction")
                 return true
             } catch {
-                Log.error(error, category: "billing.syncTransaction")
-                if attempt < 2 {
-                    try? await Task.sleep(nanoseconds: UInt64(attempt + 1) * 500_000_000)
-                }
+                finalError = error
+                guard TransactionMirrorPolicy.isRetryable(error),
+                      attempt < TransactionMirrorPolicy.maxAttempts - 1 else { break }
+                await pause(TransactionMirrorPolicy.retryDelayNanoseconds(afterAttempt: attempt))
             }
         }
-        lastError = "Your subscription is active, but we could not verify it with the server yet. Please try again shortly."
+
+        if let finalError {
+            Log.error(finalError, category: "billing.syncTransaction")
+        }
+        subscriptionState = .verifying
+        lastError = BillingAppConfiguration.verificationPendingMessage
         return false
+    }
+
+    private func logEntitlementSync() {
+        Log.event("billing entitlement sync completed", category: "billing.entitlements", metadata: [
+            "state": String(describing: subscriptionState),
+            "storeKit": hasLocalSubscription,
+            "accessOverride": hasAccessOverride,
+            "isSubscribed": isSubscribed,
+        ])
     }
 }
 
-private struct TransactionSyncResponse: Decodable {
-    let active: Bool
+/// Mirrors a StoreKit transaction's signed JWS to the app's API.
+@MainActor
+protocol TransactionMirroring: AnyObject {
+    func mirror(jwsRepresentation: String) async throws -> TransactionMirrorResponse
 }
 
-private enum BillingSyncError: LocalizedError {
-    case serverDidNotConfirm
+/// `/api/iap/transactions` response. Some APIs omit `verified`; an explicit
+/// `false` is never treated as confirmation.
+struct TransactionMirrorResponse: Decodable, Equatable, Sendable {
+    let verified: Bool?
+    let active: Bool
+
+    var confirmsActiveEntitlement: Bool { active && verified != false }
+}
+
+@MainActor
+final class APITransactionMirror: TransactionMirroring {
+    private let auth: AuthClient
+
+    init(auth: AuthClient) {
+        self.auth = auth
+    }
+
+    func mirror(jwsRepresentation: String) async throws -> TransactionMirrorResponse {
+        guard let token = await auth.currentAccessToken() else {
+            throw BillingSyncError.unauthenticated
+        }
+        let data = try await auth.api.json(
+            "api/iap/transactions",
+            values: ["signedTransactionInfo": jwsRepresentation],
+            expectedToken: token
+        )
+        return try JSONDecoder().decode(TransactionMirrorResponse.self, from: data)
+    }
+}
+
+/// Retries only failures that can succeed later: connectivity and server
+/// availability (`APIClient` reports 5xx responses as `URLError`). Client
+/// errors, sign-in failures and an inactive server verdict are final.
+enum TransactionMirrorPolicy {
+    static let maxAttempts = 3
+
+    static func retryDelayNanoseconds(afterAttempt attempt: Int) -> UInt64 {
+        UInt64(500_000_000 * (1 << attempt))
+    }
+
+    static func isRetryable(_ error: Error) -> Bool {
+        error is URLError || (error as NSError).domain == NSURLErrorDomain
+    }
+}
+
+enum BillingSyncError: LocalizedError, Equatable {
+    case unauthenticated
+    case entitlementNotActive
 
     var errorDescription: String? {
         switch self {
-        case .serverDidNotConfirm:
-            return "The server did not confirm the subscription."
+        case .unauthenticated:
+            return "Subscription confirmation requires an active sign-in."
+        case .entitlementNotActive:
+            return "The server could not confirm an active subscription."
         }
+    }
+}
+
+enum SubscriptionEntitlement {
+    static func isActive(revocationDate: Date?, expirationDate: Date?, now: Date = Date()) -> Bool {
+        guard revocationDate == nil else { return false }
+        if let expirationDate {
+            return expirationDate > now
+        }
+        return true
     }
 }
 
 private extension Transaction {
     var isActiveSubscriptionEntitlement: Bool {
-        guard revocationDate == nil else { return false }
-        if let expirationDate {
-            return expirationDate > Date()
-        }
-        return true
+        SubscriptionEntitlement.isActive(revocationDate: revocationDate, expirationDate: expirationDate)
     }
 }

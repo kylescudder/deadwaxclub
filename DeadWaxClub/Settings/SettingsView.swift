@@ -16,8 +16,8 @@ struct SettingsView: View {
     @State private var errorCount = 0
 
     private var planName: String {
-        if services.billing.hasStoreKitSubscription { return "Supporter Monthly" }
-        if services.billing.hasPremiumAccount { return "Premium" }
+        if services.billing.hasLocalSubscription { return "Supporter Monthly" }
+        if services.billing.hasAccessOverride { return "Premium" }
         return "Free"
     }
 
@@ -86,7 +86,12 @@ struct SettingsView: View {
                     "Plan",
                     value: planName
                 )
-                if services.billing.hasStoreKitSubscription {
+                if services.billing.hasLocalSubscription {
+                    if services.billing.isVerifyingSubscription {
+                        Button("Retry subscription verification") {
+                            Task { await services.billing.syncEntitlements() }
+                        }
+                    }
                     Button("Manage subscription") {
                         Task { await services.billing.manageSubscriptions() }
                     }
