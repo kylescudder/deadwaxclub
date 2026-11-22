@@ -133,7 +133,6 @@ jobs:
   # secret can only ever trigger a release that this workflow built from main.
   deploy:
     needs: publish
-    if: vars.DEPLOY_ENABLED == 'true' && vars.DEPLOY_HOST != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

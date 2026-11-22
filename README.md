@@ -141,7 +141,6 @@ environment; the secrets live in that main-only environment.
 |---|---|---|
 | `SITE_SUPABASE_URL` | repository variable | Supabase API origin for the list viewer |
 | `SITE_SUPABASE_ANON_KEY` | repository variable | Public Supabase anon key (RLS gates access); without it shared lists show an error |
-| `DEPLOY_ENABLED` | repository variable | `true` turns on deployment |
 | `DEPLOY_HOST` | repository variable | Herman deploy hostname, protected by Cloudflare Access |
 | `SITE_BASE_URL` | repository variable | Public origin checked for the new revision |
 | `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` | `production` secrets | Access service token for the deploy hostname |
