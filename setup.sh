@@ -2,7 +2,7 @@
 # Deadwax Club — first-run setup
 #
 # Walks through everything that doesn't require Apple Developer:
-#   1. Required CLI tools (xcodegen, bun, optional netlify CLI)
+#   1. Required CLI tools (xcodegen, bun)
 #   2. Local secrets files (Config/Secrets.xcconfig, Site/public/js/config.js)
 #   3. Backend pointer (Herman API, PostgreSQL and PowerSync)
 #   4. Xcode project generation
@@ -53,12 +53,6 @@ if is_mac; then
 fi
 need bun       "brew install oven-sh/bun/bun"
 
-# Optional tools — warn but don't fail.
-if command -v netlify >/dev/null 2>&1; then
-    ok "netlify CLI present (optional)"
-else
-    note "netlify CLI not installed (optional). Use \`npx netlify\` or install via \`brew install netlify-cli\`."
-fi
 
 if (( ${#MISSING_TOOLS[@]} > 0 )); then
     err "Install the missing tools above and re-run setup.sh."
@@ -78,7 +72,7 @@ fi
 
 if [[ ! -f Site/public/js/config.js ]]; then
     cp Site/public/js/config.example.js Site/public/js/config.js
-    warn "Created Site/public/js/config.js from the example — fill in your Supabase URL and anon key before deploying the web site."
+    ok "Created Site/public/js/config.js (Deadwax API origin https://auth.deadwaxclub.app)"
 else
     ok "Site/public/js/config.js already exists"
 fi
@@ -86,9 +80,6 @@ fi
 # Detect placeholder values.
 if grep -q "api.example.com\|your-instance.powersync" Config/Secrets.xcconfig 2>/dev/null; then
     warn "Config/Secrets.xcconfig still contains placeholders. Edit it before building."
-fi
-if grep -q "your-supabase-anon-key\|your-project.supabase.co" Site/public/js/config.js 2>/dev/null; then
-    warn "Site/public/js/config.js still contains placeholders. Edit it before deploying."
 fi
 
 # --- 3. Backend -----------------------------------------------------------
@@ -136,10 +127,9 @@ Local setup is finished. The remaining work needs Apple Developer access:
      Sign in with Apple .p8 key.
   4. Put the Apple sign-in values in the Herman API's protected api.env
      (Backend/deploy/api.env.example lists them). Push notifications go
-     through the shared APNs gateway (docs/push-gateway/README.md).
-  5. Replace TEAMID in Site/public/.well-known/apple-app-site-association
-     with your real Apple Team ID, then `bun run build`
-     and `npx netlify deploy --dir=Site/dist --prod`.
+     through the shared APNs gateway (docs/push-gateway.md).
+  5. Check the Apple Team ID in Site/public/.well-known/apple-app-site-association.
+     Merging a Site/ change to main deploys the site to Herman.
   6. In Xcode → Signing & Capabilities, pick your paid team,
      plug your phone in, ⌘R.
 

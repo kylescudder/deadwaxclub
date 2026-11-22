@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Deadwax Club — native iOS 17+ SwiftUI app for tracking owned/wishlist vinyl, plus an Astro marketing site and public list viewer. The backend is the Bun API in `Backend/` with PostgreSQL and self-hosted PowerSync on Herman; the public list viewer still reads the legacy Supabase RPCs. Offline-first via PowerSync.
+Deadwax Club — native iOS 17+ SwiftUI app for tracking owned/wishlist vinyl, plus an Astro marketing site and public list viewer. The backend is the Bun API in `Backend/` (Better Auth) with PostgreSQL and self-hosted PowerSync on Herman; the public list viewer reads shared lists from the API. Offline-first via PowerSync.
 
 ## Common commands
 
@@ -20,7 +20,7 @@ xcodebuild build \                         # CLI sanity build (no signing requir
 ./setup.sh                                 # idempotent first-run: tools, secrets templates, xcodegen
 ```
 
-Backend (`Backend/`, Bun API + PostgreSQL + self-hosted PowerSync on Herman): see `Backend/deploy/README.md` for checks, migrations and deployment. The historical Supabase migrations are replayed from `Backend/db/legacy/` under their original ledger names; never rename or edit them.
+Backend (`Backend/`, Bun API + PostgreSQL + self-hosted PowerSync on Herman): see `Backend/deploy/README.md` for checks, migrations and deployment. The domain schema is the numbered SQL in `Backend/db/migrations/`, applied in order by `Backend/db/application.ts` and recorded in its ledger; add a new numbered file for every change and never edit or rename an applied one. Better Auth's tables are in `Backend/drizzle/`.
 
 Web:
 
@@ -30,20 +30,18 @@ bun run dev                                                    # installs Site d
 bun run build                                                  # builds Site/dist
 ```
 
-There is no iOS test suite, linter, or formatter configured. The Astro site uses the house tooling in `Site/` (`typecheck`, `lint`, `format:check`, `check:site`). Merging a `Site/` change to `main` deploys it to Herman (see the README's Website deployment section).
+iOS unit tests live in `DeadWaxClubTests/`; there is no iOS linter or formatter. The Astro site uses the house tooling in `Site/` (`typecheck`, `lint`, `format:check`, `check:site`). Merging to `main` releases each changed area: `Site/` to Herman, `Backend/` (API, migrations, Compose and PowerSync config together) to Herman, and the app to TestFlight (see the README's deployment sections).
 
-## Shared APNs gateway migration
+## Push notifications
 
-Before changing push registration, APNs delivery, `device_tokens`, notification
-webhooks, or notification Edge Functions, read
-`docs/push-gateway/README.md` and follow its routed contract, infrastructure,
-testing, and project-checklist documents. Preserve its provider-neutral HTTP
-contract and rollout gates across all application repositories.
+Before changing push registration, APNs delivery, `device_tokens` or notification
+producers, read `docs/push-gateway.md` and keep its provider-neutral HTTP contract
+identical across all application repositories.
 
 ## Secrets and configuration
 
 - iOS secrets live in `Config/Secrets.xcconfig` (git-ignored, copied from `Config/Secrets.xcconfig.example`). Values are surfaced into Swift via `Info.plist` → `DeadWaxClub/App/AppSecrets.swift`. **xcconfig escaping gotcha**: a literal `//` in a value (e.g. `https://...`) must be written `https:/$()/...` to keep the parser from treating the rest of the line as a comment. Empty strings are treated as "feature disabled" — don't add fatal errors for unset secrets.
-- Web config lives in `Site/public/js/config.js` (git-ignored). Release images generate it with `Site/scripts/write-config.mjs` from the `SITE_SUPABASE_URL` and `SITE_SUPABASE_ANON_KEY` repository variables. The local copy of `config.js` from `config.example.js` is for running the site against your dev Supabase; don't paste real secrets there. The Supabase anon key is intentionally shipped to the browser; RLS + the `get_shared_list*` RPCs gate what's actually exposed.
+- Web config lives in `Site/public/js/config.js` (git-ignored). Release images generate it with `Site/scripts/write-config.mjs` from the `API_BASE_URL` repository variable; the local copy from `config.example.js` points at the same API origin. It holds no secrets — the token-gated `/api/public/get_shared_list*` endpoints decide what's exposed.
 - Backend secrets (database URLs, Better Auth, Apple/Google sign-in, IAP verification) live in the API's protected `api.env` on Herman; `Backend/deploy/api.env.example` lists them. Push goes through the shared APNs gateway. Never accept decoded JWS payloads as proof of entitlement.
 
 ## Architecture
@@ -58,40 +56,40 @@ contract and rollout gates across all application repositories.
 
 ### Sync (PowerSync ↔ Herman API)
 
-- Local SQLite schema is declared in `DeadWaxClub/Sync/DatabaseSchema.swift`; the same synced tables exist in Postgres via `Backend/db/legacy/*.sql` and the `Backend/db/` adapters, while `localOnly` tables are device-only. **These must stay in lock-step** — adding a synced column means migrating Postgres, updating `DatabaseSchema.swift`, updating `Backend/deploy/powersync/sync-config.yaml`, and adding the table to the `powersync` publication. Prefer `alter publication ... add table` over rebuilding the publication.
+- Local SQLite schema is declared in `DeadWaxClub/Sync/DatabaseSchema.swift`; the same synced tables exist in Postgres via `Backend/db/migrations/`, while `localOnly` tables are device-only. **These must stay in lock-step** — adding a synced column means migrating Postgres, updating `DatabaseSchema.swift`, updating `Backend/deploy/powersync/sync-config.yaml`, and adding the table to the `powersync` publication. Prefer `alter publication ... add table` over rebuilding the publication.
 - Sync rules are **edition 3** (`Backend/deploy/powersync/sync-config.yaml`): use `auth.user_id()` (not `request.user_id()`); only single-level subqueries are allowed (`where x in (select … from t where …)`), no nested joins. The composite-PK tables (`collection_members`, `list_members`) synthesise an `id` via `collection_id || ':' || user_id` so PowerSync can key rows locally.
 - All repositories read via `database.watch(sql:...)` — UI is reactive on local SQLite, writes go through PowerSync which streams to Postgres in the background. Don't query Postgres directly from the app; write to the local DB and let PowerSync replicate.
 - **PowerSync exposes synced tables as views** so `INSERT … ON CONFLICT … DO UPDATE` is rejected. The repository pattern is `insert or ignore (...) values (...)` followed by an unconditional `update ... where id = ?` — both branches end with the row in the desired state. Repeat that shape in any new repository code.
-- `APIConnector` (`DeadWaxClub/Sync/APIConnector.swift`) implements `PowerSyncBackendConnectorProtocol`. PowerSync keeps the row's primary key in `entry.id` rather than inside `opData`; the connector merges `payload["id"] = entry.id` before each `.put` upsert — without that, PostgREST sends an INSERT with a null id and Postgres rejects it (FK or RLS, surfaced as a misleading 42501).
-- Record creation is enforced by `record_creation_quotas`, the durable `record_creation_events` ledger, and `records_enforce_creation_limit` (`0027` + `0028`), not by a mutable records count. The trigger derives immutable `created_by` from `auth.uid()`, serializes creators, and counts creations for life across soft/hard deletion. Every profile receives a materialized zero quota row. Quotas and verified entitlements are read-only PowerSync snapshots; missing quota means initial sync is incomplete, not zero. Offline creates reserve allowance in local-only `pending_record_creations` in the same SQLite transaction as the record.
+- `APIConnector` (`DeadWaxClub/Sync/APIConnector.swift`) implements `PowerSyncBackendConnectorProtocol`. PowerSync keeps the row's primary key in `entry.id` rather than inside `opData`; the connector merges `payload["id"] = entry.id` before each `.put` upsert sent to `/api/sync/upload` — without that, the INSERT has a null id and Postgres rejects it (FK or RLS, surfaced as a misleading 42501).
+- Record creation is enforced by `record_creation_quotas`, the durable `record_creation_events` ledger, and the `records_enforce_creation_limit` trigger, not by a mutable records count. The trigger derives immutable `created_by` from the signed-in user, serializes creators, and counts creations for life across soft/hard deletion. Every profile receives a materialized zero quota row. Quotas and verified entitlements are read-only PowerSync snapshots; missing quota means initial sync is incomplete, not zero. Offline creates reserve allowance in local-only `pending_record_creations` in the same SQLite transaction as the record.
 - `APIConnector` uses an explicit writable-table allowlist. Record PUTs use plain INSERT because their BEFORE INSERT trigger has lifetime side effects; a 23505 replay is acknowledged only after confirming the same record ID exists remotely. Known permanent validation/constraint failures are reported and acknowledged, while network, authentication, RLS, availability, and unexpected failures remain queued.
 - `PowerSyncManager.disconnect()` (used on transient `.signedOut` from session refreshes) does *not* clear local state. `wipe()` calls `disconnectAndClear()` and is reserved for explicit user sign-out from Settings — calling it on every transient state would wipe the local DB and the pending CRUD upload queue. The `.unknown` auth state during bootstrap intentionally leaves PowerSync alone for the same reason.
 - All deletions are soft (`deleted_at` timestamp) — required so PowerSync propagates tombstones reliably across devices. Every `select` filters `where deleted_at is null`.
 - All UUIDs are lowercased at every callsite (`UUID().uuidString.lowercased()`, `currentUserID?.uuidString.lowercased()`). SQLite's `=` is case-sensitive while Postgres normalises to lowercase, so mixing cases produces "row exists in Postgres but not SQLite" desyncs. Match the convention.
-- Cover art lookup order on display: local Caches file → API cover URL (`/api/covers/`) → Discogs URL → SF Symbol placeholder. First display of any record both writes bytes to disk *and* uploads to the API so other devices fetch from the user's bucket instead of Discogs.
+- Cover art lookup order on display: local Caches file → API cover URL (`/api/covers/`) → Discogs URL → SF Symbol placeholder. First display of any record both writes bytes to disk *and* uploads to the API so other devices fetch it from the API instead of Discogs.
 
 ### Collections (records visibility model)
 
 - A user belongs to one or more **Collections** via `collection_members` (`role ∈ {owner, editor, viewer}`). The Records tab shows the union of records across every Collection the user is in; queries gate visibility with `where collection_id in (select collection_id from collection_members where user_id = ?)`. This is the same one-level subquery shape edition-3 sync rules use, so the local query and the sync stream agree on visibility.
-- The signup trigger (`handle_new_user` in `0017_handle_new_user_split_first_name.sql`) creates a personal Collection per user, makes them its `owner`, and points `profiles.primary_collection_id` at it. New records default to that Collection. Pending email invites for both Collections and Lists are auto-accepted by the same trigger.
-- RLS on collection-scoped tables (`collections`, `collection_members`, `records`, `price_entries`, `record_images`) goes through `security definer` helper functions `is_collection_member` / `is_collection_writer` / `is_collection_owner` (`0019_fix_collection_members_recursion.sql`). The helpers run with the function-owner's privileges and skip RLS, which is what breaks the recursion that an inlined `exists (select … from collection_members …)` policy hits. **Never inline that subquery in a new policy** — call the helpers.
+- The signup trigger (`handle_new_user`) creates a personal Collection per user, makes them its `owner`, and points `profiles.primary_collection_id` at it. New records default to that Collection. Pending email invites for both Collections and Lists are auto-accepted by the same trigger.
+- RLS on collection-scoped tables (`collections`, `collection_members`, `records`, `price_entries`, `record_images`) goes through `security definer` helper functions `is_collection_member` / `is_collection_writer` / `is_collection_owner`. The helpers run with the function-owner's privileges and skip RLS, which is what breaks the recursion that an inlined `exists (select … from collection_members …)` policy hits. **Never inline that subquery in a new policy** — call the helpers.
 
 ### Notifications inbox
 
-- The single source of truth for user-facing notifications is `public.notifications`. Anything that wants to ping a user inserts a row; a Postgres webhook on INSERT fires the `notify-inbox` Edge Function, which looks up the user's `device_tokens` and fans out APNs. The iOS bell icon (`NotificationInboxView`) reads the same table via `NotificationsRepository`, so push and inbox always agree.
-- `notification_kind ∈ {price_alert, collection_invite}`. `notify-price-change` is the legacy producer for price alerts (it inserts a price_alert row when its `BEFORE INSERT` trigger on `price_entries` flags `is_new_low`). `invite_to_collection` (RPC) is the producer for collection_invite. New event kinds drop in by inserting a row — no new function needed.
-- APNs payloads carry a `kind` discriminator. `PushManager`'s notification-tap handler routes `collection_invite` to `Notification.Name.openCollection` (handled by `AppServices` → sets `pendingDeepLinkCollectionID` → `RootView` presents `ManageCollectionsView`), and falls back to `record_id` → `Notification.Name.openRecord` for legacy/price-alert pushes (handled by `openRecordByID` against local SQLite).
+- The single source of truth for user-facing notifications is `public.notifications`. Anything that wants to ping a user inserts a row; each row becomes one `PushEvent v1` for the shared APNs gateway (`docs/push-gateway.md`), which looks up the user's installations and delivers to APNs. The iOS bell icon (`NotificationInboxView`) reads the same table via `NotificationsRepository`, so push and inbox always agree.
+- `notification_kind ∈ {price_alert, collection_invite}`. Price alerts come from the `price_entries` trigger that flags `is_new_low`; `invite_to_collection` produces collection_invite. New event kinds drop in by inserting a row — no new function needed.
+- APNs payloads carry a `kind` discriminator. `PushManager`'s notification-tap handler routes `collection_invite` to `Notification.Name.openCollection` (handled by `AppServices` → sets `pendingDeepLinkCollectionID` → `RootView` presents `ManageCollectionsView`), and falls back to `record_id` → `Notification.Name.openRecord` for price alerts (handled by `openRecordByID` against local SQLite).
 
 ### Multi-image carousel
 
 - Records have an arbitrary number of images via `record_images` (kind ∈ `discogs` / `user_upload`, ordered by `position`). The primary image (position 0) is also kept on `records.cover_art_storage_path` for backwards-compat with Spotlight, the records list, and any consumer of `CoverArtCache.displayURL(for:)`.
 - `record_images.collection_id` is denormalised so PowerSync edition-3 rules can gate visibility with one subquery (the `member_record_images` stream). RLS uses the same `is_collection_member` / `is_collection_writer` helpers.
-- Bytes live in the same API cover store (`cover_objects`) as the primary cover; `CoverArtCache.mirrorIfNeeded(image:)` handles Discogs → Storage mirroring per row.
+- Bytes live in the same API cover store (`cover_objects`) as the primary cover; `CoverArtCache.mirrorIfNeeded(image:)` handles Discogs → API cover store mirroring per row.
 
 ### List sharing
 
 - `lists.share_mode` ∈ {`private`, `link_public`, `invite_only`, `collaborative`}. Public-link mode mints a 12-char `share_token`.
-- The web viewer (`Site/src/pages/l/index.astro` + `Site/public/js/list.js`) calls two unauthenticated `security definer` RPCs from `0004_lists.sql`: `get_shared_list(token)` and `get_shared_list_records(token)`. Flipping a list off `link_public` immediately revokes web access — no redeploy needed.
+- The web viewer (`Site/src/pages/l/index.astro` + `Site/public/js/list.js`) calls the API's unauthenticated `/api/public/get_shared_list` and `/api/public/get_shared_list_records`, backed by the `security definer` functions `get_shared_list(token)` and `get_shared_list_records(token)`. Flipping a list off `link_public` immediately revokes web access — no redeploy needed.
 - Universal Links: `https://deadwaxclub.app/l/<token>` opens the iOS app via `applinks:deadwaxclub.app` in `DeadWaxClub.entitlements` + `Site/public/.well-known/apple-app-site-association`. The custom scheme `deadwaxclub://list/<token>` is the in-app fallback. Both are handled in `RootView.handle(url:)`.
 - Edition-3 caveat: records on lists where the viewer is a list-member but not in the record's Collection still cannot be expressed as a sync stream (it would need a 2-level join `list_members → list_items → records`). Records the viewer *owns* always sync via `member_records` because that's a one-level join through `collection_members`. The remaining gap (curated public/collaborative lists pulling in records the viewer doesn't already own) is filled by REST fetches in the list views.
 
@@ -101,7 +99,7 @@ contract and rollout gates across all application repositories.
 - AppIntents (`DeadWaxClub/Intents/`) run outside the SwiftUI environment. `IntentBridge` is the static escape hatch — `DeadWaxClubApp` registers `AppServices` on it at launch, and intents query/write through `services.sync.database` directly.
 - Sentry/OSLog wrapper is `DeadWaxClub/Logging/Logger.swift` (`Log.error`, `Log.breadcrumb`). Sentry is no-op when `SENTRY_DSN` is empty.
 - The Discogs personal token is per-user, entered in Settings, stored in the keychain (`Logging/Keychain.swift`). The onboarding flow nags on first launch.
-- StoreKit's local `VerificationResult.verified` is device evidence only. `BillingRepository.isSubscribed` grants database-backed unlimited creation only after `iap-sync-transaction` has mirrored an Apple-cryptographically-verified active JWS; it retries failed mirrors and surfaces a temporary verification error instead of promising an unlock. Both IAP Edge Functions use Apple's `SignedDataVerifier` with online certificate checks and call the service-role-only `apply_verified_iap_entitlement` RPC. A bypass must have the exact Deadwax bundle/product, Sandbox or Production environment, a verified source, transaction ID, signed timestamp, verified timestamp, and an active non-revoked, unexpired monthly subscription state (with a non-null Apple expiry). Entitlement updates are ordered by Apple's signed timestamp, so a delayed older event cannot undo a newer state. Never backfill these verification fields: pre-contract entitlement rows remain untrusted until a newly verified transaction or notification refreshes them.
+- StoreKit's local `VerificationResult.verified` is device evidence only. `BillingRepository.isSubscribed` grants database-backed unlimited creation only after `/api/iap/transactions` has mirrored an Apple-cryptographically-verified active JWS; it retries failed mirrors and surfaces a temporary verification error instead of promising an unlock. The API's `/api/iap/transactions` and App Store Server Notifications (`/api/iap/notifications`) paths use Apple's `SignedDataVerifier` with online certificate checks and call the service-only `apply_verified_iap_entitlement` function. A bypass must have the exact Deadwax bundle/product, Sandbox or Production environment, a verified source, transaction ID, signed timestamp, verified timestamp, and an active non-revoked, unexpired monthly subscription state (with a non-null Apple expiry). Entitlement updates are ordered by Apple's signed timestamp, so a delayed older event cannot undo a newer state. Never backfill these verification fields: pre-contract entitlement rows remain untrusted until a newly verified transaction or notification refreshes them.
 - `Preferences.currency` (`DeadWaxClub/Settings/Preferences.swift`) is the single source for the user's preferred ISO 4217 code; it falls back to the device locale and finally GBP. Use it instead of reading `UserDefaults` directly when displaying or persisting prices.
 - The app is locked to portrait and hides the status bar (`UISupportedInterfaceOrientations` + `UIStatusBarHidden` in `DeadWaxClub/Info.plist`). The `Info.plist` is committed; `project.yml`'s `info.properties` only adds the secrets/scenes/background-modes keys on top.
 
@@ -120,4 +118,4 @@ When something fails to build after a package bump, investigate the SDK changelo
 
 ## What not to commit
 
-`Config/Secrets.xcconfig`, `Site/public/js/config.js`, `DeadWaxClub.xcodeproj/`, `.netlify/`. All gitignored already — don't add overrides.
+`Config/Secrets.xcconfig`, `Site/public/js/config.js`, `DeadWaxClub.xcodeproj/`. All gitignored already — don't add overrides.

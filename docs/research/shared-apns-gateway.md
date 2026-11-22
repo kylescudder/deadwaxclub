@@ -4,9 +4,9 @@ Date: 2026-09-20
 
 ## Purpose
 
-This note records the platform facts and infrastructure constraints for a provider-neutral push gateway shared by multiple iOS applications. It deliberately does not describe migrations for any particular application repository.
+This note records the platform facts and infrastructure constraints for a provider-neutral push gateway shared by multiple iOS applications. It deliberately does not describe changes to any particular application repository.
 
-The recommended shape is a small authenticated API, a durable installation registry, a durable at-least-once queue, and long-running workers that hold HTTP/2 connections to Apple Push Notification service (APNs). This path has no CloudKit or iCloud-account dependency. Each application's current backend can submit events during migration; a later backend can use the same HTTP contract.
+The recommended shape is a small authenticated API, a durable installation registry, a durable at-least-once queue, and long-running workers that hold HTTP/2 connections to Apple Push Notification service (APNs). This path has no CloudKit or iCloud-account dependency. Each application's backend submits events over the same HTTP contract.
 
 ## Conclusions
 
@@ -193,7 +193,7 @@ Do not claim that APNs deduplicates repeated `apns-id` values; Apple documents t
 
 ## Provider-neutral gateway contract
 
-The permanent contract must not contain Supabase webhook shapes, PostgREST semantics, PowerSync types, or database credentials.
+The contract must not contain database webhook shapes, PowerSync types, or database credentials.
 
 ### Installation registration
 
@@ -229,7 +229,7 @@ Authentication must be implemented as an issuer adapter configured per app. The 
 app_id + issuer_id + subject
 ```
 
-If an application later changes identity providers, link the old and new subjects to a stable application-domain account ID during authenticated migration. A Supabase user UUID can be an opaque transitional subject, but the gateway must not validate it by calling Supabase or assume Supabase-specific JWT claims.
+Principal IDs are the application's own stable account IDs. The gateway validates them only through the application's trusted identity endpoint and assumes no provider-specific token claims.
 
 AWS API Gateway JWT authorizers validate issuer, audience, time claims, signature, and scopes, but AWS currently documents only RSA algorithms for that authorizer. Use it only where every configured issuer is compatible; otherwise use a Lambda authorizer or verify standards-compliant JWTs in the registration service. See [API Gateway JWT authorizers](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html).
 
