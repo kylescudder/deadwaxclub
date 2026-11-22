@@ -40,7 +40,7 @@ case-sensitive filesystems.
 ```text
 <App>/App/                 <App>App, AppDelegate, AppServices, AppBootstrap*, AppSecrets*, RootView, QuickActionRouter
 <App>/Auth/                AuthClient, APIClient, AppleSignIn, GoogleSignIn (shared auth), AuthAppConfiguration, sign-in views
-<App>/Billing/             BillingRepository, SubscriptionPaywallView
+<App>/Billing/             BillingRepository*, SubscriptionAccessState*, CreationQuotaProviding*, SubscriptionPaywallView*, BillingAppConfiguration
 <App>/Components/          Theme*, LoadingView*, LottieAnimationView*, PrimaryButton*, Theme+App, Card and other app primitives
 <App>/Extensions/          Foundation+Helpers.swift and other type extensions
 <App>/Intents/             AppIntents and App Shortcuts
@@ -66,6 +66,11 @@ The shared files read app-specific values from these places only:
 - The `*.auth` URL type in `project.yml` — `AppSecrets.authRedirectURL`.
 - `Auth/AuthAppConfiguration.swift` — callback scheme, Keychain service and
   other values the shared auth code needs.
+- `Billing/BillingAppConfiguration.swift` — the StoreKit product ID, the
+  verification-pending message, the paywall headline, body and usage text,
+  and the privacy and terms URLs.
+- `AppServices.creationQuota` — the app's creation-quota repository, adopting
+  `CreationQuotaProviding`, whose lifetime count the paywall shows.
 - `Components/Theme+App.swift` — `Theme.loadingAnimation` and any brand
   colours, added as `extension Theme.Colors`. Use the shared semantic colours
   (`textPrimary`, `textSecondary`, `accent`, `separator`, …) rather than aliases.
@@ -102,6 +107,38 @@ The shared files read app-specific values from these places only:
   and the unit tests on any available iPhone simulator. `ios-testflight.yml`
   archives `main` with manual signing, verifies the release endpoints and the
   archived configuration, and uploads to TestFlight.
+
+## Shared feature cores
+
+Feature code that every app needs is shared too. Each core reads its app
+values from the hooks above, and its `Shared*Tests.swift` covers the rules
+below. Change a rule in every app at once, together with its tests.
+
+### Billing
+
+`BillingRepository` is StoreKit 2 with server mirroring:
+
+- Purchases pass the signed-in user's UUID as `appAccountToken`.
+- A locally verified, active entitlement moves `subscriptionState` to
+  `.verifying`. Only a `/api/iap/transactions` response with `active: true`
+  (and not `verified: false`) moves it to `.active`. `isSubscribed` is
+  `.active` or `hasAccessOverride`, which an app may set from a server-side
+  premium flag.
+- Transactions are finished only after the server confirms them. StoreKit
+  re-delivers an unfinished transaction through `Transaction.updates`, so a
+  failed mirror is retried on the next launch. A revoked or expired update is
+  mirrored too, so the server's entitlement row stops granting access, and
+  finished once the server has stored it; an entitlement sync follows, so
+  access ends in-session.
+- The mirror is retried three times (0.5 s, then 1 s) only for connectivity
+  and 5xx failures. Client errors, sign-in failures and an inactive verdict
+  are final and leave the state `.verifying` with the app's message.
+- Sign-out resets the in-memory state, including the override.
+
+Each app's creation-quota gate (server status endpoint, offline quota and
+entitlement snapshot, pending-creation ledger and free limit) stays in its
+feature folder. Billing only reads the lifetime count through
+`CreationQuotaProviding`.
 
 ## Adding an app
 

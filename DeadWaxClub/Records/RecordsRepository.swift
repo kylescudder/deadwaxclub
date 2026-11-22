@@ -630,3 +630,10 @@ final class RecordsRepository: ObservableObject {
         }
     }
 }
+
+extension RecordsRepository: CreationQuotaProviding {
+    func lifetimeCreationCount() async throws -> Int {
+        guard let userID = auth.currentUserID?.lowerUUID else { throw RecordCreationError.unauthenticated }
+        return try await creationUsage(userID: userID)
+    }
+}

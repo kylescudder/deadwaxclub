@@ -1,12 +1,15 @@
 import SwiftUI
 
+/// Shared Supporter paywall. Copy, links and the usage count come from
+/// `BillingAppConfiguration` and `AppServices.creationQuota`.
+
 struct SubscriptionPaywallView: View {
     @EnvironmentObject private var services: AppServices
     @Environment(\.dismiss) private var dismiss
 
     @State private var isPurchasing = false
     @State private var isRestoring = false
-    @State private var createdCount: Int?
+    @State private var creationCount: Int?
 
     var body: some View {
         NavigationStack {
@@ -22,10 +25,10 @@ struct SubscriptionPaywallView: View {
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
 
                         VStack(spacing: Theme.Spacing.sm) {
-                            Text("Keep building your collection")
+                            Text(BillingAppConfiguration.paywallHeadline)
                                 .font(.title2.weight(.semibold))
                                 .multilineTextAlignment(.center)
-                            Text("Your first \(AppServices.freeRecordLimit) records are free. Subscribe to add unlimited owned and wishlist records.")
+                            Text(BillingAppConfiguration.paywallMessage)
                                 .font(.body)
                                 .foregroundStyle(Theme.Colors.textSecondary)
                                 .multilineTextAlignment(.center)
@@ -39,9 +42,10 @@ struct SubscriptionPaywallView: View {
                                 action: { Task { await subscribe() } }
                             )
                             .disabled(
-                                isRestoring ||
-                                    (services.billing.isLoadingProducts &&
-                                        services.billing.subscriptionProduct == nil)
+                                isRestoring
+                                    || services.billing.isVerifyingSubscription
+                                    || (services.billing.isLoadingProducts
+                                        && services.billing.subscriptionProduct == nil)
                             )
 
                             Button {
@@ -56,7 +60,19 @@ struct SubscriptionPaywallView: View {
                             .disabled(isRestoring || isPurchasing)
                         }
 
-                        if services.billing.isLoadingProducts {
+                        if services.billing.isVerifyingSubscription {
+                            VStack(spacing: Theme.Spacing.sm) {
+                                ProgressView()
+                                Text(services.billing.verificationStatusMessage)
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.Colors.textSecondary)
+                                    .multilineTextAlignment(.center)
+                                Button("Retry verification") {
+                                    Task { await services.billing.syncEntitlements() }
+                                }
+                                .font(.footnote.weight(.semibold))
+                            }
+                        } else if services.billing.isLoadingProducts {
                             ProgressView()
                         } else if services.billing.subscriptionProduct == nil {
                             Text("Subscription details are unavailable. Tap Subscribe to try again.")
@@ -70,8 +86,8 @@ struct SubscriptionPaywallView: View {
                                 .multilineTextAlignment(.center)
                         }
 
-                        if let createdCount {
-                            Text("\(createdCount) \(createdCount == 1 ? "record" : "records") added")
+                        if let creationCount {
+                            Text(BillingAppConfiguration.usageText(count: creationCount))
                                 .font(.footnote)
                                 .foregroundStyle(Theme.Colors.textTertiary)
                         }
@@ -126,16 +142,16 @@ struct SubscriptionPaywallView: View {
                 .multilineTextAlignment(.center)
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Link("Privacy Policy", destination: Self.privacyPolicyURL)
+                    Link("Privacy Policy", destination: BillingAppConfiguration.privacyPolicyURL)
                     Text("•")
                         .foregroundStyle(Theme.Colors.textTertiary)
-                    Link("Terms of Use", destination: Self.termsOfUseURL)
+                    Link("Terms of Use", destination: BillingAppConfiguration.termsOfUseURL)
                 }
                 .fixedSize(horizontal: true, vertical: false)
 
                 VStack(spacing: Theme.Spacing.xs) {
-                    Link("Privacy Policy", destination: Self.privacyPolicyURL)
-                    Link("Terms of Use", destination: Self.termsOfUseURL)
+                    Link("Privacy Policy", destination: BillingAppConfiguration.privacyPolicyURL)
+                    Link("Terms of Use", destination: BillingAppConfiguration.termsOfUseURL)
                 }
             }
             .font(.footnote.weight(.semibold))
@@ -149,9 +165,6 @@ struct SubscriptionPaywallView: View {
         }
         return "Monthly auto-renewable subscription: \(product.displayPrice) per month. Payment is charged to your Apple ID after purchase confirmation."
     }
-
-    private static let privacyPolicyURL = URL(string: "https://deadwaxclub.app/privacy")!
-    private static let termsOfUseURL = URL(string: "https://deadwaxclub.app/terms")!
 
     private func subscribe() async {
         isPurchasing = true
@@ -170,7 +183,6 @@ struct SubscriptionPaywallView: View {
     }
 
     private func loadCount() async {
-        guard let userID = services.auth.currentUserID?.lowerUUID else { return }
-        createdCount = try? await services.records.creationUsage(userID: userID)
+        creationCount = try? await services.creationQuota.lifetimeCreationCount()
     }
 }

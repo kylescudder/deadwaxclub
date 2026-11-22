@@ -4,7 +4,7 @@ import Combine
 
 @MainActor
 final class AppServices: ObservableObject {
-    static let freeRecordLimit = 5
+    nonisolated static let freeRecordLimit = 5
 
     let auth: AuthClient
     let sync: PowerSyncManager
@@ -29,6 +29,9 @@ final class AppServices: ObservableObject {
     /// (e.g. tapping a `collection_invite` push). Settings/RootView present
     /// ManageCollectionsView focused on this Collection.
     @Published var pendingDeepLinkCollectionID: String?
+
+    /// The creation allowance the shared paywall reports.
+    var creationQuota: any CreationQuotaProviding { records }
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -105,7 +108,7 @@ final class AppServices: ObservableObject {
             .map { $0?.isPremiumAccount == true }
             .removeDuplicates()
             .sink { [weak billing] isPremiumAccount in
-                billing?.setPremiumAccount(isPremiumAccount)
+                billing?.setAccessOverride(isPremiumAccount)
             }
             .store(in: &cancellables)
     }
