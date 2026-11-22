@@ -8,6 +8,25 @@ import XCTest
 
 @MainActor
 final class SharedAuthClientTests: XCTestCase {
+    func testMainScreensRequireASessionAndBlockUnauthorizedResponses() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let store = MemoryStore()
+        let auth = AuthClient(sessionStore: store, defaults: defaults)
+        XCTAssertFalse(auth.canAccessMainApp)
+        await auth.bootstrap(offlineAccount: { ([], false) })
+        XCTAssertFalse(auth.canAccessMainApp)
+
+        let owner = UUID()
+        store.data = session(user: owner, token: "expired-session")
+        let restored = AuthClient(sessionStore: store, defaults: defaults)
+        await restored.bootstrap(offlineAccount: { ([owner], false) })
+        XCTAssertTrue(restored.canAccessMainApp)
+        restored.api.onUnauthorized?()
+        XCTAssertFalse(restored.canAccessMainApp)
+        XCTAssertEqual(restored.currentUserID, owner)
+        XCTAssertNotNil(store.data)
+    }
+
     func testSavedSessionMustMatchOfflineOwner() async throws {
         let owner = UUID()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
@@ -31,6 +50,7 @@ final class SharedAuthClientTests: XCTestCase {
         await auth.bootstrap(offlineAccount: { ([owner], true) })
         XCTAssertEqual(auth.currentUserID, owner)
         XCTAssertTrue(auth.requiresReauthentication)
+        XCTAssertFalse(auth.canAccessMainApp)
         XCTAssertEqual(defaults.string(forKey: AuthClient.ownerKey), owner.uuidString.lowercased())
         let token = await auth.currentAccessToken()
         XCTAssertNil(token)
@@ -45,9 +65,11 @@ final class SharedAuthClientTests: XCTestCase {
         await auth.bootstrap(offlineAccount: { ([owner], false) })
         let valid = await auth.currentAccessToken(for: owner)
         XCTAssertEqual(valid, "valid-session")
+        XCTAssertTrue(auth.canAccessMainApp)
         let wrong = await auth.currentAccessToken(for: UUID())
         XCTAssertNil(wrong)
         auth.isPasswordRecovery = true
+        XCTAssertFalse(auth.canAccessMainApp)
         let recovery = await auth.currentAccessToken()
         XCTAssertNil(recovery)
     }
@@ -105,11 +127,13 @@ final class SharedAuthClientTests: XCTestCase {
             await auth.signIn(email: "auth@example.test", password: "test-password")
             if candidate == owner {
                 XCTAssertFalse(auth.requiresReauthentication)
+                XCTAssertTrue(auth.canAccessMainApp)
                 let token = await auth.currentAccessToken()
                 XCTAssertEqual(token, "reauthenticated")
                 XCTAssertNotNil(store.data)
             } else {
                 XCTAssertTrue(auth.requiresReauthentication)
+                XCTAssertFalse(auth.canAccessMainApp)
                 XCTAssertNotNil(auth.lastError)
                 XCTAssertNil(store.data)
             }
@@ -131,6 +155,7 @@ final class SharedAuthClientTests: XCTestCase {
         let auth = AuthClient(sessionStore: store, defaults: defaults, api: client)
         await auth.bootstrap(offlineAccount: { ([owner], false) })
         auth.isPasswordRecovery = true
+        XCTAssertFalse(auth.canAccessMainApp)
         let revoked = expectation(description: "server sign-out")
         UnauthorizedProtocol.onStart = { urlProtocol in
             XCTAssertEqual(urlProtocol.request.url?.path, "/api/auth/sign-out")

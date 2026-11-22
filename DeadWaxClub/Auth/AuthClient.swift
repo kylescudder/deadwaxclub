@@ -31,6 +31,11 @@ final class AuthClient: ObservableObject {
         self.defaults = defaults
         api.onUnauthorized = { [weak self] in self?.requiresReauthentication = true }
     }
+    /// A cached owner keeps offline changes bound to their account, but cannot unlock the UI.
+    var canAccessMainApp: Bool {
+        currentUserID != nil && !requiresReauthentication && !isPasswordRecovery
+    }
+
     var currentUserID: UUID? { if case let .signedIn(id, _) = state { id } else { nil } }
 
     func currentAccessToken() async -> String? {
@@ -51,7 +56,7 @@ final class AuthClient: ObservableObject {
             var owners = account.owners
             if let owner = offlineOwner { owners.insert(owner) }
             // Keychain access can be unavailable before the first device unlock.
-            // A verified local owner can still use the offline library.
+            // Preserve its owner binding until the user can sign in again.
             let stored = (try? sessionStore.read()).flatMap {
                 try? JSONDecoder().decode(SavedSession.self, from: $0)
             }

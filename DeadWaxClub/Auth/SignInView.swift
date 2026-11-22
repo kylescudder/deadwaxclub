@@ -7,6 +7,7 @@ struct SignInView: View {
     @State private var isWorking = false
     @State private var showSignUp = false
     @State private var showForgotPassword = false
+    @State private var showDiscardConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -83,15 +84,36 @@ struct SignInView: View {
                     .disabled(isWorking)
                 }
 
+                if services.auth.requiresReauthentication {
+                    VStack(spacing: Theme.Spacing.sm) {
+                        Text("Sign in with your original account to keep your offline changes, or sign out to use another account.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .multilineTextAlignment(.center)
+                        Button("Sign out and discard local data", role: .destructive) {
+                            showDiscardConfirmation = true
+                        }
+                    }
+                }
+
                 Button("Create an account") { showSignUp = true }
                     .font(.callout)
                     .padding(.top, Theme.Spacing.sm)
             }
+            .disabled(isWorking)
             .padding(.horizontal, Theme.Spacing.lg)
             .padding(.bottom, Theme.Spacing.xxl)
         }
         .background(Theme.Colors.background)
         .scrollDismissesKeyboard(.interactively)
+        .alert("Discard local data and sign out?", isPresented: $showDiscardConfirmation) {
+            Button("Discard and sign out", role: .destructive) {
+                Task { await discardLocalAccount() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes this account’s data from this device, including any changes that have not synced. Synced data stays in your account. You can then sign in with another account.")
+        }
         .navigationDestination(isPresented: $showSignUp) { SignUpView() }
         .sheet(isPresented: $showForgotPassword) {
             ForgotPasswordSheet(initialEmail: email)
@@ -101,6 +123,19 @@ struct SignInView: View {
 
     private var isFormValid: Bool {
         !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && password.count >= 6
+    }
+
+    private func discardLocalAccount() async {
+        guard !isWorking else { return }
+        isWorking = true
+        defer { isWorking = false }
+        if await services.auth.signOut() {
+            await services.sync.wipe()
+            services.onboarding.resetForSignOut()
+            services.auth.lastError = nil
+            email = ""
+            password = ""
+        }
     }
 
     private func signIn() async {
