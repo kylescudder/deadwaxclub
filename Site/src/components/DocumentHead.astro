@@ -1,24 +1,33 @@
 ---
+// Shared by every app's site (Scripts/SHARED_SITE.md); values come from app.json.
+import app from "../../app.json";
+
 interface Props {
   title: string;
   description: string;
   ogTitle?: string;
-  ogUrl?: string;
+  canonical?: boolean;
 }
 
-const { title, description, ogTitle = title, ogUrl } = Astro.props;
+const { title, description, ogTitle = title, canonical = true } = Astro.props;
+// The app links to pages without a trailing slash, so their canonical URLs do too.
+const path = Astro.url.pathname.replace(/(.)\/$/, "$1");
+const ogUrl = canonical ? new URL(path, app.origin).href : null;
+const iconType = app.icon.endsWith(".svg") ? "image/svg+xml" : "image/png";
 ---
 
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#171b2a" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#171b2a" media="(prefers-color-scheme: dark)" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <meta name="theme-color" content={app.themeColor} />
   <title>{title}</title>
   <meta name="description" content={description} />
   <meta property="og:title" content={ogTitle} />
   <meta property="og:description" content={description} />
   <meta property="og:type" content="website" />
   {ogUrl && <meta property="og:url" content={ogUrl} />}
-  <link rel="icon" href="/assets/deadwax-logo.svg" type="image/svg+xml" />
+  <link rel="icon" href={app.icon} type={iconType} />
 </head>

@@ -9,10 +9,10 @@
     "build": "astro build",
     "preview": "astro preview --host 0.0.0.0",
     "typecheck": "astro check",
-    "lint": "eslint . --ignore-pattern '.astro/'",
+    "check:site": "node scripts/check-site.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check:site": "node scripts/check-site.mjs",
+    "lint": "eslint . --ignore-pattern .astro/",
     "prepare": "cd .. && husky Site/.husky",
     "test:e2e": "playwright test"
   },
