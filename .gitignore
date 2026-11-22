@@ -43,8 +43,5 @@ Site/.astro/
 Site/dist/
 Site/node_modules/
 
-# Local Netlify folder
-.netlify
-
 # Deadwax backend dependencies
 Backend/node_modules/
