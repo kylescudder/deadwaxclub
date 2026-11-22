@@ -24,12 +24,10 @@ enum WidgetSnapshotStore {
     }
 
     static func wishlistPriceAlerts() -> [WishlistPriceAlertSnapshot] {
-        if let data = defaults.data(forKey: wishlistPriceAlertsKey),
-           let snapshots = try? JSONDecoder().decode([WishlistPriceAlertSnapshot].self, from: data) {
+        if let snapshots = AppGroupStore.load([WishlistPriceAlertSnapshot].self, forKey: wishlistPriceAlertsKey) {
             return snapshots
         }
-        guard let data = defaults.data(forKey: wishlistPriceAlertKey),
-              let snapshot = try? JSONDecoder().decode(WishlistPriceAlertSnapshot.self, from: data) else { return [] }
+        guard let snapshot = AppGroupStore.load(WishlistPriceAlertSnapshot.self, forKey: wishlistPriceAlertKey) else { return [] }
         return [snapshot]
     }
 
@@ -38,12 +36,12 @@ enum WidgetSnapshotStore {
     }
 
     static func saveWishlistPriceAlerts(_ snapshots: [WishlistPriceAlertSnapshot]) {
-        defaults.removeObject(forKey: wishlistPriceAlertKey)
+        AppGroupStore.remove(forKey: wishlistPriceAlertKey)
         if !snapshots.isEmpty, let data = try? JSONEncoder().encode(snapshots) {
-            defaults.set(data, forKey: wishlistPriceAlertsKey)
+            AppGroupStore.defaults.set(data, forKey: wishlistPriceAlertsKey)
         } else {
-            defaults.removeObject(forKey: wishlistPriceAlertKey)
-            defaults.removeObject(forKey: wishlistPriceAlertsKey)
+            AppGroupStore.remove(forKey: wishlistPriceAlertKey)
+            AppGroupStore.remove(forKey: wishlistPriceAlertsKey)
         }
     }
 
@@ -63,13 +61,7 @@ enum WidgetSnapshotStore {
         coverArtDirectory.appendingPathComponent(fileName)
     }
 
-    private static var defaults: UserDefaults {
-        UserDefaults(suiteName: appGroupID) ?? .standard
-    }
-
     private static var coverArtDirectory: URL {
-        let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID)
-            ?? FileManager.default.temporaryDirectory
-        return container.appendingPathComponent("WidgetCovers", isDirectory: true)
+        AppGroupStore.containerURL.appendingPathComponent("WidgetCovers", isDirectory: true)
     }
 }

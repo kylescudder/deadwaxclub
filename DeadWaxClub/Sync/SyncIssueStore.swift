@@ -1,5 +1,8 @@
+import Combine
 import Foundation
 
+/// A sync problem shown to the user once. This file is identical in every
+/// app; app-specific reports live in `SyncIssueStore+App.swift`.
 struct SyncIssue: Identifiable, Equatable, Sendable {
     let id = UUID()
     let title: String
@@ -10,34 +13,14 @@ struct SyncIssue: Identifiable, Equatable, Sendable {
 final class SyncIssueStore: ObservableObject {
     @Published var current: SyncIssue?
 
-    func reportRejectedRecord(quotaExceeded: Bool) {
-        current = SyncIssue(
-            title: quotaExceeded ? "Offline record not synced" : "Offline change rejected",
-            message: quotaExceeded
-                ? "The server rejected this record because your lifetime free allowance was reached. The local copy will be removed."
-                : "The server rejected a locally saved record. The local copy will be restored to the server version."
-        )
-    }
-
-    func reportRejectedChange(table: String) {
-        if current?.title == "Offline record not synced" { return }
-        current = SyncIssue(
-            title: "Offline change not synced",
-            message: "The server rejected a locally saved \(table.replacingOccurrences(of: "_", with: " ")) change. Server data will be restored."
-        )
+    func report(_ issue: SyncIssue) {
+        current = issue
     }
 
     func reportLocalClearFailure() {
-        current = SyncIssue(
+        report(SyncIssue(
             title: "Offline data not cleared",
-            message: "Deadwax Club could not clear its offline database. It will retry before another account can sync on this device."
-        )
-    }
-
-    func reportQuotaSnapshotUnavailable() {
-        current = SyncIssue(
-            title: "Finish syncing first",
-            message: "Deadwax Club needs to download your record allowance before you can save offline. Connect to the internet, wait for sync to finish, and try again."
-        )
+            message: SyncAppConfiguration.localClearFailureMessage
+        ))
     }
 }

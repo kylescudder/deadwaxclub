@@ -2,47 +2,55 @@ import Foundation
 import UIKit
 import UserNotifications
 
+/// Shared push coordinator: notification authorization, APNs registration
+/// through `PushRegistrationLifecycle`, and the notification-center delegate.
+/// This file is identical in every app; the app decides where a tapped
+/// notification goes in `PushAppConfiguration.route(for:)`.
+///
+/// Registration uses the shared push gateway when `PUSH_GATEWAY_URL` is
+/// configured, otherwise the app API's `/api/devices` endpoint.
 @MainActor
-protocol PushNotifications: AnyObject {
-    var authorizationStatus: UNAuthorizationStatus { get }
-    func requestAuthorization() async -> Bool
-    func activate() async
-    func deactivate() async
-    func receivedDeviceToken(_ data: Data) async
-    func refreshRegistration() async
-}
-
-/// Coordinates notification authorization, APNs registration, and the active
-/// registration transport: the shared push gateway when it is configured,
-/// otherwise the Deadwax API's device-token endpoint.
-@MainActor
-final class PushManager: NSObject, ObservableObject, PushNotifications {
+final class PushManager: NSObject, ObservableObject {
     static let shared = PushManager()
 
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
+
+    private let notificationCenter: UNUserNotificationCenter
     private var registrationLifecycle: PushRegistrationLifecycle?
     private var sessionGeneration = UUID()
 
     private override init() {
+        notificationCenter = .current()
         super.init()
-        UNUserNotificationCenter.current().delegate = self
+        notificationCenter.delegate = self
         Task { await refreshAuthorizationStatus() }
     }
 
+    /// A manager around an existing lifecycle. It does not become the
+    /// notification-center delegate.
+    init(
+        registrationLifecycle: PushRegistrationLifecycle,
+        notificationCenter: UNUserNotificationCenter = .current()
+    ) {
+        self.registrationLifecycle = registrationLifecycle
+        self.notificationCenter = notificationCenter
+        super.init()
+    }
+
     func bind(auth: AuthClient) {
+        guard registrationLifecycle == nil else { return }
         let configuration = PushGatewayConfiguration.fromBundle
-        let gateway: (any PushRegistrationTransport)? = configuration.map {
-            GatewayPushRegistrationTransport(
-                configuration: $0,
+        let transport: any PushRegistrationTransport
+        switch PushRegistrationTransportKind.selected(for: configuration) {
+        case .gateway:
+            guard let configuration else { return }
+            transport = GatewayPushRegistrationTransport(
+                configuration: configuration,
                 session: URLSession(configuration: .ephemeral)
             )
+        case .api:
+            transport = APIPushRegistrationTransport(auth: auth)
         }
-        let api = APIPushRegistrationTransport(auth: auth)
-        let transport = PushRegistrationTransportSelector.select(
-            configuration: configuration,
-            gateway: gateway,
-            api: api
-        )
         registrationLifecycle = PushRegistrationLifecycle(
             identityProvider: auth,
             installationIDProvider: KeychainPushInstallationIDProvider(),
@@ -54,17 +62,16 @@ final class PushManager: NSObject, ObservableObject, PushNotifications {
     }
 
     func refreshAuthorizationStatus() async {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        let settings = await notificationCenter.notificationSettings()
         authorizationStatus = settings.authorizationStatus
     }
 
-    /// Request the OS prompt and register for remote notifications if granted.
-    /// Returns true if authorized.
+    /// Shows the system prompt and, if granted, registers the current account
+    /// for remote notifications. Returns whether permission was granted.
     @discardableResult
     func requestAuthorization() async -> Bool {
         do {
-            let granted = try await UNUserNotificationCenter.current()
-                .requestAuthorization(options: [.alert, .sound, .badge])
+            let granted = try await notificationCenter.requestAuthorization(options: [.alert, .sound, .badge])
             await refreshAuthorizationStatus()
             if granted {
                 await registrationLifecycle?.refreshRegistration(isAuthorized: true)
@@ -76,6 +83,7 @@ final class PushManager: NSObject, ObservableObject, PushNotifications {
         }
     }
 
+    /// Starts registration for the signed-in account.
     func activate() async {
         let generation = sessionGeneration
         await refreshAuthorizationStatus()
@@ -83,24 +91,26 @@ final class PushManager: NSObject, ObservableObject, PushNotifications {
         await registrationLifecycle?.activate(isAuthorized: isAuthorized)
     }
 
+    /// Unregisters before the session is invalidated.
     func deactivate() async {
         sessionGeneration = UUID()
         await registrationLifecycle?.deactivate()
     }
 
+    /// Forgets the account after an observed sign-out, without a request.
     func sessionEnded() {
         sessionGeneration = UUID()
         registrationLifecycle?.sessionEnded()
     }
 
-    /// Idempotent: after authorization, resubmits the current token and asks
-    /// iOS to refresh it. Called on each foreground transition.
+    /// Idempotent: resubmits the current token and asks iOS to refresh it.
+    /// Called on each foreground transition.
     func refreshRegistration() async {
         await refreshAuthorizationStatus()
         await registrationLifecycle?.refreshRegistration(isAuthorized: isAuthorized)
     }
 
-    /// Called from the AppDelegate after iOS hands us a device token.
+    /// Called from `AppDelegate` when iOS hands over a device token.
     func receivedDeviceToken(_ data: Data) async {
         await registrationLifecycle?.receivedDeviceToken(data)
     }
@@ -116,6 +126,13 @@ final class PushManager: NSObject, ObservableObject, PushNotifications {
     }
 }
 
+/// Where a tapped notification should go: a `NotificationCenter` post that
+/// the app's composition root or views handle.
+struct PushRoute: Equatable, Sendable {
+    let name: Notification.Name
+    let userInfo: [String: String]
+}
+
 extension PushManager: UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -128,30 +145,9 @@ extension PushManager: UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        let userInfo = response.notification.request.content.userInfo
-        let kind = userInfo["kind"] as? String
-
-        // Pushes from notify-inbox carry a `kind` discriminator; a push with
-        // only a record_id is a price alert.
-        if kind == "collection_invite", let collectionID = userInfo["collection_id"] as? String {
-            await MainActor.run {
-                NotificationCenter.default.post(
-                    name: .openCollection, object: nil, userInfo: ["collection_id": collectionID]
-                )
-            }
-            return
-        }
-
-        if let recordID = userInfo["record_id"] as? String {
-            await MainActor.run {
-                NotificationCenter.default.post(
-                    name: .openRecord, object: nil, userInfo: ["record_id": recordID]
-                )
-            }
+        guard let route = PushAppConfiguration.route(for: response.notification.request.content.userInfo) else { return }
+        await MainActor.run {
+            NotificationCenter.default.post(name: route.name, object: nil, userInfo: route.userInfo)
         }
     }
-}
-
-extension Notification.Name {
-    static let openRecord = Notification.Name("deadwaxclub.openRecord")
 }

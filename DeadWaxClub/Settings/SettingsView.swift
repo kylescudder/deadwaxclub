@@ -74,7 +74,7 @@ struct SettingsView: View {
             }
 
             Section {
-                NotificationSettingsRow()
+                PushAuthorizationRow()
             } header: {
                 Text("Notifications")
             } footer: {
@@ -245,35 +245,6 @@ struct SettingsView: View {
         } catch {
             deleteError = error.localizedDescription
             errorCount += 1
-        }
-    }
-}
-
-private struct NotificationSettingsRow: View {
-    @ObservedObject private var push = PushManager.shared
-    @Environment(\.openURL) private var openURL
-
-    var body: some View {
-        switch push.authorizationStatus {
-        case .authorized, .ephemeral, .provisional:
-            Label("Allowed", systemImage: "checkmark.seal.fill")
-                .foregroundStyle(.green)
-        case .denied:
-            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                Label("Disabled in iOS Settings", systemImage: "xmark.seal")
-                    .foregroundStyle(.red)
-                Button("Open Settings") {
-                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
-                        openURL(url)
-                    }
-                }
-            }
-        case .notDetermined:
-            Button("Turn on price-alert notifications") {
-                Task { await push.requestAuthorization() }
-            }
-        @unknown default:
-            Text("Unknown")
         }
     }
 }
