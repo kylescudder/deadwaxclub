@@ -31,6 +31,13 @@ struct SignInView: View {
                 }
                 .padding(.top, Theme.Spacing.xxl)
 
+                if services.auth.requiresReauthentication {
+                    Text("Please sign in again to pick up where you left off.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.Colors.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+
                 VStack(spacing: Theme.Spacing.md) {
                     TextField("Email", text: $email)
                         .keyboardType(.emailAddress)
@@ -90,20 +97,15 @@ struct SignInView: View {
                 }
 
                 if services.auth.requiresReauthentication {
-                    VStack(spacing: Theme.Spacing.sm) {
-                        Text("Sign in with your original account to keep your offline changes, or sign out to use another account.")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Colors.textSecondary)
-                            .multilineTextAlignment(.center)
-                        Button("Sign out and discard local data", role: .destructive) {
-                            showDiscardConfirmation = true
-                        }
+                    Button("Use a different account") {
+                        showDiscardConfirmation = true
                     }
-                }
-
-                Button("Create an account") { showSignUp = true }
                     .font(.callout)
-                    .padding(.top, Theme.Spacing.sm)
+                } else {
+                    Button("Create an account") { showSignUp = true }
+                        .font(.callout)
+                        .padding(.top, Theme.Spacing.sm)
+                }
             }
             .disabled(isWorking)
             .padding(.horizontal, Theme.Spacing.lg)
@@ -111,13 +113,13 @@ struct SignInView: View {
         }
         .background(Theme.Colors.background)
         .scrollDismissesKeyboard(.interactively)
-        .alert("Discard local data and sign out?", isPresented: $showDiscardConfirmation) {
-            Button("Discard and sign out", role: .destructive) {
+        .alert("Use a different account?", isPresented: $showDiscardConfirmation) {
+            Button("Switch account", role: .destructive) {
                 Task { await discardLocalAccount() }
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Stay here", role: .cancel) {}
         } message: {
-            Text("This removes this account’s data from this device, including any changes that have not synced. Synced data stays in your account. You can then sign in with another account.")
+            Text("Any changes on this phone that haven’t been saved to your account will be lost. Everything already saved to your account will still be there when you sign back in.")
         }
         .navigationDestination(isPresented: $showSignUp) { SignUpView() }
         .sheet(isPresented: $showForgotPassword) {

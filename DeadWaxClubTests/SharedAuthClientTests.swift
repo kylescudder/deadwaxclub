@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Foundation
 import Network
 import XCTest
@@ -9,6 +10,60 @@ import XCTest
 
 @MainActor
 final class SharedAuthClientTests: XCTestCase {
+    func testCancellingAppleSignInKeepsAccountAndClearsPreviousError() async throws {
+        let owner = UUID()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let store = MemoryStore()
+        store.data = session(user: owner, token: "saved-session")
+        let auth = AuthClient(sessionStore: store, defaults: defaults)
+        await auth.bootstrap(offlineAccount: { ([owner], true) })
+        auth.api.onUnauthorized?()
+        let saved = store.data
+        auth.lastError = "A previous attempt failed"
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        auth.beginAppleSignIn(request: request)
+        XCTAssertNil(auth.lastError)
+        await auth.completeAppleSignIn(result: .failure(NSError(
+            domain: ASAuthorizationError.errorDomain,
+            code: ASAuthorizationError.canceled.rawValue
+        )))
+        XCTAssertNil(auth.lastError)
+        XCTAssertEqual(auth.currentUserID, owner)
+        XCTAssertTrue(auth.requiresReauthentication)
+        XCTAssertFalse(auth.canAccessMainApp)
+        XCTAssertEqual(store.data, saved)
+        XCTAssertEqual(auth.api.token, "saved-session")
+    }
+
+    func testAppleSignInFailureStillShowsAnError() async {
+        let auth = AuthClient(sessionStore: MemoryStore())
+        await auth.completeAppleSignIn(result: .failure(NSError(
+            domain: ASAuthorizationError.errorDomain,
+            code: ASAuthorizationError.failed.rawValue
+        )))
+        XCTAssertNotNil(auth.lastError)
+    }
+
+    func testGoogleCancellationIsQuietButOtherWebSessionErrorsAreVisible() {
+        let auth = AuthClient(sessionStore: MemoryStore())
+        auth.lastError = "Previous error"
+        auth.handleSocialSignInError(NSError(
+            domain: ASWebAuthenticationSessionError.errorDomain,
+            code: ASWebAuthenticationSessionError.canceledLogin.rawValue
+        ), category: "auth.google")
+        XCTAssertNil(auth.lastError)
+        auth.handleSocialSignInError(NSError(
+            domain: ASWebAuthenticationSessionError.errorDomain,
+            code: ASWebAuthenticationSessionError.presentationContextInvalid.rawValue
+        ), category: "auth.google")
+        XCTAssertNotNil(auth.lastError)
+        // A matching numeric code in another domain must remain a failure.
+        auth.handleSocialSignInError(NSError(
+            domain: "OtherError", code: ASAuthorizationError.canceled.rawValue
+        ), category: "auth.apple")
+        XCTAssertNotNil(auth.lastError)
+    }
+
     func testMainScreensRequireASessionAndBlockUnauthorizedResponses() async throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
         let store = MemoryStore()
