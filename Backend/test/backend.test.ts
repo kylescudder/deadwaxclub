@@ -125,3 +125,24 @@ test('device unregister is authenticated, owner-scoped and idempotent', async ()
   const remaining = await pool.query('select user_id from public.device_tokens where apns_token=$1', [apnsToken])
   expect(remaining.rows).toEqual([{ user_id: accounts[1]!.id }])
 })
+
+test('the website can read shared lists cross-origin without credentials', async () => {
+  const preflight = await app(new Request(new URL('/api/public/get_shared_list', origin), {
+    method: 'OPTIONS',
+    headers: { origin: 'https://deadwaxclub.app', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' }
+  }))
+  expect(preflight.status).toBe(204)
+  expect(preflight.headers.get('access-control-allow-origin')).toBe('*')
+  expect(preflight.headers.get('access-control-allow-headers')).toBe('content-type')
+  for (const path of ['/api/public/get_shared_list', '/api/public/get_shared_list_records']) {
+    const missing = await call(path, { body: { token: 'zzzzzzzzzzzz' } })
+    expect(missing.status).toBe(200)
+    expect(await missing.json()).toEqual([])
+    expect(missing.headers.get('access-control-allow-origin')).toBe('*')
+  }
+  const invalid = await call('/api/public/get_shared_list', { body: { token: 'not a token' } })
+  expect(invalid.status).toBe(422)
+  expect(invalid.headers.get('access-control-allow-origin')).toBe('*')
+  // Authenticated endpoints stay same-origin only.
+  expect((await call('/api/me')).headers.get('access-control-allow-origin')).toBeNull()
+})

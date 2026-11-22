@@ -10,9 +10,8 @@ COPY scripts ./scripts
 COPY src ./src
 COPY public ./public
 # Public values for the shared list viewer; see scripts/write-config.mjs.
-ARG SUPABASE_URL
-ARG SUPABASE_ANON_KEY
-RUN SUPABASE_URL="$SUPABASE_URL" SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" bun scripts/write-config.mjs \
+ARG API_URL
+RUN API_URL="$API_URL" bun scripts/write-config.mjs \
     && bun run build && bun run check:site
 
 FROM caddy:2.11.7@sha256:36c24ad91a7ff7bc4c87fe22bfa8df3c4b18da0773d73fc12ee2c52b98c0bb7e

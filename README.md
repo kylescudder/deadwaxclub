@@ -88,7 +88,7 @@ The Astro site under `Site/` serves the marketing page, support, privacy and ter
 
 ```sh
 cp Site/public/js/config.example.js Site/public/js/config.js
-# Edit config.js with your Supabase URL + anon key
+# config.js points at the Deadwax API origin (https://auth.deadwaxclub.app)
 bun run dev
 ```
 
@@ -139,8 +139,7 @@ environment; the secrets live in that main-only environment.
 
 | Setting | Kind | Purpose |
 |---|---|---|
-| `SITE_SUPABASE_URL` | repository variable | Supabase API origin for the list viewer |
-| `SITE_SUPABASE_ANON_KEY` | repository variable | Public Supabase anon key (RLS gates access); without it shared lists show an error |
+| `API_BASE_URL` | repository variable | Deadwax API origin; the list viewer reads shared lists from it |
 | `DEPLOY_HOST` | repository variable | Herman deploy hostname, protected by Cloudflare Access |
 | `SITE_BASE_URL` | repository variable | Public origin checked for the new revision |
 | `CF_ACCESS_CLIENT_ID`, `CF_ACCESS_CLIENT_SECRET` | `production` secrets | Access service token for the deploy hostname |
@@ -180,8 +179,8 @@ Site/               Astro marketing site + public list viewer
   src/pages/        routes for /, /l, /privacy, and /terms
   src/styles.css    shared viewer/legal theme; CSS variables match iOS
   public/js/
-    list.js         vanilla module, fetches via Supabase REST RPCs
-    config.example.js   template for Supabase URL + anon key
+    list.js         vanilla module, fetches shared lists from the Deadwax API
+    config.example.js   template for the Deadwax API origin
   public/.well-known/
     apple-app-site-association   Universal Links manifest
 ```
