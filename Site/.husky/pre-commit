@@ -1,3 +1,4 @@
-# Deadwax Club: the site is not at the git root, so run lint-staged from Site/.
-cd Site
-bunx --bun --no-install lint-staged
+# Site/ and Backend/ each have their own lint-staged config, and git runs
+# hooks from the repository root. Run lint-staged from there so staged files
+# in both folders are checked, each with its own Prettier.
+bun --bun Site/node_modules/.bin/lint-staged

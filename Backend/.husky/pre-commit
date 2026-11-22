@@ -1,1 +1,4 @@
-bunx --bun --no-install lint-staged
+# Site/ and Backend/ each have their own lint-staged config, and git runs
+# hooks from the repository root. Run lint-staged from there so staged files
+# in both folders are checked, each with its own Prettier.
+bun --bun Backend/node_modules/.bin/lint-staged

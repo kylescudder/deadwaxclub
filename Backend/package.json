@@ -14,7 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "prepare": "husky"
+    "prepare": "cd .. && husky Backend/.husky"
   },
   "dependencies": {
     "@apple/app-store-server-library": "^3.1.0",
