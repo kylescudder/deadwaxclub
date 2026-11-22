@@ -15,13 +15,13 @@ byte-for-byte identical with the other apps, and CI runs all of them:
 
 - `Scripts/check-shared-ios-core.sh` — `AppSecrets`, `AppBootstrap`, `Theme`, `LoadingView`, `LottieAnimationView`, `PrimaryButton`, `Logger`, `AppearanceManager`, the billing core (`BillingRepository`, `SubscriptionAccessState`, `CreationQuotaProviding`, `SubscriptionPaywallView`), the sync core (`PowerSyncManager`, `APIConnector`, `SyncIssueStore`), the `Shared*Tests`, `setup.sh` and the iOS workflows.
 - `Scripts/check-shared-auth.sh` — Better Auth backend and native auth (`SHARED_AUTH.md`).
-- `Scripts/check-shared-push-core.sh` — push registration core (`SHARED_PUSH_CORE.md`).
+- `Scripts/check-shared-push-core.sh` — push registration core and its adapters (`PushManager`, `PushRegistration`, `AuthClient+PushIdentity`; `SHARED_PUSH_CORE.md`).
 - `Scripts/check-shared-infra.sh` — backend deployment and provisioning (`SHARED_INFRA.md`).
 - `Scripts/check-shared-site.sh` — the `Site/` layout, tooling, image and site workflows (`SHARED_SITE.md`).
 
 Never edit a shared file in one app only. Put app-specific values behind the
 hooks listed in `SHARED_IOS_CORE.md` (`Theme+App.swift`, `AuthAppConfiguration`,
-`BillingAppConfiguration`, `SyncAppConfiguration`, `project.yml`,
+`BillingAppConfiguration`, `SyncAppConfiguration`, `PushAppConfiguration`, `project.yml`,
 `Scripts/setup-extras.sh`), or make the same change in every app and refresh the manifest with
 `sh Scripts/check-shared-ios-core.sh --write`.
 
@@ -109,7 +109,8 @@ identical across all application repositories.
 
 - The single source of truth for user-facing notifications is `public.notifications`. Anything that wants to ping a user inserts a row; each row becomes one `PushEvent v1` for the shared APNs gateway (`docs/push-gateway.md`), which looks up the user's installations and delivers to APNs. The iOS bell icon (`NotificationInboxView`) reads the same table via `NotificationsRepository`, so push and inbox always agree.
 - `notification_kind ∈ {price_alert, collection_invite}`. Price alerts come from the `price_entries` trigger that flags `is_new_low`; `invite_to_collection` produces collection_invite. New event kinds drop in by inserting a row — no new function needed.
-- APNs payloads carry a `kind` discriminator. `PushManager`'s notification-tap handler routes `collection_invite` to `Notification.Name.openCollection` (handled by `AppServices` → sets `pendingDeepLinkCollectionID` → `RootView` presents `ManageCollectionsView`), and falls back to `record_id` → `Notification.Name.openRecord` for price alerts (handled by `openRecordByID` against local SQLite).
+- `PushManager` (with `PushRegistration`, `AuthClient+PushIdentity` and `AppDelegate`) is the shared push coordinator (`Scripts/SHARED_PUSH_CORE.md`); Deadwax's Keychain item and tap routes live in `DeadWaxClub/Notifications/PushAppConfiguration.swift`.
+- APNs payloads carry a `kind` discriminator. `PushAppConfiguration.route(for:)`, called by `PushManager`'s notification-tap handler, routes `collection_invite` to `Notification.Name.openCollection` (handled by `AppServices` → sets `pendingDeepLinkCollectionID` → `RootView` presents `ManageCollectionsView`), and falls back to `record_id` → `Notification.Name.openRecord` for price alerts (handled by `openRecordByID` against local SQLite).
 
 ### Multi-image carousel
 
