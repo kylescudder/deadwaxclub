@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// The shared sign-in screen: email and password, Apple, Google, password
+/// reset, and the offline-account recovery choice. This file is identical in
+/// every app; branding comes from `AuthAppConfiguration`.
 struct SignInView: View {
     @EnvironmentObject private var services: AppServices
     @State private var email = ""
@@ -13,13 +16,15 @@ struct SignInView: View {
         ScrollView {
             VStack(spacing: Theme.Spacing.xl) {
                 VStack(spacing: Theme.Spacing.sm) {
-                    Image("AppLogo")
+                    Image(AuthAppConfiguration.signInLogo.imageName)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 96, height: 96)
-                    Text("Deadwax Club")
+                        .frame(width: AuthAppConfiguration.signInLogo.size, height: AuthAppConfiguration.signInLogo.size)
+                        .clipShape(RoundedRectangle(cornerRadius: AuthAppConfiguration.signInLogo.cornerRadius))
+                    Text(AuthAppConfiguration.signInTitle)
                         .font(.largeTitle.weight(.bold))
-                    Text("Track the vinyl you own and the vinyl you want.")
+                        .foregroundStyle(Theme.Colors.textPrimary)
+                    Text(AuthAppConfiguration.signInTagline)
                         .font(.callout)
                         .foregroundStyle(Theme.Colors.textSecondary)
                         .multilineTextAlignment(.center)
@@ -131,7 +136,7 @@ struct SignInView: View {
         defer { isWorking = false }
         if await services.auth.signOut() {
             await services.sync.wipe()
-            services.onboarding.resetForSignOut()
+            AuthAppConfiguration.didDiscardLocalAccount(services)
             services.auth.lastError = nil
             email = ""
             password = ""
@@ -154,4 +159,12 @@ struct SignInView: View {
         defer { isWorking = false }
         await services.auth.signInWithGoogle()
     }
+}
+
+/// The logo at the top of the sign-in screen. A zero corner radius leaves
+/// the image unclipped.
+struct SignInLogo: Sendable {
+    let imageName: String
+    let size: CGFloat
+    let cornerRadius: CGFloat
 }

@@ -10,6 +10,12 @@ enum PushAppConfiguration {
     static let installationIDKeychainService: String? = nil
     static let installationIDKeychainAccessibility = kSecAttrAccessibleAfterFirstUnlock as String
 
+    // Shared `PushAuthorizationRow` copy in Settings.
+    static let settingsAllowedText = "Allowed"
+    static let settingsDeniedText = "Disabled in iOS Settings"
+    static let settingsEnableTitle = "Turn on price-alert notifications"
+    static let settingsUnknownText = "Unknown"
+
     static let fallbackBundleID = "com.deadwaxclub.app"
 
     /// Pushes from notify-inbox carry a `kind` discriminator. A collection
