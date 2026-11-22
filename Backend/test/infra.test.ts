@@ -110,6 +110,13 @@ integration(
         [config.runtimeRole]
       )
       expect(Object.values(roles.rows[0]).some(Boolean)).toBe(false)
+      // Better Auth runs as the runtime login itself, so it needs schema USAGE
+      // even though the platform only grants it to <db>_runtime.
+      const usage = await client.query(
+        "select has_schema_privilege($1, 'public', 'usage') as usage",
+        [config.runtimeRole]
+      )
+      expect(usage.rows[0].usage).toBe(true)
       // CI mirrors Herman's platform defaults; provisioning must strip them.
       const defaults = await client.query(
         'select 1 from pg_default_acl d, aclexplode(d.defaclacl) a where a.grantee=(select oid from pg_roles where rolname=$1)',
