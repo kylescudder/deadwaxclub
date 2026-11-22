@@ -14,12 +14,16 @@ for (const database of [
   config.project + '_infra_test'
 ]) {
   const owner = identifier(config.ownerRole)
-  const runtime = identifier(config.runtimeRole)
+  // The platform creates and grants <db>_runtime. An app may use its own
+  // runtime login instead (Deadwax: deadwax_runtime), which only provisionRoles
+  // creates and grants, exactly as on Herman.
+  const platformRuntime = config.database + '_runtime'
+  const runtime = identifier(platformRuntime)
   const admin = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 })
   try {
     // Mirror Herman's platform scripts/provision-project.py so tests start from
     // the shared server's real owner/runtime roles and default privileges.
-    for (const role of [config.ownerRole, config.runtimeRole])
+    for (const role of [config.ownerRole, platformRuntime])
       if (
         !(await admin.query('select 1 from pg_roles where rolname=$1', [role]))
           .rowCount

@@ -77,13 +77,12 @@ async function provisionRolesBody(
       await client.query(
         `alter default privileges for role ${identifier(config.ownerRole)} in schema public revoke all on ${kind} from ${identifier(config.runtimeRole)}`
       )
-  // The platform revokes schema access from PUBLIC, so each app-scoped request
-  // and recovery role needs explicit USAGE; table rights still come from migrations.
+  // The platform revokes schema access from PUBLIC and grants USAGE only to its
+  // own <db>_runtime login. The app runtime login (Better Auth queries run as it)
+  // and each app-scoped request and recovery role need explicit USAGE; table
+  // rights still come from migrations.
   await client.query(
-    `grant usage on schema public to ${roles
-      .filter((role) => role !== config.runtimeRole)
-      .map(identifier)
-      .join(', ')}`
+    `grant usage on schema public to ${roles.map(identifier).join(', ')}`
   )
   const groups = roles.filter(
     (role) => role !== config.runtimeRole && role !== config.recoveryRole
