@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Presented by RootView whenever AuthClient.isPasswordRecovery flips true —
-/// i.e. the user just opened a recovery link and Supabase has handed us a
+/// i.e. the user just opened a password-reset link and the API has handed us a
 /// recovery session. The sheet is interactive-dismiss-disabled so the user
 /// either sets a new password or explicitly signs out; we don't want to leave
 /// them stranded in the app on a recovery session they can't escape.

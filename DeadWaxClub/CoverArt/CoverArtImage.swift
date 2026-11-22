@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Renders a record's cover art using the best available source:
-/// local Caches file → Supabase Storage URL → Discogs URL → placeholder.
-/// Triggers caching to local + Supabase as a side effect on first appearance.
+/// local Caches file → API cover URL → Discogs URL → placeholder.
+/// Triggers caching to local + the API cover store as a side effect on first appearance.
 struct CoverArtImage: View {
     let record: VinylRecord
 

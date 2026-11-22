@@ -51,7 +51,7 @@ final class GatewayPushRegistrationTransportTests: XCTestCase {
         XCTAssertNil(json["bundle_id"])
         XCTAssertNil(json["team_id"])
         XCTAssertNil(json["key_id"])
-        XCTAssertNil(json["supabase_url"])
+        XCTAssertEqual(Set(json.keys), ["version", "platform", "apns_token", "apns_environment"])
     }
 
     @MainActor

@@ -1,16 +1,16 @@
 import SwiftUI
 
 /// Swipable carousel of every image attached to a record. The first slide is
-/// the primary cover, sourced from the existing local-file / Supabase Storage
-/// cache and works fully offline. Secondary slides come from `record_images`,
-/// streamed from Supabase Storage; if a slide can't load (no network and the
+/// the primary cover, sourced from the local-file / API cover cache and works
+/// fully offline. Secondary slides come from `record_images`,
+/// streamed from the API's cover store; if a slide can't load (no network and the
 /// bytes haven't been mirrored yet) we render an offline-state card on that
 /// slide rather than failing the whole carousel.
 ///
 /// Tap any slide to open the image full-screen with pinch-to-zoom.
 ///
 /// Falls back to a single CoverArtImage when no record_images rows exist for
-/// the record yet — covers legacy records imported before this feature.
+/// the record yet.
 struct RecordImageCarousel: View {
     let record: VinylRecord
 
@@ -94,8 +94,8 @@ struct RecordImageCarousel: View {
     }
 }
 
-/// Renders a non-primary image. Streams from Supabase Storage (or upstream
-/// source) — no local file cache. Shows an offline-state card if neither
+/// Renders a non-primary image. Streams from the API's cover store (or the
+/// upstream source) — no local file cache. Shows an offline-state card if neither
 /// source resolves.
 private struct SecondaryImageSlide: View {
     let image: RecordImage
@@ -125,7 +125,7 @@ private struct SecondaryImageSlide: View {
         }
         .clipped()
         .task(id: image.id) {
-            // First sight mirrors upstream bytes into Supabase Storage so
+            // First sight mirrors upstream bytes into the API's cover store so
             // every other device fetches them without hitting Discogs.
             await services.coverArt.mirrorIfNeeded(image: image, record: record) { newPath in
                 Task { @MainActor in

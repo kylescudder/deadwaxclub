@@ -13,8 +13,8 @@ protocol PushNotifications: AnyObject {
 }
 
 /// Coordinates notification authorization, APNs registration, and the active
-/// registration transport. The legacy API transport remains the fallback
-/// while the shared gateway URL is empty.
+/// registration transport: the shared push gateway when it is configured,
+/// otherwise the Deadwax API's device-token endpoint.
 @MainActor
 final class PushManager: NSObject, ObservableObject, PushNotifications {
     static let shared = PushManager()
@@ -37,11 +37,11 @@ final class PushManager: NSObject, ObservableObject, PushNotifications {
                 session: URLSession(configuration: .ephemeral)
             )
         }
-        let legacy = LegacyPushRegistrationTransport(auth: auth)
+        let api = APIPushRegistrationTransport(auth: auth)
         let transport = PushRegistrationTransportSelector.select(
             configuration: configuration,
             gateway: gateway,
-            legacy: legacy
+            api: api
         )
         registrationLifecycle = PushRegistrationLifecycle(
             identityProvider: auth,
@@ -131,8 +131,8 @@ extension PushManager: UNUserNotificationCenterDelegate {
         let userInfo = response.notification.request.content.userInfo
         let kind = userInfo["kind"] as? String
 
-        // Newer pushes from notify-inbox carry an explicit `kind` discriminator.
-        // Legacy pushes (record_id only) fall through as price_alert.
+        // Pushes from notify-inbox carry a `kind` discriminator; a push with
+        // only a record_id is a price alert.
         if kind == "collection_invite", let collectionID = userInfo["collection_id"] as? String {
             await MainActor.run {
                 NotificationCenter.default.post(

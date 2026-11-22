@@ -14,7 +14,7 @@ struct RecordImage: Identifiable, Hashable {
     var position: Int
     /// Original upstream URL (e.g. Discogs CDN). Null for user-uploaded images.
     var sourceURL: String?
-    /// Path inside the `covers` Supabase Storage bucket once the bytes are
+    /// Path in the API cover store (`/api/covers/<path>`) once the bytes are
     /// mirrored. Null until first sight uploads it.
     var storagePath: String?
     var uploadedBy: String?

@@ -3,14 +3,14 @@ import CryptoKit
 
 /// Two-tier cover art cache:
 /// 1. Local file at `<Caches>/covers/<recordID>.jpg` — read first, available fully offline.
-/// 2. Supabase Storage `covers` bucket — populated on first sight under
+/// 2. The Deadwax API cover store (`/api/covers/...`) — populated on first sight under
 ///    `<artist>/<record>/<pressing-id>/...`, so other devices that have synced
 ///    the row can pull the bytes via HTTP without hitting Discogs.
 ///
 /// Flow on first display of a record without a local file:
 ///   - download bytes from `cover_art_storage_path` (if set) or `cover_art_source_url`
 ///   - write the bytes to local Caches
-///   - if no `cover_art_storage_path` yet, upload to Supabase and report the new path back
+///   - if no `cover_art_storage_path` yet, upload it to the API and report the new path back
 @MainActor
 final class CoverArtCache: ObservableObject {
     private let auth: AuthClient
@@ -31,7 +31,7 @@ final class CoverArtCache: ObservableObject {
 
     /// Best display URL for a record, resolved in this order:
     ///   1. local file (file:// URL) if cached on disk
-    ///   2. Supabase Storage public URL if `cover_art_storage_path` is set
+    ///   2. API cover URL if `cover_art_storage_path` is set
     ///   3. original Discogs URL
     func displayURL(for record: VinylRecord) -> URL? {
         let local = Self.localFile(for: record.coverCacheID)
@@ -45,7 +45,7 @@ final class CoverArtCache: ObservableObject {
         return nil
     }
 
-    /// Downloads bytes to disk (if missing) and uploads to Supabase Storage (if missing).
+    /// Downloads bytes to disk (if missing) and uploads them to the API cover store (if missing).
     /// Calls `onStoragePathPersisted` when a new storage path is created so the caller
     /// can write it back to the local SQLite row (PowerSync will then propagate it).
     func cacheIfNeeded(record: VinylRecord, onStoragePathPersisted: @escaping (String) -> Void) async {
@@ -136,9 +136,9 @@ final class CoverArtCache: ObservableObject {
     }
 
     /// If the image has a source_url but no storage_path, fetch the bytes
-    /// from upstream and mirror into Supabase Storage. Reports the new path
+    /// from upstream and mirror into the API cover store. Reports the new path
     /// so the caller can persist it on the record_images row (PowerSync
-    /// replicates and other devices fetch from Storage instead of the
+    /// replicates and other devices fetch from the API instead of the
     /// upstream / Discogs CDN).
     func mirrorIfNeeded(
         image: RecordImage,

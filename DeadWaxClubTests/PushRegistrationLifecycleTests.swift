@@ -179,13 +179,13 @@ final class PushRegistrationLifecycleTests: XCTestCase {
         XCTAssertEqual(registrar.registrationCount, 0)
     }
 
-    func testDisabledConfigurationSelectsOnlyLegacyTransport() async {
+    func testDisabledConfigurationSelectsOnlyAPITransport() async {
         let gateway = SpyPushRegistrationTransport()
-        let legacy = SpyPushRegistrationTransport()
+        let api = SpyPushRegistrationTransport()
         let selected = PushRegistrationTransportSelector.select(
             configuration: nil,
             gateway: gateway,
-            legacy: legacy
+            api: api
         )
         let lifecycle = makeLifecycle(
             identity: FakePushIdentityProvider(identity: accountA),
@@ -196,14 +196,14 @@ final class PushRegistrationLifecycleTests: XCTestCase {
         await lifecycle.receivedDeviceToken(Data([0x01]))
 
         let gatewayCalls = await gateway.calls
-        let legacyCalls = await legacy.calls
+        let apiCalls = await api.calls
         XCTAssertTrue(gatewayCalls.isEmpty)
-        XCTAssertEqual(legacyCalls.count, 1)
+        XCTAssertEqual(apiCalls.count, 1)
     }
 
     func testConfiguredGatewaySelectsOnlyGatewayTransport() async {
         let gateway = SpyPushRegistrationTransport()
-        let legacy = SpyPushRegistrationTransport()
+        let api = SpyPushRegistrationTransport()
         let configuration = PushGatewayConfiguration(
             baseURL: URL(string: "https://push.example.com")!,
             applicationID: "deadwaxclub"
@@ -211,7 +211,7 @@ final class PushRegistrationLifecycleTests: XCTestCase {
         let selected = PushRegistrationTransportSelector.select(
             configuration: configuration,
             gateway: gateway,
-            legacy: legacy
+            api: api
         )
         let lifecycle = makeLifecycle(
             identity: FakePushIdentityProvider(identity: accountA),
@@ -222,9 +222,9 @@ final class PushRegistrationLifecycleTests: XCTestCase {
         await lifecycle.receivedDeviceToken(Data([0x01]))
 
         let gatewayCalls = await gateway.calls
-        let legacyCalls = await legacy.calls
+        let apiCalls = await api.calls
         XCTAssertEqual(gatewayCalls.count, 1)
-        XCTAssertTrue(legacyCalls.isEmpty)
+        XCTAssertTrue(apiCalls.isEmpty)
     }
 
     func testInstallationIDIsCreatedOnceAndStoredLowercase() throws {
