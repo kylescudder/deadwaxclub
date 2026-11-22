@@ -58,7 +58,7 @@ PostgreSQL server. Read `Backend/deploy/README.md` for checks, migrations and
 deployment before release work.
 
 - The domain schema is the numbered SQL in `Backend/db/migrations/`, applied in order by `Backend/db/application.ts` and recorded in its ledger; add a new numbered file for every change and never edit or rename an applied one. Better Auth's tables are in `Backend/drizzle/`.
-- Backend checks: `cd Backend && bun install --frozen-lockfile`, `TEST_DATABASE_URL=... bun test`. Tests require a disposable PostgreSQL database. Never point them at production.
+- Backend checks: `cd Backend && bun install --frozen-lockfile`, `bun run typecheck`, `bun run lint`, `bun run format:check`, `TEST_DATABASE_URL=... bun test`, `bun run build`. The pre-commit hook checks staged `Backend/` and `Site/` files with Prettier. Tests require a disposable PostgreSQL database. Never point them at production.
 
 ## Push notifications
 

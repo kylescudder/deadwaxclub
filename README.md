@@ -127,7 +127,11 @@ Backend checks (see [Backend/deploy/README.md](Backend/deploy/README.md)):
 ```sh
 cd Backend
 bun install --frozen-lockfile
+bun run typecheck
+bun run lint
+bun run format:check
 TEST_DATABASE_URL=postgresql://.../disposable_database bun test
+bun run build
 ```
 
 The domain schema is the numbered SQL in `Backend/db/migrations/`, applied in
