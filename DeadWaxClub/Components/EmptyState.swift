@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// A centred empty or first-run state with an optional primary and secondary
+/// action. This file is identical in every app.
 struct EmptyState: View {
     let systemImage: String
     var imageName: String? = nil
