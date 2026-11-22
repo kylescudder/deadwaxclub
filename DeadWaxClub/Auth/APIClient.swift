@@ -9,13 +9,32 @@ struct APIError: Error, Decodable, LocalizedError, Sendable {
 
 @MainActor
 final class APIClient {
+    /// The native client authenticates with the bearer token only, so it never stores or sends
+    /// cookies. Better Auth checks the Origin header of every POST that carries a Cookie header,
+    /// and the app sends no Origin: a stored `<prefix>.session_token` cookie made sign-out (and
+    /// every later auth POST) fail with 403 `MISSING_OR_NULL_ORIGIN`.
+    nonisolated static let defaultSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        return URLSession(configuration: configuration)
+    }()
+
+    /// Earlier builds used `URLSession.shared`, which kept the Better Auth session cookie in
+    /// `HTTPCookieStorage.shared`. Other `.shared` requests to the API host would still send it.
+    nonisolated static func discardStoredCookies(for url: URL, in storage: HTTPCookieStorage = .shared) {
+        for cookie in storage.cookies(for: url) ?? [] { storage.deleteCookie(cookie) }
+    }
+
     private let session: URLSession
     private let baseURL: URL
     private let configurationError: String?
-    init(session: URLSession = .shared, baseURL: URL = AppSecrets.apiURL, configurationError: String? = AppSecrets.apiConfigurationError) {
+    init(session: URLSession = APIClient.defaultSession, baseURL: URL = AppSecrets.apiURL, configurationError: String? = AppSecrets.apiConfigurationError) {
         self.session = session
         self.baseURL = baseURL
         self.configurationError = configurationError
+        Self.discardStoredCookies(for: baseURL)
     }
     var token: String?
     var onUnauthorized: (() -> Void)?

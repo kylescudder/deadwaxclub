@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import XCTest
 #if canImport(Diald)
 @testable import Diald
@@ -171,6 +172,57 @@ final class SharedAuthClientTests: XCTestCase {
         UnauthorizedProtocol.onStart = nil
     }
 
+    /// Better Auth checks Origin on any POST that carries a Cookie header, and the app sends none,
+    /// so a stored session cookie turned sign-out into 403 MISSING_OR_NULL_ORIGIN. URLProtocol stubs
+    /// bypass CFNetwork's cookie handling, so this runs over real HTTP on the loopback interface.
+    func testSignOutSendsNoSessionCookieAfterSignIn() async throws {
+        XCTAssertNil(APIClient.defaultSession.configuration.httpCookieStorage)
+        XCTAssertFalse(APIClient.defaultSession.configuration.httpShouldSetCookies)
+        XCTAssertEqual(APIClient.defaultSession.configuration.httpCookieAcceptPolicy, .never)
+        let owner = UUID()
+        let signInBody = String(decoding: session(user: owner, token: "bearer-session"), as: UTF8.self)
+        let server = try LoopbackAuthServer { request in
+            if request.path == "/api/auth/sign-in/email" {
+                return (200, ["Set-Cookie": "app-auth.session_token=bearer-session.signature; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800"], signInBody)
+            }
+            if request.headers["cookie"] != nil, request.headers["origin"] == nil {
+                return (403, [:], #"{"code":"MISSING_OR_NULL_ORIGIN","message":"Missing or null Origin"}"#)
+            }
+            return (200, [:], #"{"success":true}"#)
+        }
+        let baseURL = try await server.start()
+        defer {
+            server.stop()
+            APIClient.discardStoredCookies(for: baseURL)
+        }
+        // An install that signed in with an earlier build still holds the cookie in shared storage.
+        let stale = try XCTUnwrap(HTTPCookie(properties: [
+            .domain: try XCTUnwrap(baseURL.host), .path: "/", .name: "app-auth.session_token", .value: "stale.signature"
+        ]))
+        HTTPCookieStorage.shared.setCookie(stale)
+        let client = APIClient(baseURL: baseURL, configurationError: nil)
+        XCTAssertEqual(HTTPCookieStorage.shared.cookies(for: baseURL) ?? [], [])
+
+        let store = MemoryStore()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let auth = AuthClient(sessionStore: store, defaults: defaults, api: client)
+        await auth.bootstrap(offlineAccount: { ([], false) })
+        for _ in 0..<2 {
+            await auth.signIn(email: "auth@example.test", password: "test-password")
+            XCTAssertNil(auth.lastError)
+            XCTAssertTrue(auth.canAccessMainApp)
+            XCTAssertEqual(HTTPCookieStorage.shared.cookies(for: baseURL) ?? [], [])
+            let signedOut = await auth.signOut()
+            XCTAssertTrue(signedOut, auth.lastError ?? "")
+            XCTAssertEqual(auth.state, .signedOut)
+            XCTAssertNil(store.data)
+        }
+        let requests = server.requests
+        XCTAssertEqual(requests.map(\.path), ["/api/auth/sign-in/email", "/api/auth/sign-out", "/api/auth/sign-in/email", "/api/auth/sign-out"])
+        for request in requests { XCTAssertNil(request.headers["cookie"], request.path) }
+        XCTAssertEqual(requests.filter { $0.path == "/api/auth/sign-out" }.map { $0.headers["authorization"] }, ["Bearer bearer-session", "Bearer bearer-session"])
+    }
+
     private func session(user: UUID, token: String) -> Data {
         try! JSONSerialization.data(withJSONObject: ["token": token, "user": ["id": user.uuidString, "email": "auth@example.test"]])
     }
@@ -203,5 +255,94 @@ private final class UnauthorizedProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+/// A minimal HTTP/1.1 server on 127.0.0.1, one request per connection. The lock guards the
+/// listener's readiness flag and the recorded requests, which the listener queue writes and the
+/// test reads.
+private final class LoopbackAuthServer: @unchecked Sendable {
+    struct Request: Sendable {
+        let method: String
+        let path: String
+        let headers: [String: String]
+    }
+    typealias Reply = (status: Int, headers: [String: String], body: String)
+
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "LoopbackAuthServer")
+    private let respond: @Sendable (Request) -> Reply
+    private let lock = NSLock()
+    private var received: [Request] = []
+    private var started = false
+
+    init(respond: @escaping @Sendable (Request) -> Reply) throws {
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+        listener = try NWListener(using: parameters)
+        self.respond = respond
+    }
+
+    var requests: [Request] {
+        lock.lock(); defer { lock.unlock() }
+        return received
+    }
+
+    func start() async throws -> URL {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            listener.stateUpdateHandler = { [self] state in
+                let result: Result<URL, Error>
+                switch state {
+                case .ready: result = .success(URL(string: "http://127.0.0.1:\(listener.port?.rawValue ?? 0)")!)
+                case .failed(let error): result = .failure(error)
+                default: return
+                }
+                lock.lock()
+                let first = !started
+                started = true
+                lock.unlock()
+                if first { continuation.resume(with: result) }
+            }
+            listener.newConnectionHandler = { [self] connection in
+                connection.start(queue: queue)
+                read(connection, buffer: Data())
+            }
+            listener.start(queue: queue)
+        }
+    }
+
+    func stop() { listener.cancel() }
+
+    private func read(_ connection: NWConnection, buffer: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [self] data, _, complete, error in
+            var buffer = buffer
+            if let data { buffer.append(data) }
+            guard let end = buffer.range(of: Data("\r\n\r\n".utf8)) else {
+                if complete || error != nil { connection.cancel() } else { read(connection, buffer: buffer) }
+                return
+            }
+            let lines = String(decoding: buffer[..<end.lowerBound], as: UTF8.self).components(separatedBy: "\r\n")
+            let requestLine = lines[0].split(separator: " ")
+            var headers: [String: String] = [:]
+            for line in lines.dropFirst() {
+                guard let colon = line.firstIndex(of: ":") else { continue }
+                headers[line[..<colon].lowercased()] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            }
+            let length = Int(headers["content-length"] ?? "") ?? 0
+            guard buffer.count - end.upperBound >= length else {
+                if complete || error != nil { connection.cancel() } else { read(connection, buffer: buffer) }
+                return
+            }
+            guard requestLine.count >= 2 else { connection.cancel(); return }
+            let request = Request(method: String(requestLine[0]), path: String(requestLine[1]), headers: headers)
+            lock.lock()
+            received.append(request)
+            lock.unlock()
+            let reply = respond(request)
+            let body = Data(reply.body.utf8)
+            var head = "HTTP/1.1 \(reply.status) Reply\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n"
+            for (name, value) in reply.headers { head += "\(name): \(value)\r\n" }
+            connection.send(content: Data((head + "\r\n").utf8) + body, completion: .contentProcessed { _ in connection.cancel() })
+        }
     }
 }
