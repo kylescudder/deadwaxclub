@@ -41,7 +41,7 @@ case-sensitive filesystems.
 <App>/App/                 <App>App, AppDelegate*, AppServices, AppBootstrap*, AppSecrets*, RootView, QuickActionRouter
 <App>/Auth/                AuthClient, APIClient, AppleSignIn, GoogleSignIn (shared auth), AuthAppConfiguration, sign-in views
 <App>/Billing/             BillingRepository*, SubscriptionAccessState*, CreationQuotaProviding*, SubscriptionPaywallView*, BillingAppConfiguration
-<App>/Components/          Theme*, LoadingView*, LottieAnimationView*, PrimaryButton*, Theme+App, Card and other app primitives
+<App>/Components/          Theme*, LoadingView*, LottieAnimationView*, PrimaryButton*, Card*, EmptyState*, Theme+App, other app primitives
 <App>/Extensions/          Foundation+Helpers.swift and other type extensions
 <App>/Intents/             AppIntents and App Shortcuts
 <App>/Logging/             Logger* (`Log`)
@@ -80,7 +80,9 @@ The shared files read app-specific values from these places only:
 - `Notifications/PushAppConfiguration.swift` — the installation-ID Keychain
   item, the fallback bundle ID and the notification-tap routes
   (`SHARED_PUSH_CORE.md`).
-- `Components/Theme+App.swift` — `Theme.loadingAnimation` and any brand
+- `Components/Theme+App.swift` — `Theme.loadingAnimation`, the
+  `Theme.CardStyle` tokens (`padding`, `cornerRadius`, `fillsWidth`,
+  `showsBorder`) that give `Card` the app's look, and any brand
   colours, added as `extension Theme.Colors`. Use the shared semantic colours
   (`textPrimary`, `textSecondary`, `accent`, `separator`, …) rather than aliases.
 - `Backend/package.json` `packageManager` — the Bun version `setup.sh` enforces.
