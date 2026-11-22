@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "Preserve",
+    "target": "ESNext",
+    "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["bun"],
     "strict": true,
+    "noEmit": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "esModuleInterop": true,
+    "types": ["bun"]
   },
-  "include": ["src", "db", "test", "drizzle.config.ts", "scripts"]
+  "include": ["src", "db", "scripts", "test", "drizzle.config.ts"]
 }
