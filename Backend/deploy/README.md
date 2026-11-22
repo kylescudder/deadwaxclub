@@ -3,6 +3,7 @@
 The backend is a Bun API and PowerSync, running on Herman against the shared PostgreSQL server (`postgres:5432` on `platform-db`). There is no per-app PostgreSQL container. Application deployments never change shared server settings or restart the server.
 
 `app.json` is the app-specific inventory: database, roles, recovery and sync tables, receiver URL and headers. Everything else in this directory is shared byte for byte between apps:
+
 - the Compose files and the API Dockerfile;
 - the PowerSync service configuration;
 - the migration runner, recovery guard and proof publisher;
@@ -14,6 +15,7 @@ App-specific pieces are the domain migrations (`db/` and `drizzle/`) and the Pow
 ## Releases
 
 Merging to `main` with changes under `Backend/` runs `release-backend.yml`. It builds and attests a multi-platform API image and asks the app's deploy-core receiver (`deployURL` in `app.json`) to deploy that exact digest. The image is the whole backend release, because it carries `deploy/`. Herman's deploy-core hooks then:
+
 1. verify the image's provenance;
 2. take a local database dump;
 3. require a fresh off-host recovery proof;
@@ -25,6 +27,7 @@ Merging to `main` with changes under `Backend/` runs `release-backend.yml`. It b
 A failed health check or acceptance restores the previous image together with its stack. Migrations are not reversed, so each one must stay compatible with the previous runtime.
 
 `compose.yaml` names the services `<project>-api` and `<project>-sync`, because Compose publishes every service name as a DNS alias on every attached network. Each Compose project has:
+
 - private sync networking;
 - access to the shared `platform-db`;
 - no host ports and no PostgreSQL service.
@@ -47,7 +50,7 @@ The PowerSync image is pinned by digest in `compose.shared.yaml`. Updating it is
    - `.env` from `compose.env.example`;
    - `secrets/api.env` and `secrets/powersync.env` (0600) from the examples;
    - a notification spool at `state/notifications`, mode 0700 for UID 1000.
-   
+
    Releases install the rest.
 
 Keep the public JWT audience and the internal JWKS URL aligned with the app. PowerSync and the API use separate credentials. Monitor connections, slot-retained WAL, storage and memory.

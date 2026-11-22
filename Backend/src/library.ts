@@ -42,9 +42,13 @@ const calls = {
     keys: [],
     sql: 'select lifetime_record_count::integer, free_limit, has_verified_entitlement from public.get_record_creation_status()'
   }
-} satisfies Record<string, { keys: string[], sql: string, scalar?: boolean }>
+} satisfies Record<string, { keys: string[]; sql: string; scalar?: boolean }>
 
-export async function libraryAction(client: PoolClient, name: string, input: unknown) {
+export async function libraryAction(
+  client: PoolClient,
+  name: string,
+  input: unknown
+) {
   if (!Object.hasOwn(calls, name)) throw new UploadError('not_found', 404)
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new UploadError('invalid_request', 422)
@@ -52,9 +56,10 @@ export async function libraryAction(client: PoolClient, name: string, input: unk
   const definition = calls[name as keyof typeof calls]
   const body = input as Record<string, unknown>
   const values = definition.keys.map((key) => {
-    if (typeof body[key] !== 'string') throw new UploadError('invalid_request', 422)
+    if (typeof body[key] !== 'string')
+      throw new UploadError('invalid_request', 422)
     return body[key]
   })
   const { rows } = await client.query(definition.sql, values)
-  return 'scalar' in definition ? rows[0]?.result ?? null : rows
+  return 'scalar' in definition ? (rows[0]?.result ?? null) : rows
 }

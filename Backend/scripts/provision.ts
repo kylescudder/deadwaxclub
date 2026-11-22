@@ -13,8 +13,7 @@ async function provisionRolesBody(
   ].filter(Boolean) as string[]
   for (const role of roles) {
     identifier(role)
-    if (role === 'postgres')
-      throw new Error('Use app-scoped roles')
+    if (role === 'postgres') throw new Error('Use app-scoped roles')
     const existing = (
       await client.query(
         'select rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls,rolcanlogin,rolinherit from pg_roles where rolname=$1',

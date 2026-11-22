@@ -14,7 +14,8 @@ function required(name: string) {
 function origin(name: string) {
   const value = required(name)
   const url = new URL(value)
-  if (url.origin !== value || url.protocol !== 'https:') throw new Error(`Invalid ${name}`)
+  if (url.origin !== value || url.protocol !== 'https:')
+    throw new Error(`Invalid ${name}`)
   return value
 }
 
@@ -25,7 +26,10 @@ const auth = createAuth(db, {
   baseURL,
   secret: required('BETTER_AUTH_SECRET'),
   powerSyncURL: origin('POWERSYNC_URL'),
-  google: { clientId: required('GOOGLE_CLIENT_ID'), clientSecret: required('GOOGLE_CLIENT_SECRET') },
+  google: {
+    clientId: required('GOOGLE_CLIENT_ID'),
+    clientSecret: required('GOOGLE_CLIENT_SECRET')
+  },
   apple: {
     clientId: required('APPLE_CLIENT_ID'),
     clientSecret: required('APPLE_CLIENT_SECRET'),
@@ -50,7 +54,9 @@ const replay = setInterval(async () => {
   if (replaying) return
   replaying = true
   try {
-    await spool.replay(async (payload) => { await mirrorEntitlement(pool, payload) })
+    await spool.replay(async (payload) => {
+      await mirrorEntitlement(pool, payload)
+    })
   } catch {
     // The signed payload remains available for the next pass.
   } finally {
