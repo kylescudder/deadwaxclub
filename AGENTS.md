@@ -1,14 +1,31 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents when working with code in this repository.
 
 ## Project
 
 Deadwax Club — native iOS 17+ SwiftUI app for tracking owned/wishlist vinyl, plus an Astro marketing site and public list viewer. The backend is the Bun API in `Backend/` (Better Auth) with PostgreSQL and self-hosted PowerSync on Herman; the public list viewer reads shared lists from the API. Offline-first via PowerSync.
 
+## Shared conventions
+
+Every iOS app uses the same repository layout, app scaffolding and CI. Read
+`Scripts/SHARED_IOS_CORE.md` before adding folders, shared UI primitives,
+configuration keys or workflows. Four checksum manifests keep shared files
+byte-for-byte identical with the other apps, and CI runs all of them:
+
+- `Scripts/check-shared-ios-core.sh` — `AppSecrets`, `AppBootstrap`, `Theme`, `LoadingView`, `LottieAnimationView`, `PrimaryButton`, `Logger`, `AppearanceManager`, `SharedAppSecretsTests`, `setup.sh` and the iOS workflows.
+- `Scripts/check-shared-auth.sh` — Better Auth backend and native auth (`SHARED_AUTH.md`).
+- `Scripts/check-shared-push-core.sh` — push registration core (`SHARED_PUSH_CORE.md`).
+- `Scripts/check-shared-infra.sh` — backend deployment and provisioning (`SHARED_INFRA.md`).
+
+Never edit a shared file in one app only. Put app-specific values behind the
+hooks listed in `SHARED_IOS_CORE.md` (`Theme+App.swift`, `AuthAppConfiguration`,
+`project.yml`, `Scripts/setup-extras.sh`), or make the same change in every app
+and refresh the manifest with `sh Scripts/check-shared-ios-core.sh --write`.
+
 ## Common commands
 
-The Xcode project is generated from `project.yml` and is git-ignored — regenerate after any source/dependency change.
+The Xcode project is generated from `project.yml` and is git-ignored — regenerate after any source, target, signing, or dependency change.
 
 ```sh
 xcodegen generate                          # rebuild DeadWaxClub.xcodeproj from project.yml
@@ -16,11 +33,12 @@ open DeadWaxClub.xcodeproj                 # open in Xcode (⌘R to run, ⌘B to
 xcodebuild build \                         # CLI sanity build (no signing required)
   -project DeadWaxClub.xcodeproj \
   -scheme DeadWaxClub \
-  -destination 'generic/platform=iOS Simulator'
-./setup.sh                                 # idempotent first-run: tools, secrets templates, xcodegen
+  -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' \
+  CODE_SIGNING_ALLOWED=NO
+xcodebuild test -project DeadWaxClub.xcodeproj -scheme DeadWaxClub -destination 'platform=iOS Simulator,name=iPhone 16'
+./setup.sh                                 # first-run tools, secrets templates, backend deps, xcodegen
 ```
-
-Backend (`Backend/`, Bun API + PostgreSQL + self-hosted PowerSync on Herman): see `Backend/deploy/README.md` for checks, migrations and deployment. The domain schema is the numbered SQL in `Backend/db/migrations/`, applied in order by `Backend/db/application.ts` and recorded in its ledger; add a new numbered file for every change and never edit or rename an applied one. Better Auth's tables are in `Backend/drizzle/`.
 
 Web:
 
@@ -30,7 +48,17 @@ bun run dev                                                    # installs Site d
 bun run build                                                  # builds Site/dist
 ```
 
-iOS unit tests live in `DeadWaxClubTests/`; there is no iOS linter or formatter. The Astro site uses the house tooling in `Site/` (`typecheck`, `lint`, `format:check`, `check:site`). Merging to `main` releases each changed area: `Site/` to Herman, `Backend/` (API, migrations, Compose and PowerSync config together) to Herman, and the app to TestFlight (see the README's deployment sections).
+iOS unit tests live in `DeadWaxClubTests/`; `Shared*Tests.swift` are identical in every app. There is no iOS linter or formatter. The Astro site uses the house tooling in `Site/` (`typecheck`, `lint`, `format:check`, `check:site`). Merging to `main` releases each changed area: `Site/` to Herman, `Backend/` (API, migrations, Compose and PowerSync config together) to Herman, and the app to TestFlight (see the README's Releasing section).
+
+## Backend
+
+Production runs on Herman. The runtime is `Backend/` (Bun 1.4.4, TypeScript,
+PostgreSQL, Better Auth, Brevo and self-hosted PowerSync) on Herman's shared
+PostgreSQL server. Read `Backend/deploy/README.md` for checks, migrations and
+deployment before release work.
+
+- The domain schema is the numbered SQL in `Backend/db/migrations/`, applied in order by `Backend/db/application.ts` and recorded in its ledger; add a new numbered file for every change and never edit or rename an applied one. Better Auth's tables are in `Backend/drizzle/`.
+- Backend checks: `cd Backend && bun install --frozen-lockfile`, `TEST_DATABASE_URL=... bun test`. Tests require a disposable PostgreSQL database. Never point them at production.
 
 ## Push notifications
 
@@ -40,7 +68,7 @@ identical across all application repositories.
 
 ## Secrets and configuration
 
-- iOS secrets live in `Config/Secrets.xcconfig` (git-ignored, copied from `Config/Secrets.xcconfig.example`). Values are surfaced into Swift via `Info.plist` → `DeadWaxClub/App/AppSecrets.swift`. **xcconfig escaping gotcha**: a literal `//` in a value (e.g. `https://...`) must be written `https:/$()/...` to keep the parser from treating the rest of the line as a comment. Empty strings are treated as "feature disabled" — don't add fatal errors for unset secrets.
+- iOS secrets live in `Config/Secrets.xcconfig` (git-ignored, copied from `Config/Secrets.xcconfig.example`). Values are surfaced into Swift via `Info.plist` → `DeadWaxClub/App/AppSecrets.swift`. **xcconfig escaping gotcha**: a literal `//` in a value (e.g. `https://...`) must be written `https:/$()/...` to keep the parser from treating the rest of the line as a comment. Empty, unresolved and `.invalid` placeholder values are treated as "feature disabled" and surface as configuration errors — don't add fatal errors for unset secrets; simulator and pull-request builds deliberately use the example xcconfig.
 - Web config lives in `Site/public/js/config.js` (git-ignored). Release images generate it with `Site/scripts/write-config.mjs` from the `API_BASE_URL` repository variable; the local copy from `config.example.js` points at the same API origin. It holds no secrets — the token-gated `/api/public/get_shared_list*` endpoints decide what's exposed.
 - Backend secrets (database URLs, Better Auth, Apple/Google sign-in, IAP verification) live in the API's protected `api.env` on Herman; `Backend/deploy/api.env.example` lists them. Push goes through the shared APNs gateway. Never accept decoded JWS payloads as proof of entitlement.
 
@@ -97,11 +125,12 @@ identical across all application repositories.
 
 - Spotlight + AppIntents indexing happens inside `RecordsRepository.startWatching` (calls `SpotlightIndex.index(records:)` after each watch tick). Tapping a Spotlight result re-enters via `RootView.onContinueUserActivity("com.apple.corespotlightitem")` and posts `Notification.Name.openRecord`, which `AppServices` resolves against local SQLite.
 - AppIntents (`DeadWaxClub/Intents/`) run outside the SwiftUI environment. `IntentBridge` is the static escape hatch — `DeadWaxClubApp` registers `AppServices` on it at launch, and intents query/write through `services.sync.database` directly.
-- Sentry/OSLog wrapper is `DeadWaxClub/Logging/Logger.swift` (`Log.error`, `Log.breadcrumb`). Sentry is no-op when `SENTRY_DSN` is empty.
-- The Discogs personal token is per-user, entered in Settings, stored in the keychain (`Logging/Keychain.swift`). The onboarding flow nags on first launch.
+- Sentry/OSLog wrapper is `DeadWaxClub/Logging/Logger.swift` (`Log.error`, `Log.breadcrumb`, `Log.event`). Sentry is no-op when `SENTRY_DSN` is empty; keep repository and service errors going through `Log` rather than ad hoc prints.
+- `Theme`, `Card`, `PrimaryButton`, `EmptyState` and `LoadingView` under `DeadWaxClub/Components/` are the UI primitives. Reuse them before introducing one-off colors, spacing, or loading treatments. App-only tokens (the loading animation) live in `Theme+App.swift`.
+- The Discogs personal token is per-user, entered in Settings, stored in the keychain (`Utilities/Keychain.swift`). The onboarding flow nags on first launch.
 - StoreKit's local `VerificationResult.verified` is device evidence only. `BillingRepository.isSubscribed` grants database-backed unlimited creation only after `/api/iap/transactions` has mirrored an Apple-cryptographically-verified active JWS; it retries failed mirrors and surfaces a temporary verification error instead of promising an unlock. The API's `/api/iap/transactions` and App Store Server Notifications (`/api/iap/notifications`) paths use Apple's `SignedDataVerifier` with online certificate checks and call the service-only `apply_verified_iap_entitlement` function. A bypass must have the exact Deadwax bundle/product, Sandbox or Production environment, a verified source, transaction ID, signed timestamp, verified timestamp, and an active non-revoked, unexpired monthly subscription state (with a non-null Apple expiry). Entitlement updates are ordered by Apple's signed timestamp, so a delayed older event cannot undo a newer state. Never backfill these verification fields: pre-contract entitlement rows remain untrusted until a newly verified transaction or notification refreshes them.
 - `Preferences.currency` (`DeadWaxClub/Settings/Preferences.swift`) is the single source for the user's preferred ISO 4217 code; it falls back to the device locale and finally GBP. Use it instead of reading `UserDefaults` directly when displaying or persisting prices.
-- The app is locked to portrait and hides the status bar (`UISupportedInterfaceOrientations` + `UIStatusBarHidden` in `DeadWaxClub/Info.plist`). The `Info.plist` is committed; `project.yml`'s `info.properties` only adds the secrets/scenes/background-modes keys on top.
+- The app is locked to portrait and hides the status bar (`UISupportedInterfaceOrientations` + `UIStatusBarHidden` in `DeadWaxClub/Info.plist`). The `Info.plist` is committed (XcodeGen rewrites it with sorted keys); `project.yml`'s `info.properties` only adds the secrets/scenes/background-modes keys on top.
 
 ## Strict concurrency
 
@@ -116,6 +145,10 @@ The recent commit history (`grep "API drift"` in git log) shows ongoing chase ag
 
 When something fails to build after a package bump, investigate the SDK changelog before "fixing" call sites — the renames usually have a single canonical answer rather than each call site needing bespoke treatment.
 
+## Folder casing
+
+The app folders are `DeadWaxClub/`, `DeadWaxClubTests/` and `DeadWaxClubWidgets/`, the marketing site is `Site/` (capital S), the backend is `Backend/`, and the only lowercase top-level folders are `docs/` and `deploy/`. Always preserve those spellings in code, scripts, workflow paths, and documentation so the repository works on case-sensitive filesystems.
+
 ## What not to commit
 
-`Config/Secrets.xcconfig`, `Site/public/js/config.js`, `DeadWaxClub.xcodeproj/`. All gitignored already — don't add overrides.
+`Config/Secrets.xcconfig`, `Site/public/js/config.js`, `.env*`, `DeadWaxClub.xcodeproj/`, `build/`, `DerivedData/`, `.build/`, `.swiftpm/`, `Package.resolved`, `Site/node_modules/`, `Site/.astro/`, `Site/dist/`, or signing certificates/provisioning profiles. These are already git-ignored where applicable; don't add overrides.

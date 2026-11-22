@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Small native iOS design system. Uses system semantic colors so dark mode
 /// works automatically. Spacing and radius scales kept simple to mirror what
-/// SwiftUI defaults expect.
+/// SwiftUI defaults expect. This file is shared by every app; put brand
+/// colours and other app-only tokens in `Theme+App.swift`.
 enum Theme {
     enum Colors {
         static let accent = Color.accentColor

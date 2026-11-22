@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
-# Deadwax Club — first-run setup
+# First-run setup. Idempotent: safe to re-run at any time.
 #
-# Walks through everything that doesn't require Apple Developer:
-#   1. Required CLI tools (xcodegen, bun)
-#   2. Local secrets files (Config/Secrets.xcconfig, Site/public/js/config.js)
-#   3. Backend pointer (Herman API, PostgreSQL and PowerSync)
-#   4. Xcode project generation
-#   5. Sanity verification
+#   1. Required CLI tools (Homebrew, XcodeGen, the pinned Bun)
+#   2. Local secrets (Config/Secrets.xcconfig) and any app extras
+#   3. Backend dependencies
+#   4. Xcode project generation and an optional simulator build
 #
-# Steps that depend on Apple (App ID, APNs key, AASA team ID, signing) are
-# clearly flagged at the end.
+# This script never connects to or changes a production backend. Steps that
+# need Apple Developer access are listed at the end. The app name, scheme and
+# Bun version come from project.yml and Backend/package.json, so this file is
+# identical in every app (Scripts/shared-ios-core.sha256). App-only steps live
+# in Scripts/setup-extras.sh.
 
 set -euo pipefail
 
 cd "$(dirname "$0")"
-ROOT="$(pwd)"
+
+APP="$(sed -n 's/^name: *//p' project.yml | head -1)"
+BUN_VERSION="$(sed -n 's/.*"packageManager": *"bun@\([^"]*\)".*/\1/p' Backend/package.json)"
 
 # --- pretty printing -------------------------------------------------------
 GREEN='\033[0;32m'; BLUE='\033[0;34m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; DIM='\033[2m'; BOLD='\033[1m'; NC='\033[0m'
@@ -24,15 +27,15 @@ warn()  { printf "${YELLOW}!${NC} %s\n" "$1"; }
 err()   { printf "${RED}✗${NC} %s\n" "$1"; }
 note()  { printf "${DIM}  %s${NC}\n" "$1"; }
 
-# --- platform check --------------------------------------------------------
-if [[ "${OSTYPE:-}" != darwin* ]]; then
-    warn "This script is designed for macOS. Web and backend steps work elsewhere; Xcode steps will be skipped."
-fi
-
 is_mac() { [[ "${OSTYPE:-}" == darwin* ]]; }
+
+if ! is_mac; then
+    warn "This script is designed for macOS. Backend and site steps work elsewhere; Xcode steps will be skipped."
+fi
 
 # --- 1. Required tools -----------------------------------------------------
 step "Checking required tools"
+MISSING_TOOLS=()
 need() {
     local cmd="$1"; local hint="$2"
     if command -v "$cmd" >/dev/null 2>&1; then
@@ -42,96 +45,80 @@ need() {
         MISSING_TOOLS+=("$cmd")
     fi
 }
-MISSING_TOOLS=()
 
 if is_mac; then
-    if ! command -v brew >/dev/null 2>&1; then
-        err "Homebrew is required on macOS — install from https://brew.sh"
-        MISSING_TOOLS+=("brew")
-    fi
+    need brew "install from https://brew.sh"
     need xcodegen "brew install xcodegen"
 fi
-need bun       "brew install oven-sh/bun/bun"
-
+need bun "install Bun $BUN_VERSION from https://bun.sh"
 
 if (( ${#MISSING_TOOLS[@]} > 0 )); then
     err "Install the missing tools above and re-run setup.sh."
     exit 1
 fi
 
-# --- 2. Local secrets templates -------------------------------------------
+if [[ "$(bun --version)" != "$BUN_VERSION" ]]; then
+    err "Use Bun $BUN_VERSION (found $(bun --version)) to match CI and image builds."
+    exit 1
+fi
+ok "Bun $BUN_VERSION matches Backend/package.json"
+
+# --- 2. Local secrets ------------------------------------------------------
 step "Local secrets"
 
 if [[ ! -f Config/Secrets.xcconfig ]]; then
     cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
-    warn "Created Config/Secrets.xcconfig from the example — fill in real values before building."
-    note "  API_URL, POWERSYNC_URL, optional SENTRY_DSN"
+    warn "Created Config/Secrets.xcconfig from the example — fill in real values before running against a backend."
+    note "API_URL, POWERSYNC_URL, optional PUSH_GATEWAY_URL and SENTRY_DSN"
+    note "Escape URLs as https:/\$()/… in xcconfig files."
 else
     ok "Config/Secrets.xcconfig already exists"
 fi
 
-if [[ ! -f Site/public/js/config.js ]]; then
-    cp Site/public/js/config.example.js Site/public/js/config.js
-    ok "Created Site/public/js/config.js (Deadwax API origin https://auth.deadwaxclub.app)"
-else
-    ok "Site/public/js/config.js already exists"
+if grep -Eq '\.invalid|your-instance\.powersync' Config/Secrets.xcconfig; then
+    warn "Config/Secrets.xcconfig still has placeholders: the app builds, but auth and sync stay disabled."
 fi
 
-# Detect placeholder values.
-if grep -q "api.example.com\|your-instance.powersync" Config/Secrets.xcconfig 2>/dev/null; then
-    warn "Config/Secrets.xcconfig still contains placeholders. Edit it before building."
+if [[ -f Scripts/setup-extras.sh ]]; then
+    # shellcheck source=/dev/null
+    source Scripts/setup-extras.sh
 fi
 
-# --- 3. Backend -----------------------------------------------------------
+# --- 3. Backend ------------------------------------------------------------
 step "Backend"
-
-note "The API, PostgreSQL schema and PowerSync sync config live in Backend/."
-note "Local checks and the Herman deployment order: Backend/deploy/README.md"
+(cd Backend && bun install --frozen-lockfile)
+ok "Installed Backend dependencies"
+note "Checks, migrations and the Herman deployment order: Backend/deploy/README.md"
 
 # --- 4. Xcode project ------------------------------------------------------
 if is_mac; then
     step "Generate Xcode project"
-    if [[ -d DeadWaxClub.xcodeproj ]]; then
-        rm -rf DeadWaxClub.xcodeproj
-    fi
+    rm -rf "$APP.xcodeproj"
     xcodegen generate
-    ok "Generated DeadWaxClub.xcodeproj"
+    ok "Generated $APP.xcodeproj"
 
-    # Quick sanity build against the simulator (catches major SDK breakage early).
-    if command -v xcodebuild >/dev/null 2>&1; then
+    build_cmd="xcodebuild build -project $APP.xcodeproj -scheme $APP -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO -quiet"
+    if [[ -t 0 ]]; then
         read -p "Run a sanity simulator build now? Takes a couple of minutes. [y/N] " -n 1 -r
         echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            xcodebuild build \
-                -project DeadWaxClub.xcodeproj \
-                -scheme DeadWaxClub \
-                -destination 'generic/platform=iOS Simulator' \
-                -quiet
-            ok "Simulator build succeeded"
-        else
-            note "Skipped. Run later with: xcodebuild build -project DeadWaxClub.xcodeproj -scheme DeadWaxClub -destination 'generic/platform=iOS Simulator'"
-        fi
+    else
+        REPLY=n
+    fi
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        eval "$build_cmd"
+        ok "Simulator build succeeded"
+    else
+        note "Skipped. Run later with: $build_cmd"
     fi
 fi
 
-# --- 5. Summary ------------------------------------------------------------
+# --- 5. Next steps ---------------------------------------------------------
 step "Done — what's next"
-cat <<'EOF'
+cat <<EOF2
 
-Local setup is finished. The remaining work needs Apple Developer access:
+Local setup is finished. Open $APP.xcodeproj and press ⌘R to run in a simulator.
 
-  1. Register App ID com.deadwaxclub.app with Sign in with Apple,
-     Push Notifications, and Associated Domains capabilities.
-  2. Create an APNs Auth Key (.p8) — note the Key ID, Team ID.
-  3. Create a Services ID com.deadwaxclub.app.signin and a separate
-     Sign in with Apple .p8 key.
-  4. Put the Apple sign-in values in the Herman API's protected api.env
-     (Backend/deploy/api.env.example lists them). Push notifications go
-     through the shared APNs gateway (docs/push-gateway.md).
-  5. Check the Apple Team ID in Site/public/.well-known/apple-app-site-association.
-     Merging a Site/ change to main deploys the site to Herman.
-  6. In Xcode → Signing & Capabilities, pick your paid team,
-     plug your phone in, ⌘R.
-
-See README.md for the full step-by-step.
-EOF
+Running on a device or shipping needs Apple Developer access: the README's
+"Apple setup" section lists the App IDs, capabilities, keys and provisioning
+profiles, and "Releasing" covers the TestFlight secrets.
+EOF2

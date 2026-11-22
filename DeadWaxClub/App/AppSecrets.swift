@@ -1,20 +1,55 @@
 import Foundation
 
+/// Build values from `Config/Secrets.xcconfig`, surfaced through `Info.plist`.
+///
+/// A missing, unresolved or placeholder origin becomes a configuration error
+/// instead of a crash: simulator and pull-request builds deliberately use the
+/// example xcconfig. An empty `SENTRY_DSN` disables Sentry.
 enum AppSecrets {
-    private static func httpsOrigin(_ key: String) -> URL? {
-        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String,
-              let parts = URLComponents(string: value),
-              parts.scheme == "https", let host = parts.host, !host.isEmpty,
+    static let apiConfigurationError = configurationError(for: "API_URL")
+    static let apiURL = origin(from: string(for: "API_URL")) ?? URL(string: "https://configuration.invalid")!
+
+    static let powerSyncConfigurationError = configurationError(for: "POWERSYNC_URL")
+    static let powerSyncURL = origin(from: string(for: "POWERSYNC_URL"))
+
+    static let sentryDSN = string(for: "SENTRY_DSN")
+
+    /// `<scheme>://auth-callback`, where the scheme is the one registered by the
+    /// `*.auth` URL type in `Info.plist` (generated from `project.yml`).
+    static let authRedirectURL = URL(string: "\(authCallbackScheme(in: Bundle.main.infoDictionary) ?? "invalid")://auth-callback")!
+
+    /// An `https` origin, or `http` on a loopback host for local development.
+    /// Unresolved `$(…)` values, `.invalid` hosts and the PowerSync dashboard
+    /// placeholder are treated as unset.
+    static func origin(from raw: String) -> URL? {
+        let raw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, !raw.contains("$("),
+              let parts = URLComponents(string: raw),
+              let host = parts.host?.lowercased(), !host.isEmpty,
+              !host.hasSuffix(".invalid"), !placeholderHosts.contains(host),
+              parts.scheme == "https" || (parts.scheme == "http" && localHosts.contains(host)),
               parts.user == nil, parts.password == nil, parts.query == nil,
-              parts.fragment == nil, parts.path.isEmpty else { return nil }
-        return parts.url
+              parts.fragment == nil, parts.path.isEmpty || parts.path == "/" else { return nil }
+        var origin = parts
+        origin.path = ""
+        return origin.url
     }
 
-    private static let configuredAPI = httpsOrigin("API_URL")
-    static let apiURL = configuredAPI ?? URL(string: "https://invalid.invalid")!
-    static let apiConfigurationError = configuredAPI == nil ? "The Deadwax API is not configured." : nil
-    static let powerSyncURL = httpsOrigin("POWERSYNC_URL")
+    static func authCallbackScheme(in info: [String: Any]?) -> String? {
+        let types = info?["CFBundleURLTypes"] as? [[String: Any]] ?? []
+        let auth = types.first { ($0["CFBundleURLName"] as? String)?.hasSuffix(".auth") == true }
+        return (auth?["CFBundleURLSchemes"] as? [String])?.first
+    }
 
-    static let sentryDSN = Bundle.main.object(forInfoDictionaryKey: "SENTRY_DSN") as? String ?? ""
-    static let authRedirectURL = URL(string: "deadwaxclub://auth-callback")!
+    private static let placeholderHosts: Set<String> = ["your-instance.powersync.journeyapps.com"]
+    private static let localHosts: Set<String> = ["localhost", "127.0.0.1"]
+
+    private static func string(for key: String) -> String {
+        (Bundle.main.object(forInfoDictionaryKey: key) as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private static func configurationError(for key: String) -> String? {
+        origin(from: string(for: key)) == nil ? "\(key) is not configured for this build." : nil
+    }
 }

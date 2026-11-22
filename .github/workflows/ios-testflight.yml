@@ -1,8 +1,7 @@
 name: iOS · TestFlight
 
-# Builds the iOS app, archives it, and uploads to TestFlight via
-# App Store Connect API. See docs/ci-testflight.md for the one-time
-# secrets setup.
+# Archives the app and uploads it to TestFlight through the App Store Connect
+# API. The README's TestFlight section lists the one-time secrets and variables.
 
 on:
   workflow_dispatch:
@@ -44,8 +43,8 @@ jobs:
       APP_STORE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
       IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
-      IOS_DEADWAXCLUB_PROFILE_BASE64: ${{ secrets.IOS_DEADWAXCLUB_PROFILE_BASE64 }}
-      IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64: ${{ secrets.IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64 }}
+      IOS_APP_PROFILE_BASE64: ${{ secrets.IOS_DEADWAXCLUB_PROFILE_BASE64 }}
+      IOS_WIDGETS_PROFILE_BASE64: ${{ secrets.IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64 }}
       IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
 
     steps:
@@ -55,14 +54,13 @@ jobs:
       - name: Verify Xcode 27 and iOS 27 SDK
         run: |
           xcodebuild -version
-          xcodebuild -version | grep -Eq '^Xcode 27([.]|$)'
+          xcrun --sdk iphoneos --show-sdk-path
           sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
           echo "iOS SDK: $sdk_version"
           [[ "$sdk_version" == 27 || "$sdk_version" == 27.* ]]
 
       - name: Install iOS platform (if missing)
-        run: |
-          sudo xcodebuild -downloadPlatform iOS || true
+        run: sudo xcodebuild -downloadPlatform iOS || true
 
       - name: Install xcodegen
         run: brew install xcodegen
@@ -104,9 +102,9 @@ jobs:
           POWERSYNC_BASE_URL: ${{ vars.POWERSYNC_BASE_URL }}
         run: |
           set -euo pipefail
-          api_status="$(curl --silent --show-error --max-time 20 -w '%{http_code}' -o "$RUNNER_TEMP/deadwax-api-health.json" "$API_BASE_URL/health/ready")"
+          api_status="$(curl --silent --show-error --max-time 20 -w '%{http_code}' -o "$RUNNER_TEMP/api-health.json" "$API_BASE_URL/health/ready")"
           [[ "$api_status" == 200 ]]
-          jq -e '.ok == true' "$RUNNER_TEMP/deadwax-api-health.json" >/dev/null
+          jq -e '.ok == true' "$RUNNER_TEMP/api-health.json" >/dev/null
           sync_status="$(curl --silent --show-error --max-time 20 -w '%{http_code}' -o /dev/null "$POWERSYNC_BASE_URL/probes/readiness")"
           [[ "$sync_status" == 200 ]]
 
@@ -126,16 +124,15 @@ jobs:
         run: |
           test -n "${IOS_DISTRIBUTION_CERTIFICATE_BASE64}" || (echo "::error::IOS_DISTRIBUTION_CERTIFICATE_BASE64 is empty" && exit 1)
           test -n "${IOS_DISTRIBUTION_CERTIFICATE_PASSWORD}" || (echo "::error::IOS_DISTRIBUTION_CERTIFICATE_PASSWORD is empty" && exit 1)
-          test -n "${IOS_DEADWAXCLUB_PROFILE_BASE64}" || (echo "::error::IOS_DEADWAXCLUB_PROFILE_BASE64 is empty" && exit 1)
-          test -n "${IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64}" || (echo "::error::IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64 is empty" && exit 1)
+          test -n "${IOS_APP_PROFILE_BASE64}" || (echo "::error::IOS_DEADWAXCLUB_PROFILE_BASE64 is empty" && exit 1)
+          test -n "${IOS_WIDGETS_PROFILE_BASE64}" || (echo "::error::IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64 is empty" && exit 1)
           test -n "${IOS_KEYCHAIN_PASSWORD}" || (echo "::error::IOS_KEYCHAIN_PASSWORD is empty" && exit 1)
 
-          certificate_path="$RUNNER_TEMP/deadwaxclub-distribution.p12"
-          keychain_path="$RUNNER_TEMP/deadwaxclub-signing.keychain-db"
+          certificate_path="$RUNNER_TEMP/distribution.p12"
+          keychain_path="$RUNNER_TEMP/signing.keychain-db"
           profiles_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
 
           printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_BASE64" | base64 --decode > "$certificate_path"
-
           security create-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$keychain_path"
           security set-keychain-settings -lut 21600 "$keychain_path"
           security unlock-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$keychain_path"
@@ -167,8 +164,10 @@ jobs:
             echo "Installed provisioning profile '$profile_name' as $profile_uuid.mobileprovision"
           }
 
-          install_profile "$IOS_DEADWAXCLUB_PROFILE_BASE64" "DeadwaxClub App Store"
-          install_profile "$IOS_DEADWAXCLUB_WIDGETS_PROFILE_BASE64" "DeadwaxClub Widgets App Store"
+          # project.yml names the app's profile first and the widgets' second.
+          profile_name() { sed -n 's/^ *PROVISIONING_PROFILE_SPECIFIER: *//p' project.yml | sed -n "$1p"; }
+          install_profile "$IOS_APP_PROFILE_BASE64" "$(profile_name 1)"
+          install_profile "$IOS_WIDGETS_PROFILE_BASE64" "$(profile_name 2)"
 
       - name: Set CURRENT_PROJECT_VERSION to run number
         run: |
@@ -185,14 +184,14 @@ jobs:
       - name: Resolve Swift packages
         run: |
           xcodebuild -resolvePackageDependencies \
-            -project DeadWaxClub.xcodeproj \
+            -project "$SCHEME.xcodeproj" \
             -scheme "$SCHEME"
 
       - name: Archive
         run: |
           set -o pipefail
           xcodebuild archive \
-            -project DeadWaxClub.xcodeproj \
+            -project "$SCHEME.xcodeproj" \
             -scheme "$SCHEME" \
             -configuration Release \
             -destination "generic/platform=iOS" \
@@ -208,7 +207,7 @@ jobs:
           import plistlib
           from pathlib import Path
 
-          info_path = Path(os.environ["ARCHIVE_PATH"]) / "Products/Applications/DeadWaxClub.app/Info.plist"
+          info_path = Path(os.environ["ARCHIVE_PATH"]) / "Products/Applications" / f"{os.environ['SCHEME']}.app" / "Info.plist"
           with info_path.open("rb") as info_file:
               info = plistlib.load(info_file)
           for key, variable in (("API_URL", "API_BASE_URL"), ("POWERSYNC_URL", "POWERSYNC_BASE_URL")):
@@ -240,7 +239,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: DeadWaxClub-failed-archive
+          name: ${{ env.SCHEME }}-failed-archive
           path: ${{ env.ARCHIVE_PATH }}
           retention-days: 7
 
