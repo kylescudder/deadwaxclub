@@ -55,7 +55,7 @@
     "iap_entitlements",
     "record_creation_quotas"
   ],
-  "deployURL": "",
+  "deployURL": "https://deploy-api.deadwaxclub.app/hooks/deadwax-api",
   "signatureHeader": "X-Deadwax-Signature",
   "receiverHeader": "x-deadwax-deploy-hook",
   "anonymousRole": "deadwax_anon",
