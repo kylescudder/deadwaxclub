@@ -24,7 +24,7 @@ services:
       ingress: {}
   sync:
     # Pinned here so a Backend release ships the PowerSync version with the API.
-    image: journeyapps/powersync-service@sha256:d044b6c685a1076722cf47ca487adbe5ab758ee778707eca26f2169695f1da64
+    image: journeyapps/powersync-service@sha256:ca6d2b1263f21801aef00c3bb34460540d0d6caa073d535c8f9ccf762ee430cb
     command: [start, -r, unified]
     restart: unless-stopped
     user: '1000:1000'
