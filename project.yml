@@ -119,6 +119,7 @@ targets:
     sources:
       - path: DeadWaxClubWidgets
       - path: DeadWaxClub/Widgets/WidgetSnapshotStore.swift
+      - path: DeadWaxClub/Widgets/AppGroupStore.swift
     info:
       path: DeadWaxClubWidgets/Info.plist
       properties:

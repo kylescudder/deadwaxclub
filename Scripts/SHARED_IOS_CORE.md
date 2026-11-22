@@ -38,8 +38,8 @@ case-sensitive filesystems.
 ## App target layout
 
 ```text
-<App>/App/                 <App>App, AppDelegate*, AppServices, AppBootstrap*, AppSecrets*, RootView, QuickActionRouter
-<App>/Auth/                AuthClient, APIClient, AppleSignIn, GoogleSignIn (shared auth), AuthAppConfiguration, sign-in views
+<App>/App/                 <App>App, AppDelegate*, AppServices, AppBootstrap*, AppSecrets*, RootView, QuickActionRouter*, AppQuickAction
+<App>/Auth/                AuthClient, APIClient, AppleSignIn, GoogleSignIn (shared auth), SignInView*, ForgotPasswordSheet*, ResetPasswordSheet*, AppleSignInButton*, AuthAppConfiguration, SignUpView
 <App>/Billing/             BillingRepository*, SubscriptionAccessState*, CreationQuotaProviding*, SubscriptionPaywallView*, BillingAppConfiguration
 <App>/Components/          Theme*, LoadingView*, LottieAnimationView*, PrimaryButton*, Card*, EmptyState*, Theme+App, other app primitives
 <App>/Extensions/          Foundation+Helpers.swift and other type extensions
@@ -48,10 +48,10 @@ case-sensitive filesystems.
 <App>/Models/              Codable/PowerSync row models
 <App>/Notifications/       shared push core and adapters (SHARED_PUSH_CORE.md), PushAppConfiguration, app-only notification features
 <App>/Resources/           Assets.xcassets, <App>.icon, Animations/, StoreKit/<App>.storekit, Fonts/
-<App>/Settings/            SettingsView, AppearanceManager*, ProfileRepository, preferences
+<App>/Settings/            SettingsView, AppearanceManager*, PushAuthorizationRow*, ProfileRepository, preferences
 <App>/Sync/                PowerSyncManager*, APIConnector*, SyncIssueStore*, DatabaseSchema, SyncAppConfiguration, SyncIssueStore+App
 <App>/Utilities/           small app-only helpers (formatters, Keychain wrappers)
-<App>/Widgets/             WidgetSnapshotStore (compiled into the app and the widget)
+<App>/Widgets/             AppGroupStore*, WidgetSnapshotStore (both compiled into the app and the widget)
 <App>/<Feature>/           one folder per product area: its views and repositories together
 ```
 
@@ -65,7 +65,13 @@ The shared files read app-specific values from these places only:
 - `project.yml` `name:` — the target, scheme, project and folder name.
 - The `*.auth` URL type in `project.yml` — `AppSecrets.authRedirectURL`.
 - `Auth/AuthAppConfiguration.swift` — callback scheme, Keychain service and
-  other values the shared auth code needs.
+  other values the shared auth code needs, plus the sign-in screen's logo,
+  title and tagline, how the reset-password sheet is left
+  (`passwordRecoveryExit`) and `didDiscardLocalAccount`.
+- `App/AppQuickAction.swift` — the quick actions, their pending-storage key
+  and where each routes; URL parsing for them stays app-specific.
+- `Widgets/WidgetSnapshotStore.swift` — the app group ID, widget kinds and
+  snapshot types, stored through the shared `AppGroupStore`.
 - `Billing/BillingAppConfiguration.swift` — the StoreKit product ID, the
   verification-pending message, the paywall headline, body and usage text,
   and the privacy and terms URLs.
@@ -78,8 +84,8 @@ The shared files read app-specific values from these places only:
   hold the app's pending-creation ledger and quota replay rules.
 - `Sync/SyncIssueStore+App.swift` — the app's sync issue reports and copy.
 - `Notifications/PushAppConfiguration.swift` — the installation-ID Keychain
-  item, the fallback bundle ID and the notification-tap routes
-  (`SHARED_PUSH_CORE.md`).
+  item, the fallback bundle ID, the notification-tap routes
+  (`SHARED_PUSH_CORE.md`) and the `PushAuthorizationRow` copy.
 - `Components/Theme+App.swift` — `Theme.loadingAnimation`, the
   `Theme.CardStyle` tokens (`padding`, `cornerRadius`, `fillsWidth`,
   `showsBorder`) that give `Card` the app's look, and any brand
@@ -101,9 +107,23 @@ The shared files read app-specific values from these places only:
   pull-request builds compile without a backend and report a configuration
   error instead of crashing. An empty `SENTRY_DSN` disables Sentry.
 - **Composition.** `<App>App` owns one `@StateObject AppServices`, injects it
-  with `environmentObject`, applies the saved `Appearance` and calls
-  `AppBootstrap.configureSentry()`. `AppServices` is the composition root and
-  re-broadcasts its children's `objectWillChange`.
+  with `environmentObject`, installs the shared `AppDelegate`, applies the
+  saved `Appearance` and calls `AppBootstrap.configureSentry()`.
+  `AppServices` is the composition root and re-broadcasts its children's
+  `objectWillChange`. It creates `AuthClient`, `SyncIssueStore`,
+  `PowerSyncManager(auth:issues:)` and `BillingRepository(auth:)`, binds
+  `PushManager.shared` with `auth.beforeSessionInvalidation` (deactivate) and
+  `afterSessionInvalidationFailure` (activate), starts billing and
+  `sync.startObservingAuth()`, and exposes `creationQuota`. Its `applyAuth`
+  starts the feature watches and push activation on sign-in, and on sign-out
+  calls `PushManager.sessionEnded()`, `billing.resetForSignOut()` and stops
+  the watches. `RootView` bootstraps auth with `sync.offlineAccount`, shows
+  the shared `SignInView` until `auth.canAccessMainApp`, presents
+  `ResetPasswordSheet` during password recovery and `SyncIssueStore` issues
+  as alerts, and on each foreground transition calls
+  `QuickActionRouter.activate()`, `PushManager.refreshRegistration()` and
+  `sync.retryConnection()`. The tabs, feature repositories, `Profile` model,
+  `SignUpView` fields and Settings sections stay per app.
 - **Logging.** Errors go through `Log` (OSLog plus Sentry), never `print`.
 - **Data.** Repositories read with `database.watch` and write to local SQLite;
   PowerSync uploads through `APIConnector`. Deletes are soft (`deleted_at`).

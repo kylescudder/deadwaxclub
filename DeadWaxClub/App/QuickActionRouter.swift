@@ -1,24 +1,21 @@
 import Foundation
 
-enum AppQuickAction: String {
-    case scanBarcode = "scanBarcode"
-    case addRecord = "addRecord"
-    case logPrice = "logPrice"
-}
-
+/// Routes widget, App Intent and Home Screen quick actions into the app.
+/// An action that arrives before the UI is ready (for example on a cold
+/// launch) is persisted and replayed once `activate()` runs. This file is
+/// identical in every app; the actions and where they go live in
+/// `AppQuickAction.swift`.
 @MainActor
 enum QuickActionRouter {
-    private static let pendingActionKey = "dwc.pendingQuickAction"
-
     private static var isReady = false
     private static var pendingAction: AppQuickAction?
 
     static func activate() {
         isReady = true
-        if let stored = UserDefaults.standard.string(forKey: pendingActionKey),
+        if let stored = UserDefaults.standard.string(forKey: AppQuickAction.pendingStorageKey),
            let action = AppQuickAction(rawValue: stored) {
             pendingAction = action
-            UserDefaults.standard.removeObject(forKey: pendingActionKey)
+            UserDefaults.standard.removeObject(forKey: AppQuickAction.pendingStorageKey)
         }
         flushPendingAction()
     }
@@ -26,30 +23,15 @@ enum QuickActionRouter {
     static func handle(_ action: AppQuickAction) {
         guard isReady else {
             pendingAction = action
-            UserDefaults.standard.set(action.rawValue, forKey: pendingActionKey)
+            UserDefaults.standard.set(action.rawValue, forKey: AppQuickAction.pendingStorageKey)
             return
         }
-        route(action)
+        action.route()
     }
 
     private static func flushPendingAction() {
         guard let action = pendingAction else { return }
         pendingAction = nil
-        route(action)
-    }
-
-    private static func route(_ action: AppQuickAction) {
-        switch action {
-        case .scanBarcode:
-            NotificationCenter.default.post(
-                name: .switchMainTab,
-                object: nil,
-                userInfo: ["tab": MainTab.scan]
-            )
-        case .addRecord:
-            NotificationCenter.default.post(name: .openAddRecord, object: nil)
-        case .logPrice:
-            NotificationCenter.default.post(name: .openLogPrice, object: nil)
-        }
+        action.route()
     }
 }

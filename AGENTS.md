@@ -13,7 +13,7 @@ Every iOS app uses the same repository layout, app scaffolding and CI. Read
 configuration keys or workflows. Five checksum manifests keep shared files
 byte-for-byte identical with the other apps, and CI runs all of them:
 
-- `Scripts/check-shared-ios-core.sh` — `AppSecrets`, `AppBootstrap`, `Theme`, `LoadingView`, `LottieAnimationView`, `PrimaryButton`, `Logger`, `AppearanceManager`, `Card`, `EmptyState`, the billing core (`BillingRepository`, `SubscriptionAccessState`, `CreationQuotaProviding`, `SubscriptionPaywallView`), the sync core (`PowerSyncManager`, `APIConnector`, `SyncIssueStore`), the `Shared*Tests`, `setup.sh` and the iOS workflows.
+- `Scripts/check-shared-ios-core.sh` — `AppSecrets`, `AppBootstrap`, `Theme`, `LoadingView`, `LottieAnimationView`, `PrimaryButton`, `Logger`, `AppearanceManager`, `Card`, `EmptyState`, `PushAuthorizationRow`, `AppDelegate`, `QuickActionRouter`, `AppGroupStore`, the shared sign-in views (`SignInView`, `ForgotPasswordSheet`, `ResetPasswordSheet`, `AppleSignInButton`), the billing core (`BillingRepository`, `SubscriptionAccessState`, `CreationQuotaProviding`, `SubscriptionPaywallView`), the sync core (`PowerSyncManager`, `APIConnector`, `SyncIssueStore`), the `Shared*Tests`, `setup.sh` and the iOS workflows.
 - `Scripts/check-shared-auth.sh` — Better Auth backend and native auth (`SHARED_AUTH.md`).
 - `Scripts/check-shared-push-core.sh` — push registration core and its adapters (`PushManager`, `PushRegistration`, `AuthClient+PushIdentity`; `SHARED_PUSH_CORE.md`).
 - `Scripts/check-shared-infra.sh` — backend deployment and provisioning (`SHARED_INFRA.md`).
@@ -21,9 +21,10 @@ byte-for-byte identical with the other apps, and CI runs all of them:
 
 Never edit a shared file in one app only. Put app-specific values behind the
 hooks listed in `SHARED_IOS_CORE.md` (`Theme+App.swift`, `AuthAppConfiguration`,
-`BillingAppConfiguration`, `SyncAppConfiguration`, `PushAppConfiguration`, `project.yml`,
-`Scripts/setup-extras.sh`), or make the same change in every app and refresh the manifest with
-`sh Scripts/check-shared-ios-core.sh --write`.
+`BillingAppConfiguration`, `SyncAppConfiguration`, `PushAppConfiguration`,
+`AppQuickAction`, `WidgetSnapshotStore`, `project.yml`,
+`Scripts/setup-extras.sh`), or make the same change in every app and refresh
+the manifest with `sh Scripts/check-shared-ios-core.sh --write`.
 
 ## Common commands
 
@@ -82,6 +83,7 @@ identical across all application repositories.
 - `AppServices` (`DeadWaxClub/App/AppServices.swift`) is the composition root. It owns `AuthClient`, `PowerSyncManager`, `DiscogsClient`, `CoverArtCache`, and the repositories `RecordsRepository`, `PriceEntriesRepository`, `RecordImagesRepository`, `ProfileRepository`, `ListsRepository`, `CollectionsRepository`, `NotificationsRepository`, plus `OnboardingCoordinator`. It re-broadcasts each child's `objectWillChange` so the whole tree reacts to any sub-publisher.
 - `RootView` switches on `auth.state` (`.unknown` / `.signedOut` / `.signedIn`) and presents onboarding sheets, deep-link record sheets, deep-link Collection sheets (`pendingDeepLinkCollectionID`), and public-list sheets above `MainTabView` (Records / Scan / Lists / Stats / Settings).
 - Auth-gated lifecycle: `AppServices.applyAuth` reacts to sign-in/out — starts `ProfileRepository`, `ListsRepository`, `CollectionsRepository`, and `NotificationsRepository` watchers, kicks onboarding evaluation, registers for push. `PowerSyncManager` reacts independently via `startObservingAuth`.
+- `SignInView`, `ForgotPasswordSheet`, `ResetPasswordSheet`, `AppleSignInButton`, `QuickActionRouter`, `AppGroupStore` and `PushAuthorizationRow` are shared (`Scripts/SHARED_IOS_CORE.md`). Deadwax's sign-in branding, recovery exit (cancel) and onboarding reset live in `Auth/AuthAppConfiguration.swift`, its quick actions in `App/AppQuickAction.swift`, its widget snapshots in `Widgets/WidgetSnapshotStore.swift`. `SignUpView` (optional display name, resend confirmation) stays Deadwax-only.
 - `AppServices.ingestDiscogsImages(recordID:collectionID:sourceURLs:)` is the single save-time entry point for Discogs images. Call it from any save site (`AddRecordView`, `ScanResultSheet`, `RecordDetailView`) instead of writing to `RecordImagesRepository` directly — it persists rows *and* eagerly mirrors bytes to the API cover store so the user doesn't have to swipe to that carousel slide for the upload to happen. `mirrorPendingImages(forRecord:)` is the on-appear catch-up for any rows that didn't get mirrored at save time.
 
 ### Sync (PowerSync ↔ Herman API)
