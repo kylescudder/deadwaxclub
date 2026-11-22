@@ -26,7 +26,6 @@ fastlane/test_output
 # Secrets / local config
 .env
 .env.local
-DeadWaxClub/Generated/Secrets.swift
 Config/Secrets.xcconfig
 
 # macOS
@@ -37,11 +36,18 @@ Config/Secrets.xcconfig
 .idea/
 *.swp
 
-# Site — local list viewer config; release images generate it from API_BASE_URL.
-Site/public/js/config.js
+# Astro site
 Site/.astro/
 Site/dist/
 Site/node_modules/
 
-# Deadwax backend dependencies
+# Backend
 Backend/node_modules/
+Backend/dist/
+Backend/.env*
+!Backend/.env.example
+Backend/artifacts/
+
+# Deadwax extras
+# Local list viewer config; release images generate it from API_BASE_URL.
+Site/public/js/config.js

@@ -1,11 +1,13 @@
 import SwiftUI
 
+/// Full-screen loading state. The animation comes from `Theme.loadingAnimation`
+/// in the app's `Theme+App.swift`.
 struct LoadingView: View {
     var message: String? = nil
 
     var body: some View {
         VStack(spacing: Theme.Spacing.md) {
-            LottieAnimationView(name: "dwc_logo_spinner.lottie")
+            LottieAnimationView(name: Theme.loadingAnimation)
                 .frame(width: 96, height: 96)
                 .fixedSize()
 

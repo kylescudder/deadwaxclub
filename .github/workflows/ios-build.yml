@@ -10,11 +10,7 @@ on:
       - 'DeadWaxClubWidgets/**'
       - 'project.yml'
       - 'Config/Secrets.xcconfig.example'
-      - 'Scripts/ci/**'
-      - 'Scripts/check-shared-push-core.sh'
-      - 'Scripts/shared-push-core.sha256'
-      - 'Scripts/check-shared-auth.sh'
-      - 'Scripts/shared-auth.sha256'
+      - 'Scripts/**'
       - '.github/workflows/ios-build.yml'
 
 permissions:
@@ -35,6 +31,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Verify shared iOS core checksums
+        run: sh Scripts/check-shared-ios-core.sh
 
       - name: Verify shared push core checksums
         run: sh Scripts/check-shared-push-core.sh
@@ -60,14 +59,14 @@ jobs:
       - name: Resolve Swift packages
         run: |
           xcodebuild -resolvePackageDependencies \
-            -project DeadWaxClub.xcodeproj \
+            -project "$SCHEME.xcodeproj" \
             -scheme "$SCHEME"
 
       - name: Build
         run: |
           set -o pipefail
           xcodebuild build \
-            -project DeadWaxClub.xcodeproj \
+            -project "$SCHEME.xcodeproj" \
             -scheme "$SCHEME" \
             -configuration Debug \
             -destination "generic/platform=iOS Simulator" \
@@ -76,9 +75,13 @@ jobs:
       - name: Unit tests
         run: |
           set -o pipefail
+          # Use whichever iPhone simulator the runner image ships, so a new
+          # Xcode image doesn't break the job by renaming devices.
+          simulator_id="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')"
+          test -n "$simulator_id" || (echo "::error::No available iPhone simulator" && exit 1)
           xcodebuild test \
-            -project DeadWaxClub.xcodeproj \
+            -project "$SCHEME.xcodeproj" \
             -scheme "$SCHEME" \
             -configuration Debug \
-            -destination "platform=iOS Simulator,OS=latest,name=iPhone 17 Pro" \
+            -destination "platform=iOS Simulator,id=$simulator_id" \
             CODE_SIGNING_ALLOWED=NO
