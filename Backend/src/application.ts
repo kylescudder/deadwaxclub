@@ -30,9 +30,32 @@ async function asAccount<T>(pool: Pool, userId: string | null, work: (client: Po
 const errorResponse = (code: string, status: number) =>
   Response.json({ code }, { status, headers: { 'cache-control': 'no-store' } })
 
+// The website's list viewer (deadwaxclub.app/l/<token>) reads these from the
+// browser. They are unauthenticated, token-gated and send no credentials, so any
+// origin may read them.
+const publicListPaths = new Set(['/api/public/get_shared_list', '/api/public/get_shared_list_records'])
+const publicCORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'POST',
+  'access-control-allow-headers': 'content-type',
+  'access-control-max-age': '86400'
+}
+function withPublicCORS(response: Response) {
+  for (const [key, value] of Object.entries(publicCORS)) response.headers.set(key, value)
+  return response
+}
+
 export function createApplication(auth: Auth, pool: Pool, origin: string, spool?: NotificationSpool) {
   return async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url)
+    if (publicListPaths.has(pathname)) {
+      if (request.method === 'OPTIONS') return withPublicCORS(new Response(null, { status: 204 }))
+      return withPublicCORS(await handle(request, pathname))
+    }
+    return handle(request, pathname)
+  }
+
+  async function handle(request: Request, pathname: string): Promise<Response> {
     try {
       if (request.method === 'GET' && pathname === '/health/live') return Response.json({ ok: true })
       if (request.method === 'GET' && pathname === '/api/auth/jwks') return auth.handler(request)

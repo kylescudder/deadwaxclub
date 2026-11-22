@@ -1,6 +1,5 @@
-// Public list viewer. Fetches the unauthenticated `get_shared_list` and
-// `get_shared_list_records` Postgres RPCs from Supabase using the project's
-// anon key (which is safe to ship in the browser — RLS still applies).
+// Public list viewer. Fetches the Deadwax API's unauthenticated, token-gated
+// `get_shared_list` and `get_shared_list_records` endpoints.
 
 const config = window.DEADWAXCLUB_CONFIG ?? {}
 const main = document.getElementById('main')
@@ -8,18 +7,13 @@ const main = document.getElementById('main')
 const token = location.pathname.split('/').filter(Boolean).pop()
 
 async function rpc(name, params) {
-  const url = `${config.supabaseUrl}/rest/v1/rpc/${name}`
-  const res = await fetch(url, {
+  const res = await fetch(`${config.apiUrl}/api/public/${name}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: config.supabaseAnonKey,
-      Authorization: `Bearer ${config.supabaseAnonKey}`
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params)
   })
   if (!res.ok) {
-    throw new Error(`Supabase RPC ${name} returned ${res.status}`)
+    throw new Error(`Deadwax API ${name} returned ${res.status}`)
   }
   return res.json()
 }
@@ -40,7 +34,11 @@ function escape(s) {
 
 function coverURL(record) {
   if (record.cover_art_storage_path) {
-    return `${config.supabaseUrl}/storage/v1/object/public/covers/${record.cover_art_storage_path}`
+    const path = record.cover_art_storage_path
+      .split('/')
+      .map(encodeURIComponent)
+      .join('/')
+    return `${config.apiUrl}/api/covers/${path}`
   }
   return record.cover_art_source_url || null
 }
@@ -113,9 +111,9 @@ function renderList(info, records) {
 }
 
 async function load() {
-  if (!config.supabaseUrl || !config.supabaseAnonKey) {
+  if (!config.apiUrl) {
     renderError(
-      "This site isn't configured. Copy Site/public/js/config.example.js to Site/public/js/config.js and fill in your Supabase URL + anon key."
+      "This site isn't configured. Copy Site/public/js/config.example.js to Site/public/js/config.js and set the Deadwax API origin."
     )
     return
   }

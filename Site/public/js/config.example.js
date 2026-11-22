@@ -1,6 +1,4 @@
-// Copy this file to Site/public/js/config.js and fill in your project values.
-// The anon key is safe to expose in the browser — RLS protects the data.
+// Copy this file to Site/public/js/config.js and set the Deadwax API origin.
 window.DEADWAXCLUB_CONFIG = {
-  supabaseUrl: 'https://your-project.supabase.co',
-  supabaseAnonKey: 'your-supabase-anon-key'
+  apiUrl: 'https://auth.deadwaxclub.app'
 }

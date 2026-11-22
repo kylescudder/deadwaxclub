@@ -7,8 +7,8 @@ Club, served at **https://deadwaxclub.app**.
 
 Use Bun 1.4.4 and install with `bun install --frozen-lockfile`, which also
 installs the pre-commit hook. The list viewer reads `public/js/config.js`: copy
-`public/js/config.example.js` to `public/js/config.js` and fill in the Supabase
-values, then run `bun run dev`.
+`public/js/config.example.js` to `public/js/config.js` and set the Deadwax API
+origin, then run `bun run dev`.
 
 ## Checks
 
@@ -27,4 +27,4 @@ bun run check:site
 Merging to `main` builds an attested image (`Dockerfile`, `Caddyfile`) and
 deploys it to Herman; see the repository README's Website deployment section.
 Release builds write `public/js/config.js` with `scripts/write-config.mjs` from
-`SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+`API_URL` (the `API_BASE_URL` repository variable).

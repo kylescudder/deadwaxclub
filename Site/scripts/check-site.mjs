@@ -28,8 +28,7 @@ for (const [path, content] of [
 }
 
 const config = readFileSync(join(root, 'js/config.js'), 'utf8')
-assert.match(config, /"supabaseUrl": "https:\/\/[^"]+"/, 'Missing Supabase URL')
-assert.match(config, /"supabaseAnonKey": "[^"]*"/, 'Missing anon key field')
+assert.match(config, /"apiUrl": "https:\/\/[^"]+"/, 'Missing Deadwax API URL')
 
 const association = JSON.parse(
   readFileSync(join(root, '.well-known/apple-app-site-association'), 'utf8')
