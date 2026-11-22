@@ -1,5 +1,5 @@
-# Releases are built by GitHub Actions and deployed to Herman; see the README.
-# Netlify builds are disabled until the old project is retired.
+# Netlify builds are disabled. Releases are built by GitHub Actions and deployed
+# to Herman; see the README.
 [build]
   base = "Site"
   command = "bun run build"

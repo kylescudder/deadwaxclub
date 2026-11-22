@@ -37,8 +37,7 @@ Config/Secrets.xcconfig
 .idea/
 *.swp
 
-# Site — local Supabase config (anon key is safe to commit, but encouraging
-# users to copy from .example.js keeps templates clean for forks).
+# Site — local list viewer config; release images generate it from API_BASE_URL.
 Site/public/js/config.js
 Site/.astro/
 Site/dist/

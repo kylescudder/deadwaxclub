@@ -31,7 +31,7 @@ Native iOS app (SwiftUI, iOS 17+) for tracking the vinyl you own and the vinyl y
 | Metadata       | [Discogs API](https://www.discogs.com/developers) (release + marketplace stats) |
 | Charts         | Swift Charts                                                      |
 | Barcode        | VisionKit `DataScannerViewController`                             |
-| Push           | APNs via the shared push gateway (`docs/push-gateway/`)           |
+| Push           | APNs via the shared push gateway (`docs/push-gateway.md`)         |
 | Search         | CoreSpotlight + AppIntents                                        |
 | Error logging  | `sentry-cocoa`                                                    |
 | Project gen    | [XcodeGen](https://github.com/yonaskolb/XcodeGen)                 |
@@ -66,13 +66,13 @@ Fill in:
 
 ### 3. Backend
 
-The API, database schema and PowerSync sync config live in `Backend/`. The historical Supabase migrations are replayed from `Backend/db/legacy/` under their original names. `Backend/deploy/README.md` covers local checks and the Herman deployment order: shared PostgreSQL, PowerSync, recovery proofs and releases.
+The API, database schema and PowerSync sync config live in `Backend/`. The domain schema is the numbered SQL in `Backend/db/migrations/`, applied in order by `Backend/db/application.ts`; Better Auth's tables are in `Backend/drizzle/`. `Backend/deploy/README.md` covers local checks, provisioning on Herman's shared PostgreSQL, PowerSync, recovery proofs and releases.
 
 Sign-in providers (email, Apple, Google) and the redirect URI `deadwaxclub://auth-callback` are configured in the API's protected `api.env`; `Backend/deploy/api.env.example` lists the values.
 
 ### 4. Push notifications
 
-Lowest-price alerts and invites are delivered through the shared APNs gateway. See `docs/push-gateway/README.md`.
+Lowest-price alerts and invites are delivered through the shared APNs gateway. See `docs/push-gateway.md`.
 
 ### 5. In-app subscriptions
 
@@ -148,6 +148,34 @@ environment; the secrets live in that main-only environment.
 Host setup, rollback and the receiver live in Herman's platform runbook and the
 `kylescudder/deploy-core` repository, not in this repository.
 
+## Backend deployment
+
+Merging a change under `Backend/` to `main` runs
+`.github/workflows/release-backend.yml`. It repeats the backend checks
+(`ci-backend.yml`), builds and attests a multi-architecture API image
+(`ghcr.io/kylescudder/deadwaxclub-api`) and sends a signed deploy request through
+Cloudflare Access to the receiver recorded as `deployURL` in
+`Backend/deploy/app.json`. That image is the whole backend release. On Herman,
+deploy-core:
+
+1. verifies its provenance and backs up the database;
+2. requires a fresh off-host recovery proof;
+3. runs owner migrations;
+4. installs the image's Compose files, PowerSync configuration and inventory;
+5. starts the API and PowerSync, rolling back to the previous release on failure.
+
+The workflow waits until Herman reports the digest deployed and
+`API_BASE_URL/health/live` answers. See deploy-core's `docs/shared-backends.md`.
+
+| Setting | Kind | Purpose |
+|---|---|---|
+| `API_BASE_URL` | repository variable | Public API origin checked after a deploy |
+| `API_CF_ACCESS_CLIENT_ID`, `API_CF_ACCESS_CLIENT_SECRET` | `production` secrets | Access service token for the API deploy hostname |
+| `API_DEPLOY_WEBHOOK_SECRET` | `production` secret | HMAC key for API deploy requests |
+
+The iOS app is built and uploaded to TestFlight by `ios-testflight.yml` whenever a
+change to the app, widgets, `project.yml` or the CI scripts is merged to `main`.
+
 ## Repo layout
 
 ```
@@ -171,7 +199,8 @@ DeadWaxClub/
   Resources/       Assets.xcassets
 
 Backend/            Bun/TypeScript API (Better Auth, uploads, IAP, covers)
-  db/               app SQL adapters; legacy/ holds the historical Supabase migrations
+  db/               migrations/ (numbered domain schema SQL) and the migration runner
+  drizzle/          Better Auth tables
   deploy/           Compose, PowerSync service + sync config, Herman runbook
   test/             backend, infrastructure and quota tests
 
@@ -185,17 +214,10 @@ Site/               Astro marketing site + public list viewer
     apple-app-site-association   Universal Links manifest
 ```
 
-## Status
-
-This is a comprehensive scaffold. The architecture is in place across all features, but the project has not yet been built against a real Mac/Xcode toolchain — expect a small round of compile-time fixes when you run `xcodegen generate && open DeadWaxClub.xcodeproj` and hit ⌘B for the first time. Areas where SDK API names move between minor versions and may need a tweak:
-
-- **PowerSync Swift SDK** — `DeadWaxClub/Sync/*` and the repos use names matching the documented 1.x API.
-- **AppIntents** — the `DisplayRepresentation.Image(url:)` initializer and the parameter syntax have evolved across iOS 17.x; small adjustments may be needed.
-
 ## Development notes
 
 - `AppServices` constructs and owns long-lived objects. Views read them via `@EnvironmentObject`.
 - All deletions are soft (`deleted_at`) so PowerSync propagates tombstones reliably.
 - Cover art lookup order on display: local Caches file → API cover URL → Discogs URL → SF Symbol placeholder. First display of any record both writes the bytes to disk and uploads it to the API so subsequent launches and other devices render it without Discogs.
-- Sharing a list with `link_public` mode mints a 12-char token and a public URL. The unauthenticated `get_shared_list` and `get_shared_list_records` RPCs serve the data — no Deadwax Club account required to view.
+- Sharing a list with `link_public` mode mints a 12-char token and a public URL. The API's unauthenticated `/api/public/get_shared_list` and `/api/public/get_shared_list_records` endpoints serve the data — no Deadwax Club account required to view.
 - DeadWaxClub.xcodeproj is regenerated from `project.yml`. Don't commit it.
