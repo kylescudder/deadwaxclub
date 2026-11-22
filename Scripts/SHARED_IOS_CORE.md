@@ -127,7 +127,9 @@ below. Change a rule in every app at once, together with its tests.
 - Transactions are finished only after the server confirms them. StoreKit
   re-delivers an unfinished transaction through `Transaction.updates`, so a
   failed mirror is retried on the next launch. A revoked or expired update is
-  finished and followed by an entitlement sync, so access ends in-session.
+  mirrored too, so the server's entitlement row stops granting access, and
+  finished once the server has stored it; an entitlement sync follows, so
+  access ends in-session.
 - The mirror is retried three times (0.5 s, then 1 s) only for connectivity
   and 5xx failures. Client errors, sign-in failures and an inactive verdict
   are final and leave the state `.verifying` with the app's message.

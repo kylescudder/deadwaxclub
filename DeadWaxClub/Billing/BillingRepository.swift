@@ -9,9 +9,10 @@ import UIKit
 /// (`subscriptionState == .active`) is granted only after the API has mirrored
 /// an Apple-verified transaction through `/api/iap/transactions`. A locally
 /// verified entitlement that the server has not confirmed stays `.verifying`.
-/// Transactions are finished only after that confirmation, so StoreKit
-/// re-delivers an unconfirmed one through `Transaction.updates` and it is
-/// mirrored again on the next launch.
+/// Transactions are finished only after the server has stored them, so
+/// StoreKit re-delivers an unconfirmed one through `Transaction.updates` and
+/// it is mirrored again on the next launch. Refunds, revocations and expiries
+/// are mirrored too, so the server stops granting access.
 @MainActor
 final class BillingRepository: ObservableObject {
     nonisolated static let productID = BillingAppConfiguration.productID
@@ -230,38 +231,61 @@ final class BillingRepository: ObservableObject {
                 finish: { await transaction.finish() }
             )
         } else {
-            // A refund, revocation or expiry has nothing to unlock. Finish it
-            // and re-check current entitlements so access ends in this session.
-            await transaction.finish()
+            // A refund, revocation or expiry: mirror it so the server's
+            // entitlement row stops granting access, then re-check current
+            // entitlements so access ends in this session.
+            await persistInactiveTransaction(
+                jwsRepresentation: result.jwsRepresentation,
+                finish: { await transaction.finish() }
+            )
             await syncEntitlements()
         }
     }
 
-    private func confirmWithServer(jwsRepresentation: String) async -> Bool {
-        Log.breadcrumb("billing transaction sync started", category: "billing.syncTransaction")
-        var finalError: Error?
-        for attempt in 0..<TransactionMirrorPolicy.maxAttempts {
-            do {
-                let response = try await mirror.mirror(jwsRepresentation: jwsRepresentation)
-                guard response.confirmsActiveEntitlement else {
-                    throw BillingSyncError.entitlementNotActive
-                }
-                Log.breadcrumb("billing transaction sync completed", category: "billing.syncTransaction")
-                return true
-            } catch {
-                finalError = error
-                guard TransactionMirrorPolicy.isRetryable(error),
-                      attempt < TransactionMirrorPolicy.maxAttempts - 1 else { break }
-                await pause(TransactionMirrorPolicy.retryDelayNanoseconds(afterAttempt: attempt))
-            }
-        }
+    /// Mirrors a revoked or expired transaction so the server records that it
+    /// no longer grants access. The transaction is finished only once the
+    /// server has stored it, whatever its verdict; otherwise StoreKit
+    /// re-delivers it on the next launch. Internal so tests can drive it.
+    @discardableResult
+    func persistInactiveTransaction(
+        jwsRepresentation: String,
+        finish: () async -> Void
+    ) async -> Bool {
+        guard await mirrorWithRetry(jwsRepresentation: jwsRepresentation) != nil else { return false }
+        await finish()
+        return true
+    }
 
-        if let finalError {
-            Log.error(finalError, category: "billing.syncTransaction")
+    private func confirmWithServer(jwsRepresentation: String) async -> Bool {
+        if let response = await mirrorWithRetry(jwsRepresentation: jwsRepresentation) {
+            if response.confirmsActiveEntitlement { return true }
+            Log.error(BillingSyncError.entitlementNotActive, category: "billing.syncTransaction")
         }
         subscriptionState = .verifying
         lastError = BillingAppConfiguration.verificationPendingMessage
         return false
+    }
+
+    /// Sends a signed transaction to the server, retrying only connectivity
+    /// and 5xx failures. Returns the server's verdict once it has stored the
+    /// transaction, or nil when it could not.
+    private func mirrorWithRetry(jwsRepresentation: String) async -> TransactionMirrorResponse? {
+        Log.breadcrumb("billing transaction sync started", category: "billing.syncTransaction")
+        for attempt in 0..<TransactionMirrorPolicy.maxAttempts {
+            do {
+                let response = try await mirror.mirror(jwsRepresentation: jwsRepresentation)
+                Log.breadcrumb("billing transaction sync completed", category: "billing.syncTransaction")
+                return response
+            } catch {
+                guard TransactionMirrorPolicy.isRetryable(error),
+                      attempt < TransactionMirrorPolicy.maxAttempts - 1 else {
+                    Log.error(error, category: "billing.syncTransaction")
+                    return nil
+                }
+                await pause(TransactionMirrorPolicy.retryDelayNanoseconds(afterAttempt: attempt))
+            }
+        }
+        return nil
     }
 
     private func logEntitlementSync() {

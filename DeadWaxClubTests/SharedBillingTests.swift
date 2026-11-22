@@ -118,6 +118,57 @@ final class SharedBillingTests: XCTestCase {
         }
     }
 
+    func testRevocationIsMirroredBeforeItIsFinished() async throws {
+        let mirror = FakeMirror([.success(TransactionMirrorResponse(verified: true, active: false))])
+        let billing = try makeBilling(mirror: mirror)
+        var finished = 0
+
+        let persisted = await billing.persistInactiveTransaction(
+            jwsRepresentation: "revoked-transaction",
+            finish: { finished += 1 }
+        )
+
+        XCTAssertTrue(persisted)
+        XCTAssertEqual(mirror.requests, ["revoked-transaction"])
+        XCTAssertEqual(finished, 1)
+        XCTAssertFalse(billing.isSubscribed)
+    }
+
+    func testUnstoredRevocationStaysUnfinishedForRedelivery() async throws {
+        for failures in [
+            [Error](repeating: URLError(.notConnectedToInternet), count: 3),
+            [APIError(code: "invalid_transaction", message: "Rejected")],
+        ] {
+            let mirror = FakeMirror(failures.map { .failure($0) })
+            let billing = try makeBilling(mirror: mirror)
+            var finished = 0
+
+            let persisted = await billing.persistInactiveTransaction(
+                jwsRepresentation: "revoked-transaction",
+                finish: { finished += 1 }
+            )
+
+            XCTAssertFalse(persisted)
+            XCTAssertEqual(mirror.requests.count, failures.count)
+            XCTAssertEqual(finished, 0)
+        }
+    }
+
+    func testRevocationDoesNotTouchServerConfirmedState() async throws {
+        let mirror = FakeMirror([
+            .success(TransactionMirrorResponse(verified: true, active: true)),
+            .success(TransactionMirrorResponse(verified: true, active: false)),
+        ])
+        let billing = try makeBilling(mirror: mirror)
+        _ = await billing.confirmLocallyVerifiedEntitlement(jwsRepresentation: "current", finish: {})
+
+        _ = await billing.persistInactiveTransaction(jwsRepresentation: "older-revoked", finish: {})
+
+        // The follow-up entitlement sync, not the revocation mirror, decides access.
+        XCTAssertEqual(billing.subscriptionState, .active)
+        XCTAssertNil(billing.lastError)
+    }
+
     func testNoActiveLocalEntitlementIsFree() async throws {
         let mirror = FakeMirror([])
         let billing = try makeBilling(mirror: mirror)
