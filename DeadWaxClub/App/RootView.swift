@@ -5,16 +5,9 @@ struct RootView: View {
     @EnvironmentObject private var services: AppServices
     @Environment(\.scenePhase) private var scenePhase
     @State private var publicListToken: String?
-    @State private var showingReauthentication = false
 
     var body: some View {
         accountContent
-        .sheet(isPresented: $showingReauthentication) {
-            NavigationStack { SignInView() }
-        }
-        .onChange(of: services.auth.requiresReauthentication) { _, required in
-            if !required { showingReauthentication = false }
-        }
         .task { await services.auth.bootstrap(offlineAccount: services.sync.offlineAccount) }
         .onChange(of: services.profile.profile?.displayName) { _, _ in
             services.evaluateOnboarding()
@@ -36,19 +29,19 @@ struct RootView: View {
             }
         }
         .sheet(item: Binding(
-            get: { publicListToken.map(PublicListPresentation.init) },
+            get: { services.auth.canAccessMainApp ? publicListToken.map(PublicListPresentation.init) : nil },
             set: { publicListToken = $0?.token }
         )) { presentation in
             NavigationStack { PublicListView(token: presentation.token) }
         }
         .sheet(item: Binding(
-            get: { services.pendingDeepLinkRecord },
+            get: { services.auth.canAccessMainApp ? services.pendingDeepLinkRecord : nil },
             set: { services.pendingDeepLinkRecord = $0 }
         )) { record in
             NavigationStack { RecordDetailView(record: record) }
         }
         .sheet(item: Binding(
-            get: { services.pendingDeepLinkCollectionID.map(CollectionDeepLinkPresentation.init) },
+            get: { services.auth.canAccessMainApp ? services.pendingDeepLinkCollectionID.map(CollectionDeepLinkPresentation.init) : nil },
             set: { services.pendingDeepLinkCollectionID = $0?.id }
         )) { _ in
             // ManageCollectionsView reads pendingDeepLinkCollectionID from
@@ -94,17 +87,10 @@ struct RootView: View {
         case .signedOut:
             NavigationStack { SignInView() }
         case .signedIn:
-            if services.auth.isPasswordRecovery {
+            if !services.auth.canAccessMainApp {
                 NavigationStack { SignInView() }
             } else {
                 MainTabView()
-                    .safeAreaInset(edge: .top) {
-                        if services.auth.requiresReauthentication {
-                            Button("Sign in to sync offline changes") {
-                                showingReauthentication = true
-                            }
-                        }
-                    }
                     .sheet(isPresented: Binding(
                         get: { services.onboarding.isOnboarding },
                         set: { _ in }
