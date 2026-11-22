@@ -1,6 +1,8 @@
 *
 !package.json
 !bun.lock
+!app.json
+!app.caddy
 !astro.config.mjs
 !tsconfig.json
 !scripts/

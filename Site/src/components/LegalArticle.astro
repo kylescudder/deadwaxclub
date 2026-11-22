@@ -1,0 +1,21 @@
+---
+// Shared by every app's site (Scripts/SHARED_SITE.md): privacy, terms and
+// support pages wrap their copy in it.
+import app from "../../app.json";
+
+interface Props {
+  title: string;
+  updated?: string;
+}
+
+const { title, updated } = Astro.props;
+---
+
+<main class="legal-shell wrap">
+  <article class="legal prose">
+    <p class="eyebrow">{app.name}</p>
+    <h1>{title}</h1>
+    {updated && <p class="updated">Last updated: {updated}</p>}
+    <slot />
+  </article>
+</main>

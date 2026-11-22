@@ -1,18 +1,13 @@
 ---
-import SiteLayout from "../../layouts/SiteLayout.astro";
+import BaseLayout from "../../layouts/BaseLayout.astro";
 ---
 
-<SiteLayout title="Shared list · Deadwax Club" description="A shared vinyl record list on Deadwax Club.">
-  <header class="site-header">
-    <a class="brand-link" href="/" aria-label="Deadwax Club home">
-      <span class="logo" aria-hidden="true">
-        <img src="/assets/deadwax-logo.svg" alt="" />
-      </span>
-      <span class="wordmark">Deadwax Club</span>
-    </a>
-    <a class="header-link" href="/">Get the app</a>
-  </header>
-
+<BaseLayout
+  title="Shared list · Deadwax Club"
+  description="A shared vinyl record list on Deadwax Club."
+  bodyClass="list-page"
+  canonical={false}
+>
   <div class="container list-container">
     <main id="main">
       <div class="state" id="loading">
@@ -22,10 +17,6 @@ import SiteLayout from "../../layouts/SiteLayout.astro";
     </main>
   </div>
 
-  <footer>
-    Want this in your pocket? <a href="/">Get Deadwax Club</a>
-  </footer>
-
   <script is:inline src="/js/config.js"></script>
   <script is:inline type="module" src="/js/list.js"></script>
-</SiteLayout>
+</BaseLayout>

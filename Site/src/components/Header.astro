@@ -1,0 +1,38 @@
+---
+const path = Astro.url.pathname;
+const home = path === "/";
+const list = path.startsWith("/l/");
+---
+
+{
+  home ? (
+    <header class="site-shell promo-nav">
+      <a class="promo-brand" href="/" aria-label="Deadwax Club home">
+        <img src="/assets/deadwax-logo.svg" alt="" />
+        <span class="brand-word">Deadwax Club</span>
+      </a>
+      <nav class="variant-tabs" aria-label="Site links">
+        <a href="#features">Features</a>
+        <a href="#support">Support</a>
+      </nav>
+    </header>
+  ) : (
+    <header class="site-header">
+      <a class="brand-link" href="/" aria-label="Deadwax Club home">
+        <span class="logo" aria-hidden="true">
+          <img src="/assets/deadwax-logo.svg" alt="" />
+        </span>
+        <span class="wordmark">Deadwax Club</span>
+      </a>
+      {list ? (
+        <a class="header-link" href="/">
+          Get the app
+        </a>
+      ) : (
+        <a class="header-link" href="/#support">
+          Support
+        </a>
+      )}
+    </header>
+  )
+}

@@ -20,7 +20,7 @@ part behind one of the app hooks below instead.
 <App>Tests/                unit tests; Shared*Tests.swift are identical in every app
 <App>Widgets/              WidgetKit extension
 Backend/                   Bun API, PostgreSQL migrations, PowerSync config (see SHARED_INFRA.md)
-Site/                      Astro marketing, support and legal site
+Site/                      Astro marketing, support and legal site (see SHARED_SITE.md)
 Config/                    Secrets.xcconfig.example (Secrets.xcconfig is git-ignored)
 Scripts/                   shared-code manifests and checks, setup-extras.sh, ci/ExportOptions.plist
 docs/                      longer-form docs, including push-gateway.md
@@ -105,8 +105,10 @@ The shared files read app-specific values from these places only:
 
 ## Adding an app
 
-Copy every file in this manifest, `shared-auth.sha256`, `shared-push-core.sha256`
-and `shared-infra.sha256` from an existing app, then add the app's own hooks
-above, `AGENTS.md`, `README.md` (same section order as the other apps) and
-`project.yml`. Add the new module to the `#if canImport` lists in the shared
-tests of every app. All four checks must pass before the first pull request.
+Copy every file in this manifest, `shared-auth.sha256`, `shared-push-core.sha256`,
+`shared-infra.sha256` and `shared-site.sha256` from an existing app, then add the
+app's own hooks above, `AGENTS.md`, `README.md` (same section order as the other
+apps) and `project.yml`. The site has its own hooks, starting with
+`Site/app.json`; see `SHARED_SITE.md`. Add the new module to the `#if canImport`
+lists in the shared tests of every app. All five checks must pass before the
+first pull request.

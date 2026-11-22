@@ -1,0 +1,4 @@
+# Deadwax Club: logos and screenshots are long-lived.
+header /assets/* Cache-Control "public, max-age=31536000, immutable"
+# Every share link /l/<token> is served by one page; list.js reads the token.
+rewrite /l/* /l/index.html

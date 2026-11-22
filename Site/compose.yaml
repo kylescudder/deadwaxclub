@@ -1,9 +1,10 @@
-# The production container, used by CI. Herman's copy lives in the deployment
-# directory (apps/deadwaxclub) and pins an immutable image digest.
+# The production container's settings, used by site CI to smoke-test the image.
+# Herman keeps its own copy in the app's deployment directory, pinned to an
+# immutable image digest.
 name: deadwaxclub
 services:
   deadwaxclub:
-    image: ${DEADWAX_IMAGE:?set an immutable Deadwax Club image reference}
+    image: ${SITE_IMAGE:?set an immutable site image reference}
     restart: unless-stopped
     networks:
       web:

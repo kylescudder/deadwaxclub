@@ -1,11 +1,15 @@
+# Shared by every app (Scripts/SHARED_SITE.md); app values come from Site/app.json.
 name: Site · CI
 on:
   pull_request:
     branches: [main]
     paths:
       - 'Site/**'
+      - 'Scripts/*site*'
+      - 'Scripts/SHARED_SITE.md'
       - '.github/workflows/ci-site.yml'
       - '.github/workflows/release-site.yml'
+      - '.github/workflows/e2e.yml'
   workflow_call:
 permissions:
   contents: read
@@ -23,33 +27,47 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Check the shared site files
+        run: sh Scripts/check-shared-site.sh
       - name: Install, typecheck, lint, check formatting, build and check the site
         run: |
           docker run --rm -v "$PWD:/app" -w /app/Site -e HUSKY=0 -e CI=true -e BUN_CONFIG_MAX_HTTP_REQUESTS=16 \
             -e API_URL \
-            oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d sh -c '
-              bun install --frozen-lockfile --network-concurrency=16 &&
-              bun run typecheck &&
-              bun run lint &&
-              bun run format:check &&
-              bun scripts/write-config.mjs &&
-              bun run build &&
-              bun run check:site'
-      - name: Verify the production container without privileges
+            oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d sh -ec '
+              bun install --frozen-lockfile --network-concurrency=16
+              bun run typecheck
+              bun run lint
+              bun run format:check
+              if [ -f scripts/write-config.mjs ]; then bun scripts/write-config.mjs; fi
+              bun run build
+              bun run check:site
+            '
+      - name: Build and smoke-test the production image
         working-directory: Site
         run: |
-          docker build -t deadwaxclub:ci --build-arg DEADWAX_REVISION="$GITHUB_SHA" \
-            --build-arg API_URL .
+          docker build -t site:ci --build-arg SOURCE_REVISION="$GITHUB_SHA" --build-arg API_URL .
           docker network create platform-web
-          trap 'DEADWAX_IMAGE=deadwaxclub:ci docker compose down; docker network rm platform-web' EXIT
-          DEADWAX_IMAGE=deadwaxclub:ci docker compose up -d --wait --wait-timeout 60
-          page() { docker exec deadwaxclub-deadwaxclub-1 wget -qO- "http://127.0.0.1:8080$1"; }
-          headers() { docker exec deadwaxclub-deadwaxclub-1 wget -S -O /dev/null "http://127.0.0.1:8080$1" 2>&1 || true; }
-          [[ "$(page /)" == *'Support for Deadwax Club'* ]]
-          [[ "$(headers /)" == *"X-Deadwax-Revision: $GITHUB_SHA"* ]]
+          export SITE_IMAGE=site:ci
+          trap 'docker compose down; docker network rm platform-web' EXIT
+          docker compose up -d --wait --wait-timeout 60
+          container=$(docker compose ps -q)
+          page() { docker exec "$container" wget -qO- "http://127.0.0.1:8080$1"; }
+          headers() { docker exec "$container" wget -S -O /dev/null "http://127.0.0.1:8080$1" 2>&1 || true; }
+          token=$(jq -r .token app.json)
+          [[ "$(headers /)" == *"X-$token-Revision: $GITHUB_SHA"* ]]
+          [[ "$(headers /)" == *'Cache-Control: no-cache'* ]]
           [[ "$(headers /missing-page)" == *'404 Not Found'* ]]
-          [[ "$(page /privacy)" == *'Privacy Policy'* ]]
-          [[ "$(page /terms)" == *'Terms of Use'* ]]
-          [[ "$(page /l/ci-share-token)" == *'/js/list.js'* ]]
-          [[ "$(page /js/config.js)" == *'https://api.invalid'* ]]
-          [[ "$(headers /.well-known/apple-app-site-association)" == *'Content-Type: application/json'* ]]
+          asset=$(page / | grep -o '/_astro/[^"]*' | head -1)
+          [[ -z "$asset" || "$(headers "$asset")" == *'immutable'* ]]
+          # The app links to its pages with and without a trailing slash.
+          while IFS=$'\t' read -r path content; do
+            for url in "$path" "${path%/}/"; do
+              [[ "$(page "$url")" == *"$content"* ]] || { echo "::error::$url does not contain \"$content\"."; exit 1; }
+            done
+          done < <(jq -r '(.pages + .routes) | to_entries[] | [.key, .value] | @tsv' app.json)
+          if [ -f public/.well-known/apple-app-site-association ]; then
+            [[ "$(headers /.well-known/apple-app-site-association)" == *'Content-Type: application/json'* ]]
+          fi
+          if [ -f scripts/write-config.mjs ]; then
+            [[ "$(page /js/config.js)" == *"$API_URL"* ]]
+          fi

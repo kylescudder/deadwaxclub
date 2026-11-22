@@ -17,6 +17,6 @@ src/vendor
 test-results
 playwright-report
 
-# Deadwax Club extras
+# iOS app site extras
 # Astro generates these types on build and check
 .astro

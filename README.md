@@ -231,7 +231,7 @@ wait for Apple's processing of an earlier upload.
 
 ## Shared code
 
-Deadwax Club and Diald keep four sets of files byte-for-byte identical. CI fails
+Deadwax Club and Diald keep five sets of files byte-for-byte identical. CI fails
 if any of them drift:
 
 | Check | Covers |
@@ -240,6 +240,7 @@ if any of them drift:
 | `Scripts/check-shared-auth.sh` | Better Auth backend and native auth ([SHARED_AUTH.md](Scripts/SHARED_AUTH.md)) |
 | `Scripts/check-shared-push-core.sh` | Push registration core ([SHARED_PUSH_CORE.md](Scripts/SHARED_PUSH_CORE.md)) |
 | `Scripts/check-shared-infra.sh` | Backend deployment and provisioning ([SHARED_INFRA.md](Scripts/SHARED_INFRA.md)) |
+| `Scripts/check-shared-site.sh` | Astro site layout, tooling, image and site workflows ([SHARED_SITE.md](Scripts/SHARED_SITE.md)) |
 
 ## Development notes
 
