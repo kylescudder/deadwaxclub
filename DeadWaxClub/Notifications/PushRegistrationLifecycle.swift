@@ -1,16 +1,8 @@
 import Foundation
-import UIKit
 
 @MainActor
 protocol RemoteNotificationRegistering: AnyObject {
     func registerForRemoteNotifications()
-}
-
-@MainActor
-final class SystemRemoteNotificationRegistrar: RemoteNotificationRegistering {
-    func registerForRemoteNotifications() {
-        UIApplication.shared.registerForRemoteNotifications()
-    }
 }
 
 @MainActor
@@ -26,8 +18,8 @@ final class PushRegistrationLifecycle {
     private var generation = UUID()
     private var isActive = false
 
-    private var identity: PushIdentity?
-    private var latestDeviceToken: Data?
+    private(set) var identity: PushIdentity?
+    private(set) var latestDeviceToken: Data?
 
     init(
         identityProvider: any PushIdentityProviding,
