@@ -36,7 +36,7 @@ struct KeychainPushInstallationIDProvider: PushInstallationIDProviding {
     }
 }
 
-actor LegacyPushRegistrationTransport: PushRegistrationTransport {
+actor APIPushRegistrationTransport: PushRegistrationTransport {
     private weak var auth: AuthClient?
     private var latestDeviceToken: Data?
 
@@ -52,7 +52,7 @@ actor LegacyPushRegistrationTransport: PushRegistrationTransport {
     ) async throws {
         latestDeviceToken = deviceToken
         guard let auth else { return }
-        try await auth.registerLegacyPushToken(
+        try await auth.registerAPIPushToken(
             deviceToken,
             environment: environment,
             identity: identity
@@ -64,7 +64,7 @@ actor LegacyPushRegistrationTransport: PushRegistrationTransport {
         identity: PushIdentity
     ) async throws {
         guard let auth, let latestDeviceToken else { return }
-        try await auth.unregisterLegacyPushToken(latestDeviceToken, identity: identity)
+        try await auth.unregisterAPIPushToken(latestDeviceToken, identity: identity)
     }
 }
 
@@ -72,11 +72,11 @@ enum PushRegistrationTransportSelector {
     static func select(
         configuration: PushGatewayConfiguration?,
         gateway: (any PushRegistrationTransport)?,
-        legacy: any PushRegistrationTransport
+        api: any PushRegistrationTransport
     ) -> any PushRegistrationTransport {
         if configuration != nil, let gateway {
             return gateway
         }
-        return legacy
+        return api
     }
 }

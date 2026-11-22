@@ -11,7 +11,7 @@ extension AuthClient: PushIdentityProviding {
         return PushIdentity(principalID: principalID, accessToken: accessToken)
     }
 
-    func registerLegacyPushToken(
+    func registerAPIPushToken(
         _ deviceToken: Data,
         environment: APNSEnvironment,
         identity: PushIdentity
@@ -26,7 +26,7 @@ extension AuthClient: PushIdentityProviding {
         Log.breadcrumb("apns token uploaded", category: "push")
     }
 
-    func unregisterLegacyPushToken(
+    func unregisterAPIPushToken(
         _ deviceToken: Data,
         identity: PushIdentity
     ) async throws {

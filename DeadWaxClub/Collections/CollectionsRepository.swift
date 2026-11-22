@@ -3,7 +3,7 @@ import PowerSync
 
 /// Watches every Collection the user belongs to plus its members and pending
 /// invites. Mirrors `ListsRepository`. Writes to `collections` flow through
-/// PowerSync's CRUD queue; membership changes go via Supabase RPC because
+/// PowerSync's CRUD queue; membership changes go through the Deadwax API (`api/library/...`) because
 /// `collection_members` is read-only locally (composite PK + computed `id`).
 @MainActor
 final class CollectionsRepository: ObservableObject {

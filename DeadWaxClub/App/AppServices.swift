@@ -208,7 +208,7 @@ final class AppServices: ObservableObject {
     }
 
     /// Persist every Discogs image URL for a record into `record_images`,
-    /// then eagerly mirror the bytes into Supabase Storage. Idempotent — if a
+    /// then eagerly mirror the bytes into the Deadwax API's cover store. Idempotent — if a
     /// row already exists for a given source_url, it's left alone; rows that
     /// already have a storage_path are skipped during mirroring.
     ///

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Sheet presented from SignInView when the user taps "Forgot password?".
-/// Collects their email and asks Supabase to send a recovery link via Brevo.
+/// Collects their email and asks the Deadwax API to send a reset link via Brevo.
 /// On success we show a confirmation and let the user dismiss; the actual
 /// reset happens after they click the link, which deep-links back into the
 /// app and trips AuthClient.isPasswordRecovery.
