@@ -1,0 +1,10 @@
+**/.git
+**/node_modules
+**/.env*
+**/secrets
+**/state
+**/build
+**/DerivedData
+Backend/artifacts
+Site
+Config/Secrets.xcconfig
