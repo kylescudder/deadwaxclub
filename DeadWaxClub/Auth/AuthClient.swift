@@ -225,15 +225,17 @@ final class AuthClient: ObservableObject {
             candidate.token = token
             let user = try JSONDecoder().decode(SessionResponse.self, from: await candidate.request("api/auth/get-session")).user
             try adopt(SavedSession(token: token, user: user))
-        } catch { lastError = error.localizedDescription; Log.error(error, category: "auth.google") }
+        } catch { handleSocialSignInError(error, category: "auth.google") }
     }
     func beginAppleSignIn(request: ASAuthorizationAppleIDRequest) {
+        lastError = nil
         let nonce = AppleNonce.random()
         pendingAppleNonce = nonce
         request.requestedScopes = [.fullName, .email]
         request.nonce = AppleNonce.sha256(nonce)
     }
     func completeAppleSignIn(result: Result<ASAuthorization, Error>) async {
+        lastError = nil
         defer { pendingAppleNonce = nil }
         do {
             let authorization = try result.get()
@@ -243,6 +245,19 @@ final class AuthClient: ObservableObject {
             if let name = credential.fullName?.givenName, !name.isEmpty {
                 _ = try? await api.json(AuthAppConfiguration.initialDisplayNamePath, values: ["name": name])
             }
-        } catch { lastError = error.localizedDescription; Log.error(error, category: "auth.apple") }
+        } catch { handleSocialSignInError(error, category: "auth.apple") }
+    }
+
+    /// Dismissing a provider sheet is a choice, not a failed sign-in. Compare
+    /// both domain and code: Apple's authorization and web-session codes overlap.
+    func handleSocialSignInError(_ error: Error, category: String) {
+        let nativeError = error as NSError
+        if (nativeError.domain == ASAuthorizationError.errorDomain && nativeError.code == ASAuthorizationError.canceled.rawValue)
+            || (nativeError.domain == ASWebAuthenticationSessionError.errorDomain && nativeError.code == ASWebAuthenticationSessionError.canceledLogin.rawValue) {
+            lastError = nil
+            return
+        }
+        lastError = error.localizedDescription
+        Log.error(error, category: category)
     }
 }
