@@ -1,10 +1,6 @@
 import Foundation
 import XCTest
-#if canImport(Diald)
-@testable import Diald
-#else
-@testable import DeadWaxClub
-#endif
+@testable import AppUnderTest
 
 /// Behaviour of the shared billing core. Access is server-confirmed only, and
 /// transactions are finished only after the server confirms them.

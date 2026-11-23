@@ -1,11 +1,7 @@
 import Foundation
 import Security
 import XCTest
-#if canImport(Diald)
-@testable import Diald
-#else
-@testable import DeadWaxClub
-#endif
+@testable import AppUnderTest
 
 /// The shared push adapters around `PushRegistrationLifecycle`: lifecycle
 /// ordering, session invalidation hooks, the installation ID, transport

@@ -1,5 +1,5 @@
 import XCTest
-@testable import DeadWaxClub
+@testable import AppUnderTest
 
 final class RecordCreationQuotaTests: XCTestCase {
     func testMissingSnapshotIsBlocked() {

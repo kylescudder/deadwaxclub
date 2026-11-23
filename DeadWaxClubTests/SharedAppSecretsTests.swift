@@ -1,9 +1,5 @@
 import XCTest
-#if canImport(Diald)
-@testable import Diald
-#else
-@testable import DeadWaxClub
-#endif
+@testable import AppUnderTest
 
 @MainActor
 final class SharedAppSecretsTests: XCTestCase {

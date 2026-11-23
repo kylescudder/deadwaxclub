@@ -15,8 +15,8 @@ for (const database of [
 ]) {
   const owner = identifier(config.ownerRole)
   // The platform creates and grants <db>_runtime. An app may use its own
-  // runtime login instead (Deadwax: deadwax_runtime), which only provisionRoles
-  // creates and grants, exactly as on Herman.
+  // runtime login instead, which only provisionRoles creates and grants,
+  // exactly as on Herman.
   const platformRuntime = config.database + '_runtime'
   const runtime = identifier(platformRuntime)
   const admin = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 })
@@ -86,7 +86,7 @@ for (const database of [
 if (process.env.GITHUB_ENV)
   await appendFile(
     process.env.GITHUB_ENV,
-    `TEST_DATABASE_URL=${urls[0]}\nDEADWAX_TEST_DATABASE_URL=${urls[0]}\nINFRA_TEST_DATABASE_URL=${urls[1]}\n`
+    `TEST_DATABASE_URL=${urls[0]}\nINFRA_TEST_DATABASE_URL=${urls[1]}\n`
   )
 console.log(
   'Separate disposable application and infrastructure databases migrated'

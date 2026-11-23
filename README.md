@@ -231,8 +231,8 @@ wait for Apple's processing of an earlier upload.
 
 ## Shared code
 
-Deadwax Club and Diald keep five sets of files byte-for-byte identical. CI fails
-if any of them drift:
+Deadwax Club keeps five sets of files byte-for-byte identical with the other iOS
+apps. CI fails if any of them drift:
 
 | Check | Covers |
 |---|---|

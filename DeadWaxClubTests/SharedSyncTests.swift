@@ -1,11 +1,7 @@
 import Foundation
 import PowerSync
 import XCTest
-#if canImport(Diald)
-@testable import Diald
-#else
-@testable import DeadWaxClub
-#endif
+@testable import AppUnderTest
 
 /// Behaviour of the shared sync core: offline ownership, the auth-driven
 /// connection lifecycle, and which upload failures are acknowledged versus

@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import DeadWaxClub
+@testable import AppUnderTest
 
 /// Deadwax's notification-tap routing (`PushAppConfiguration.route(for:)`).
 final class PushRoutingTests: XCTestCase {

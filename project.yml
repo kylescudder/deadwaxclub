@@ -151,5 +151,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.deadwaxclub.app.tests
         GENERATE_INFOPLIST_FILE: YES
+        # Every test file imports the app as `AppUnderTest`.
+        OTHER_SWIFT_FLAGS: $(inherited) -module-alias AppUnderTest=DeadWaxClub
     dependencies:
       - target: DeadWaxClub
