@@ -3,8 +3,10 @@ import PowerSync
 import XCTest
 #if canImport(Diald)
 @testable import Diald
-#else
+#elseif canImport(DeadWaxClub)
 @testable import DeadWaxClub
+#else
+@testable import Moss
 #endif
 
 /// Behaviour of the shared sync core: offline ownership, the auth-driven

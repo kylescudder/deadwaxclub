@@ -3,8 +3,10 @@ import Security
 import XCTest
 #if canImport(Diald)
 @testable import Diald
-#else
+#elseif canImport(DeadWaxClub)
 @testable import DeadWaxClub
+#else
+@testable import Moss
 #endif
 
 /// The shared push adapters around `PushRegistrationLifecycle`: lifecycle

@@ -1,11 +1,12 @@
 # Shared iOS app conventions
 
-Every iOS app (Diald, Deadwax Club and any new app) uses the same repository
-layout, tooling and app scaffolding. The files in `shared-ios-core.sha256` are
-byte-for-byte identical in every app. `@APP@` in that manifest is the `name:`
-from `project.yml`, and the iOS workflows may differ only in that name, which
-the check normalizes. Run `sh Scripts/check-shared-ios-core.sh`; iOS CI runs
-the same check alongside the shared auth and push core checks.
+Every iOS app (Diald, Deadwax Club, Moss and any new app) uses the same
+repository layout, tooling and app scaffolding. The files in
+`shared-ios-core.sha256` are byte-for-byte identical in every app. `@APP@` in
+that manifest is the `name:` from `project.yml`, and the iOS workflows may
+differ only in that name, which the check normalizes. Run
+`sh Scripts/check-shared-ios-core.sh`; iOS CI runs the same check alongside
+the shared auth and push core checks.
 
 To change a shared file, make the same edit in every app, run
 `sh Scripts/check-shared-ios-core.sh --write` in one of them, copy the changed

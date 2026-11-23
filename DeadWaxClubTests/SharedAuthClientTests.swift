@@ -4,8 +4,10 @@ import Network
 import XCTest
 #if canImport(Diald)
 @testable import Diald
-#else
+#elseif canImport(DeadWaxClub)
 @testable import DeadWaxClub
+#else
+@testable import Moss
 #endif
 
 @MainActor
