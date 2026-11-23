@@ -10,11 +10,20 @@ final class AuthClient: ObservableObject {
     @Published var lastError: String?
     @Published var isPasswordRecovery = false
     @Published private(set) var requiresReauthentication = false
+    /// Prepare isolated storage before publishing a session. The composition root
+    /// installs these hooks; neither a filename nor a previous account unlocks data.
+    var prepareAccount: ((UUID) async throws -> Void)?
+    var releaseAccount: (() async throws -> Void)?
+    var deleteLocalAccount: (() async throws -> Void)?
+    @Published private(set) var isChangingAccount = false
     var beforeSessionInvalidation: (() async -> Void)?
     var afterSessionInvalidationFailure: (() async -> Void)?
     let api: APIClient
     private let sessionStore: any SessionStore
     private let defaults: UserDefaults
+    private var invalidatingSession = false
+    private var authenticationRevision = 0
+    private var appleRevision: Int?
     private var bindingValidated = false
     private var pendingAppleNonce: String?
     private var resetToken: String?
@@ -31,16 +40,15 @@ final class AuthClient: ObservableObject {
         self.defaults = defaults
         api.onUnauthorized = { [weak self] in self?.requiresReauthentication = true }
     }
-    /// A cached owner keeps offline changes bound to their account, but cannot unlock the UI.
+    /// Only a session whose account storage has been prepared can unlock the UI.
     var canAccessMainApp: Bool {
-        currentUserID != nil && !requiresReauthentication && !isPasswordRecovery
+        currentUserID != nil && api.token != nil && !requiresReauthentication && !isPasswordRecovery && !isChangingAccount
     }
 
     var currentUserID: UUID? { if case let .signedIn(id, _) = state { id } else { nil } }
 
     func currentAccessToken() async -> String? {
-        guard !requiresReauthentication, !isPasswordRecovery,
-              let owner = currentUserID, owner == offlineOwner else { return nil }
+        guard canAccessMainApp else { return nil }
         return api.token
     }
 
@@ -60,18 +68,21 @@ final class AuthClient: ObservableObject {
             let stored = (try? sessionStore.read()).flatMap {
                 try? JSONDecoder().decode(SavedSession.self, from: $0)
             }
-            if let stored { owners.insert(stored.user.id) }
+            // This binding describes only the legacy database. A different
+            // session selects a different database rather than claiming its queue.
+            if owners.isEmpty, let stored, !defaults.bool(forKey: "sync.legacyOwnerChecked") {
+                owners.insert(stored.user.id)
+            }
             guard owners.count <= 1, !owners.isEmpty || !account.hasPendingWrites else {
                 throw APIError(code: "owner_mismatch", message: "The original account for the offline changes could not be verified.")
             }
             if let owner = owners.first { defaults.set(owner.uuidString.lowercased(), forKey: Self.ownerKey) }
+            defaults.set(true, forKey: "sync.legacyOwnerChecked")
             bindingValidated = true
             if let stored {
-                try adopt(stored)
-            } else if let owner = owners.first {
-                state = .signedIn(userID: owner, email: nil)
-                requiresReauthentication = true
+                try await adopt(stored)
             } else {
+                // Retained offline data does not imply an authenticated account.
                 state = .signedOut
             }
         } catch {
@@ -79,6 +90,8 @@ final class AuthClient: ObservableObject {
             state = AuthAppConfiguration.bootstrapFailureState
         }
     }
+
+    var legacyOwnerID: UUID? { offlineOwner }
 
     private var offlineOwner: UUID? {
         defaults.string(forKey: Self.ownerKey).flatMap(UUID.init(uuidString:))
@@ -88,30 +101,44 @@ final class AuthClient: ObservableObject {
         defaults.removeObject(forKey: Self.ownerKey)
     }
 
-    private func adopt(_ session: SavedSession) throws {
+    private func adopt(_ session: SavedSession) async throws {
         guard bindingValidated else { throw APIError(code: "owner_mismatch", message: "Offline account data must be checked before signing in.") }
-        let id = session.user.id.uuidString.lowercased()
-        if let owner = defaults.string(forKey: Self.ownerKey), owner != id {
-            throw APIError(code: "owner_mismatch", message: "Sign in with the original account to recover its offline changes. This account cannot access them.")
+        guard !isChangingAccount, !invalidatingSession else { throw APIError(code: "session_changing", message: "Please wait for the account change to finish.") }
+        isChangingAccount = true
+        defer { isChangingAccount = false }
+        let previous = try? sessionStore.read()
+        do {
+            try await prepareAccount?(session.user.id)
+            try sessionStore.write(JSONEncoder().encode(session))
+        } catch {
+            try? sessionStore.write(previous)
+            // The storage hook may already have closed the previous database.
+            // Never restore UI access to it after an incomplete transition.
+            api.token = nil
+            state = .signedOut
+            requiresReauthentication = false
+            throw error
         }
-        try sessionStore.write(JSONEncoder().encode(session))
-        defaults.set(id, forKey: Self.ownerKey)
         api.token = session.token
         requiresReauthentication = false
         state = .signedIn(userID: session.user.id, email: session.user.email)
     }
 
-    private func authenticate(_ path: String, values: [String: Any]) async throws {
+    private func authenticate(_ path: String, values: [String: Any], revision: Int) async throws {
         let data = try await api.json(path, values: values, authenticated: false)
         let result = try JSONDecoder().decode(AuthResponse.self, from: data)
         guard let token = result.token, let user = result.user else { throw APIError(code: "DX002", message: "Sign-in could not be completed.") }
-        try adopt(SavedSession(token: token, user: user))
+        guard revision == authenticationRevision else { return }
+        try await adopt(SavedSession(token: token, user: user))
         defaults.removeObject(forKey: Self.recoveryPendingKey)
     }
     func signIn(email: String, password: String) async {
+        guard !isChangingAccount, !invalidatingSession else { return }
+        authenticationRevision += 1
+        let revision = authenticationRevision
         lastError = nil
-        do { try await authenticate("api/auth/sign-in/email", values: ["email": email, "password": password]) }
-        catch { lastError = error.localizedDescription; Log.error(error, category: "auth.signIn") }
+        do { try await authenticate("api/auth/sign-in/email", values: ["email": email, "password": password], revision: revision) }
+        catch { if revision == authenticationRevision { lastError = error.localizedDescription; Log.error(error, category: "auth.signIn") } }
     }
     enum SignUpResult: Equatable { case signedIn, needsEmailConfirmation(email: String) }
     func signUp(email: String, password: String, displayName: String?) async -> SignUpResult? {
@@ -134,28 +161,50 @@ final class AuthClient: ObservableObject {
         }
     }
 
-    @discardableResult func signOut() async -> Bool {
+    @discardableResult func signOut(removeLocalData: Bool = false) async -> Bool {
+        guard !isChangingAccount, !invalidatingSession else { return false }
+        var released = false
         do {
             return try await performSessionInvalidation {
                 // Revoke the stored session even during password recovery, where
                 // currentAccessToken() withholds it from normal authenticated work.
-                if api.token != nil, !requiresReauthentication { _ = try await api.json("api/auth/sign-out", values: [:]) }
+                if api.token != nil, !requiresReauthentication {
+                    do { _ = try await api.json("api/auth/sign-out", values: [:]) }
+                    catch let error as URLError where [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed].contains(error.code) {
+                        // Local sign-out must work offline. The discarded server
+                        // token expires normally; it is never retained for reuse.
+                    }
+                }
+                if removeLocalData { try await deleteLocalAccount?() }
+                try await releaseAccount?()
+                released = true
                 try sessionStore.write(nil)
                 api.token = nil
                 state = .signedOut
                 requiresReauthentication = false
                 defaults.removeObject(forKey: Self.recoveryPendingKey)
-                // The owner binding is removed by PowerSyncManager only after a successful wipe.
+                lastError = nil
+                isPasswordRecovery = false
+                resetToken = nil
+                // Retain each account’s database and pending upload queue.
                 return true
             }
-        } catch { lastError = error.localizedDescription; return false }
+        } catch {
+            if released { api.token = nil; state = .signedOut; requiresReauthentication = false }
+            lastError = error.localizedDescription
+            return false
+        }
     }
     func deleteAccount() async throws {
+        guard !isChangingAccount, !invalidatingSession else { throw APIError(code: "session_changing", message: "Please wait for the account change to finish.") }
         try await performSessionInvalidation {
             _ = try await api.request("api/account", method: "DELETE")
+            try await deleteLocalAccount?()
+            try await releaseAccount?()
             try sessionStore.write(nil)
             api.token = nil
             state = .signedOut
+            requiresReauthentication = false
         }
     }
     func sendPasswordReset(email: String) async -> Bool {
@@ -166,6 +215,7 @@ final class AuthClient: ObservableObject {
         } catch { lastError = error.localizedDescription; return false }
     }
     func updatePassword(newPassword: String) async -> Bool {
+        guard !isChangingAccount, !invalidatingSession else { return false }
         do {
             return try await performSessionInvalidation {
                 guard let resetToken else { throw APIError(code: "invalid_link", message: "Open the password reset link from your email again.") }
@@ -188,9 +238,15 @@ final class AuthClient: ObservableObject {
     }
 
     func performSessionInvalidation<T>(_ operation: () async throws -> T) async rethrows -> T {
+        authenticationRevision += 1
+        invalidatingSession = true
+        defer { isChangingAccount = false; invalidatingSession = false }
+        // Push deactivation needs the old credentials until it completes.
         await beforeSessionInvalidation?()
+        isChangingAccount = true
         do { return try await operation() }
         catch {
+            isChangingAccount = false
             await afterSessionInvalidationFailure?()
             throw error
         }
@@ -210,6 +266,9 @@ final class AuthClient: ObservableObject {
         } else if value("error") != nil { lastError = "This link is invalid or has expired. Request a new link." }
     }
     func signInWithGoogle() async {
+        guard !isChangingAccount, !invalidatingSession else { return }
+        authenticationRevision += 1
+        let revision = authenticationRevision
         lastError = nil
         do {
             guard AppSecrets.apiConfigurationError == nil else { throw APIError(code: "configuration", message: "Auth isn't configured for this build. Please install the latest build.") }
@@ -224,10 +283,13 @@ final class AuthClient: ObservableObject {
             let candidate = APIClient()
             candidate.token = token
             let user = try JSONDecoder().decode(SessionResponse.self, from: await candidate.request("api/auth/get-session")).user
-            try adopt(SavedSession(token: token, user: user))
-        } catch { handleSocialSignInError(error, category: "auth.google") }
+            guard revision == authenticationRevision else { return }
+            try await adopt(SavedSession(token: token, user: user))
+        } catch { if revision == authenticationRevision { handleSocialSignInError(error, category: "auth.google") } }
     }
     func beginAppleSignIn(request: ASAuthorizationAppleIDRequest) {
+        authenticationRevision += 1
+        appleRevision = authenticationRevision
         lastError = nil
         let nonce = AppleNonce.random()
         pendingAppleNonce = nonce
@@ -236,16 +298,19 @@ final class AuthClient: ObservableObject {
     }
     func completeAppleSignIn(result: Result<ASAuthorization, Error>) async {
         lastError = nil
-        defer { pendingAppleNonce = nil }
+        let revision = appleRevision ?? authenticationRevision
+        defer { pendingAppleNonce = nil; appleRevision = nil }
+        guard revision == authenticationRevision else { return }
         do {
             let authorization = try result.get()
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let data = credential.identityToken, let token = String(data: data, encoding: .utf8), let nonce = pendingAppleNonce else { return }
-            try await authenticate("api/auth/sign-in/social", values: ["provider": "apple", "idToken": ["token": token, "nonce": nonce]])
+            try await authenticate("api/auth/sign-in/social", values: ["provider": "apple", "idToken": ["token": token, "nonce": nonce]], revision: revision)
+            guard revision == authenticationRevision, canAccessMainApp else { return }
             if let name = credential.fullName?.givenName, !name.isEmpty {
                 _ = try? await api.json(AuthAppConfiguration.initialDisplayNamePath, values: ["name": name])
             }
-        } catch { handleSocialSignInError(error, category: "auth.apple") }
+        } catch { if revision == authenticationRevision { handleSocialSignInError(error, category: "auth.apple") } }
     }
 
     /// Dismissing a provider sheet is a choice, not a failed sign-in. Compare

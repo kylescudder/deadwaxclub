@@ -127,9 +127,10 @@ private struct SecondaryImageSlide: View {
         .task(id: image.id) {
             // First sight mirrors upstream bytes into the API's cover store so
             // every other device fetches them without hitting Discogs.
+            let imageRepository = services.recordImages
             await services.coverArt.mirrorIfNeeded(image: image, record: record) { newPath in
                 Task { @MainActor in
-                    await services.recordImages.updateStoragePath(
+                    await imageRepository.updateStoragePath(
                         imageID: image.id, storagePath: newPath
                     )
                 }

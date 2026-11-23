@@ -16,8 +16,20 @@ enum OnboardingStep: Identifiable, Hashable {
 
 @MainActor
 final class OnboardingCoordinator: ObservableObject {
-    @AppStorage("onboarding.discogsTokenSeen") private var discogsTokenSeen: Bool = false
-    @AppStorage("onboarding.notificationsSeen") private var notificationsSeen: Bool = false
+    private var owner: UUID?
+    private var discogsTokenSeen: Bool {
+        get { UserDefaults.standard.bool(forKey: "onboarding.discogsTokenSeen.\(owner?.uuidString.lowercased() ?? "signed-out")") }
+        set { UserDefaults.standard.set(newValue, forKey: "onboarding.discogsTokenSeen.\(owner?.uuidString.lowercased() ?? "signed-out")") }
+    }
+    private var notificationsSeen: Bool {
+        get { UserDefaults.standard.bool(forKey: "onboarding.notificationsSeen.\(owner?.uuidString.lowercased() ?? "signed-out")") }
+        set { UserDefaults.standard.set(newValue, forKey: "onboarding.notificationsSeen.\(owner?.uuidString.lowercased() ?? "signed-out")") }
+    }
+
+    func selectAccount(_ owner: UUID?) {
+        self.owner = owner
+        pendingSteps = []
+    }
 
     /// Every step the user still needs to see, in display order. The
     /// onboarding sheet is shown when this is non-empty and dismisses when
@@ -46,10 +58,9 @@ final class OnboardingCoordinator: ObservableObject {
     func markDiscogsTokenSeen() { discogsTokenSeen = true }
     func markNotificationsSeen() { notificationsSeen = true }
 
-    /// Reset onboarding flags when the user signs out; they're per-account.
+    /// Forget the active account without discarding its saved choices.
     func resetForSignOut() {
-        discogsTokenSeen = false
-        notificationsSeen = false
+        owner = nil
         pendingSteps = []
     }
 }

@@ -13,15 +13,17 @@ final class CollectionsRepository: ObservableObject {
     @Published private(set) var memberProfilesByID: [String: CollectionMemberProfile] = [:]
 
     private let database: PowerSyncDatabaseProtocol
+    private let owner: UUID?
     private let auth: AuthClient
     private var collectionsTask: Task<Void, Never>?
     private var membersTask: Task<Void, Never>?
     private var invitesTask: Task<Void, Never>?
     private var refreshedProfileCollectionIDs: Set<String> = []
 
-    init(database: PowerSyncDatabaseProtocol, auth: AuthClient) {
+    init(database: PowerSyncDatabaseProtocol, auth: AuthClient, owner: UUID? = nil) {
         self.database = database
         self.auth = auth
+        self.owner = owner ?? auth.currentUserID
     }
 
     deinit {
@@ -83,6 +85,7 @@ final class CollectionsRepository: ObservableObject {
                     mapper: { VinylCollection.from(cursor: $0) }
                 )
                 for try await rows in stream {
+                    guard !Task.isCancelled else { return }
                     let mapped = rows.compactMap { $0 }
                     Log.event("collections watch emitted", category: "collections.watch", metadata: ["count": mapped.count])
                     await MainActor.run { self.collections = mapped }
@@ -110,6 +113,7 @@ final class CollectionsRepository: ObservableObject {
                     mapper: { CollectionMember.from(cursor: $0) }
                 )
                 for try await rows in stream {
+                    guard !Task.isCancelled else { return }
                     let mapped = rows.compactMap { $0 }
                     Log.event("collection members watch emitted", category: "collections.members.watch", metadata: ["count": mapped.count])
                     await MainActor.run { self.members = mapped }
@@ -143,6 +147,7 @@ final class CollectionsRepository: ObservableObject {
                     mapper: { CollectionPendingInvite.from(cursor: $0) }
                 )
                 for try await rows in stream {
+                    guard !Task.isCancelled else { return }
                     let mapped = rows.compactMap { $0 }
                     Log.event("collection invites watch emitted", category: "collections.invites.watch", metadata: ["count": mapped.count])
                     await MainActor.run { self.pendingInvites = mapped }
@@ -216,12 +221,13 @@ final class CollectionsRepository: ObservableObject {
             "collectionID": collectionID,
             "role": role.rawValue,
         ])
+        guard let owner, let token = await auth.currentAccessToken(for: owner) else { throw URLError(.userAuthenticationRequired) }
         struct InviteResult: Decodable { let status: String }
         let result: InviteResult = try await auth.api.library("invite_to_collection", [
                 "p_collection_id": collectionID,
                 "p_email": email,
                 "p_role": role.rawValue,
-            ])
+            ], expectedToken: token)
         Log.event("collection invite completed", category: "collections.invite", metadata: [
             "collectionID": collectionID,
             "status": result.status,
@@ -237,18 +243,21 @@ final class CollectionsRepository: ObservableObject {
     }
 
     func removeMember(collectionID: String, userID: String) async {
+        guard let owner, let token = await auth.currentAccessToken(for: owner) else { return }
         do {
             _ = try await auth.api.json("api/library/remove_collection_member", values: [
                 "parent_id": collectionID, "user_id": userID
-            ])
+            ], expectedToken: token)
         } catch {
             Log.error(error, category: "collections.removeMember")
         }
     }
 
     func refreshMemberProfiles(collectionID: String) async {
+        guard let owner, let token = await auth.currentAccessToken(for: owner) else { return }
         do {
-            let profiles: [CollectionMemberProfile] = try await auth.api.library("get_collection_member_profiles", ["p_collection_id": collectionID])
+            let profiles: [CollectionMemberProfile] = try await auth.api.library("get_collection_member_profiles", ["p_collection_id": collectionID], expectedToken: token)
+            guard auth.currentUserID == owner, !Task.isCancelled else { return }
             var updated = memberProfilesByID
             for profile in profiles {
                 updated[profile.id] = profile
@@ -266,8 +275,9 @@ final class CollectionsRepository: ObservableObject {
     }
 
     func revokePendingInvite(inviteID: String) async {
+        guard let owner, let token = await auth.currentAccessToken(for: owner) else { return }
         do {
-            _ = try await auth.api.json("api/library/revoke_collection_invite", values: ["p_invite_id": inviteID])
+            _ = try await auth.api.json("api/library/revoke_collection_invite", values: ["p_invite_id": inviteID], expectedToken: token)
         } catch {
             Log.error(error, category: "collections.revokePendingInvite")
         }

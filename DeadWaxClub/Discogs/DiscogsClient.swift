@@ -17,27 +17,37 @@ final class DiscogsClient: ObservableObject {
         }
     }
 
+    private let tokenKey: String
     private let session: URLSession
     private let base = URL(string: "https://api.discogs.com")!
 
-    init(session: URLSession = .shared) {
+    init(owner: UUID? = nil, legacyOwner: UUID? = nil, session: URLSession = .shared) {
         self.session = session
+        tokenKey = "discogs.token.\(owner?.uuidString.lowercased() ?? "signed-out")"
+        if let owner, owner == legacyOwner, (try? Keychain.read(key: tokenKey)) == nil,
+           let token = try? Keychain.read(key: "discogs.token") {
+            // Preserve the legacy owner's integration without sharing it.
+            do {
+                try Keychain.write(key: tokenKey, value: token)
+                try Keychain.delete(key: "discogs.token")
+            } catch { Log.error(error, category: "discogs.migration") }
+        }
     }
 
-    var hasToken: Bool { (try? Keychain.read(key: "discogs.token"))?.isEmpty == false }
+    var hasToken: Bool { (try? Keychain.read(key: tokenKey))?.isEmpty == false }
 
     func setToken(_ token: String) {
-        try? Keychain.write(key: "discogs.token", value: token)
+        try? Keychain.write(key: tokenKey, value: token)
         Log.event("discogs token saved", category: "discogs.auth", metadata: ["tokenLength": token.count])
     }
 
     func clearToken() {
-        try? Keychain.delete(key: "discogs.token")
+        try? Keychain.delete(key: tokenKey)
         Log.breadcrumb("discogs token cleared", category: "discogs.auth")
     }
 
     private func token() throws -> String {
-        guard let t = try Keychain.read(key: "discogs.token"), !t.isEmpty else {
+        guard let t = try Keychain.read(key: tokenKey), !t.isEmpty else {
             throw LookupError.missingToken
         }
         return t

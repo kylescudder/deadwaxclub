@@ -6,7 +6,7 @@ import Foundation
 enum SpotlightIndex {
     static let domain = "com.deadwaxclub.records"
 
-    static func index(records: [VinylRecord]) {
+    static func index(records: [VinylRecord], owner: UUID) {
         let items: [CSSearchableItem] = records.map { record in
             let attrs = CSSearchableItemAttributeSet(itemContentType: "public.audio")
             attrs.title = record.title
@@ -22,7 +22,7 @@ enum SpotlightIndex {
 
             // Local cached cover art makes the Spotlight result render with the
             // album art icon. Falls back to the default app icon otherwise.
-            let localFile = CoverArtCache.localFile(for: record.id)
+            let localFile = CoverArtCache.localFile(for: record.id, owner: owner)
             if FileManager.default.fileExists(atPath: localFile.path) {
                 attrs.thumbnailURL = localFile
             }

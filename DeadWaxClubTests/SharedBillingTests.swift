@@ -232,6 +232,18 @@ final class SharedBillingTests: XCTestCase {
         XCTAssertNil(billing.lastError)
     }
 
+    func testLateConfirmationCannotRestoreAccessAfterAccountIsReleased() async throws {
+        let mirror = ResetDuringMirror()
+        let billing = BillingRepository(auth: try makeAuth(), mirror: mirror)
+        mirror.beforeReply = { billing.resetForSignOut() }
+        var finished = false
+        let confirmed = await billing.confirmLocallyVerifiedEntitlement(jwsRepresentation: "previous-account", finish: { finished = true })
+        XCTAssertFalse(confirmed)
+        XCTAssertFalse(finished)
+        XCTAssertEqual(billing.subscriptionState, .free)
+        XCTAssertFalse(billing.isSubscribed)
+    }
+
     func testMirrorResponseDecodesEveryAPIShape() throws {
         let decoder = JSONDecoder()
         let full = try decoder.decode(TransactionMirrorResponse.self, from: Data(#"{"verified":true,"active":true}"#.utf8))
@@ -314,4 +326,13 @@ private actor PauseRecorder {
 private struct EmptyBillingSessionStore: SessionStore {
     func read() throws -> Data? { nil }
     func write(_ data: Data?) throws {}
+}
+
+@MainActor
+private final class ResetDuringMirror: TransactionMirroring {
+    var beforeReply: (() -> Void)?
+    func mirror(jwsRepresentation: String) async throws -> TransactionMirrorResponse {
+        beforeReply?()
+        return TransactionMirrorResponse(verified: true, active: true)
+    }
 }

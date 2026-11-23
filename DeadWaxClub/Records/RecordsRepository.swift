@@ -8,15 +8,17 @@ final class RecordsRepository: ObservableObject {
 
     private let database: PowerSyncDatabaseProtocol
     private let issues: SyncIssueStore
+    private let owner: UUID?
     private let auth: AuthClient
     private let billing: BillingRepository
     private var watchTask: Task<Void, Never>?
     private var quotaWatchTask: Task<Void, Never>?
 
-    init(database: PowerSyncDatabaseProtocol, issues: SyncIssueStore, auth: AuthClient, billing: BillingRepository) {
+    init(database: PowerSyncDatabaseProtocol, issues: SyncIssueStore, auth: AuthClient, billing: BillingRepository, owner: UUID? = nil) {
         self.database = database
         self.issues = issues
         self.auth = auth
+        self.owner = owner ?? auth.currentUserID
         self.billing = billing
     }
 
@@ -58,6 +60,13 @@ final class RecordsRepository: ObservableObject {
     /// Watch records the user can see — the union across every Collection
     /// they belong to (`collection_members.user_id = ?`). When `collectionID`
     /// is set, narrow further to that single Collection.
+    func stopWatching() {
+        watchTask?.cancel(); watchTask = nil
+        quotaWatchTask?.cancel(); quotaWatchTask = nil
+        isLoading = false
+        records = []
+    }
+
     func startWatching(status: RecordStatus, userID: String, collectionID: String? = nil) {
         Log.event("records watch starting", category: "records.watch", metadata: [
             "status": status.rawValue,
@@ -95,6 +104,7 @@ final class RecordsRepository: ObservableObject {
                     mapper: { VinylRecord.from(cursor: $0) }
                 )
                 for try await rows in stream {
+                    guard !Task.isCancelled else { return }
                     let mapped = rows.compactMap { $0 }
                     Log.event("records watch emitted", category: "records.watch", metadata: [
                         "status": status.rawValue,
@@ -103,7 +113,7 @@ final class RecordsRepository: ObservableObject {
                     await MainActor.run {
                         self.records = mapped
                         self.isLoading = false
-                        SpotlightIndex.index(records: mapped)
+                        SpotlightIndex.index(records: mapped, owner: UUID(uuidString: userID)!)
                     }
                 }
             } catch {
@@ -118,6 +128,7 @@ final class RecordsRepository: ObservableObject {
                     parameters: [userID], mapper: { try $0.getInt(name: "lifetime_record_count") }
                 )
                 for try await rows in stream {
+                    guard !Task.isCancelled else { return }
                     guard !Task.isCancelled, let count = rows.first else { continue }
                     try await database.execute(
                         sql: "delete from pending_record_creations where state = 'accepted' and expected_lifetime_count <= ?",
@@ -304,7 +315,8 @@ final class RecordsRepository: ObservableObject {
         guard let userID = auth.currentUserID?.lowerUUID else {
             throw RecordCreationError.unauthenticated
         }
-        let rows: [RecordCreationStatus] = try await auth.api.library("get_record_creation_status")
+        guard let owner, let token = await auth.currentAccessToken(for: owner) else { throw RecordCreationError.unauthenticated }
+        let rows: [RecordCreationStatus] = try await auth.api.library("get_record_creation_status", expectedToken: token)
         guard let status = rows.first else {
             throw RecordCreationError.serverValidationFailure
         }

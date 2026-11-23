@@ -6,12 +6,14 @@ final class ListsRepository: ObservableObject {
     @Published private(set) var lists: [VinylList] = []
 
     private let database: PowerSyncDatabaseProtocol
+    private let owner: UUID?
     private let auth: AuthClient
     private var watchTask: Task<Void, Never>?
 
-    init(database: PowerSyncDatabaseProtocol, auth: AuthClient) {
+    init(database: PowerSyncDatabaseProtocol, auth: AuthClient, owner: UUID? = nil) {
         self.database = database
         self.auth = auth
+        self.owner = owner ?? auth.currentUserID
     }
 
     deinit { watchTask?.cancel() }
@@ -36,6 +38,7 @@ final class ListsRepository: ObservableObject {
                     mapper: { VinylList.from(cursor: $0) }
                 )
                 for try await rows in stream {
+                    guard !Task.isCancelled else { return }
                     let mapped = rows.compactMap { $0 }
                     Log.event("lists watch emitted", category: "lists.watch", metadata: ["count": mapped.count])
                     await MainActor.run { self.lists = mapped }
@@ -206,12 +209,13 @@ final class ListsRepository: ObservableObject {
     /// when they sign up. Returns which path was taken so the caller can show
     /// "Added" vs "Invitation sent" accordingly.
     func invite(listID: String, email: String, role: ListMemberRole) async throws -> InviteOutcome {
+        guard let owner, let token = await auth.currentAccessToken(for: owner) else { throw URLError(.userAuthenticationRequired) }
         struct InviteResult: Decodable { let status: String }
         let result: InviteResult = try await auth.api.library("invite_to_list", [
                 "p_list_id": listID,
                 "p_email": email,
                 "p_role": role.rawValue,
-            ])
+            ], expectedToken: token)
         switch result.status {
         case "added":   return .added
         case "pending": return .pending
@@ -223,18 +227,20 @@ final class ListsRepository: ObservableObject {
     }
 
     func removeMember(listID: String, userID: String) async {
+        guard let owner, let token = await auth.currentAccessToken(for: owner) else { return }
         do {
             _ = try await auth.api.json("api/library/remove_list_member", values: [
                 "parent_id": listID, "user_id": userID
-            ])
+            ], expectedToken: token)
         } catch {
             Log.error(error, category: "lists.removeMember")
         }
     }
 
     func revokePendingInvite(inviteID: String) async {
+        guard let owner, let token = await auth.currentAccessToken(for: owner) else { return }
         do {
-            _ = try await auth.api.json("api/library/revoke_pending_invite", values: ["p_invite_id": inviteID])
+            _ = try await auth.api.json("api/library/revoke_pending_invite", values: ["p_invite_id": inviteID], expectedToken: token)
         } catch {
             Log.error(error, category: "lists.revokePendingInvite")
         }

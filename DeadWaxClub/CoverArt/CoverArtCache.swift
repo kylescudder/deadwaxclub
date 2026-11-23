@@ -14,14 +14,25 @@ import CryptoKit
 @MainActor
 final class CoverArtCache: ObservableObject {
     private let auth: AuthClient
+    private let owner: UUID?
     private let session: URLSession
     private let fileManager = FileManager.default
     private var inFlight: Set<String> = []
 
-    init(authClient: AuthClient, session: URLSession = .shared) {
+    init(authClient: AuthClient, owner: UUID? = nil, legacyOwner: UUID? = nil, session: URLSession = .shared) {
         self.auth = authClient
+        self.owner = owner ?? authClient.currentUserID
         self.session = session
-        try? fileManager.createDirectory(at: Self.coversDir, withIntermediateDirectories: true)
+        try? fileManager.createDirectory(at: Self.coversDir.appendingPathComponent(self.owner?.uuidString.lowercased() ?? "signed-out"), withIntermediateDirectories: true)
+        if let owner = self.owner, owner == legacyOwner,
+           let files = try? fileManager.contentsOfDirectory(at: Self.coversDir, includingPropertiesForKeys: nil) {
+            for file in files where file.pathExtension == "jpg" {
+                let destination = Self.coversDir.appendingPathComponent(owner.uuidString.lowercased()).appendingPathComponent(file.lastPathComponent)
+                guard !fileManager.fileExists(atPath: destination.path) else { continue }
+                do { try fileManager.moveItem(at: file, to: destination) }
+                catch { Log.error(error, category: "coverart.migration") }
+            }
+        }
     }
 
     nonisolated static var coversDir: URL {
@@ -29,12 +40,17 @@ final class CoverArtCache: ObservableObject {
         return cache.appendingPathComponent("covers", isDirectory: true)
     }
 
+    func removeAccountCache() {
+        guard let owner else { return }
+        try? fileManager.removeItem(at: Self.coversDir.appendingPathComponent(owner.uuidString.lowercased()))
+    }
+
     /// Best display URL for a record, resolved in this order:
     ///   1. local file (file:// URL) if cached on disk
     ///   2. API cover URL if `cover_art_storage_path` is set
     ///   3. original Discogs URL
     func displayURL(for record: VinylRecord) -> URL? {
-        let local = Self.localFile(for: record.coverCacheID)
+        let local = Self.localFile(for: record.coverCacheID, owner: owner)
         if fileManager.fileExists(atPath: local.path) {
             return local
         }
@@ -53,7 +69,7 @@ final class CoverArtCache: ObservableObject {
         inFlight.insert(record.id)
         defer { inFlight.remove(record.id) }
 
-        let localFile = Self.localFile(for: record.coverCacheID)
+        let localFile = Self.localFile(for: record.coverCacheID, owner: owner)
         let needsLocal = !fileManager.fileExists(atPath: localFile.path)
         let needsRemote = record.coverArtStoragePath == nil
 
@@ -104,11 +120,12 @@ final class CoverArtCache: ObservableObject {
     }
 
     private func uploadCover(bytes: Data, path: String) async throws {
-        _ = try await auth.api.request("api/covers/\(path)", method: "PUT", body: bytes, contentType: "image/jpeg")
+        guard let owner, let token = await auth.currentAccessToken(for: owner) else { throw URLError(.userAuthenticationRequired) }
+        _ = try await auth.api.request("api/covers/\(path)", method: "PUT", body: bytes, contentType: "image/jpeg", expectedToken: token)
     }
 
-    nonisolated static func localFile(for recordID: String) -> URL {
-        coversDir.appendingPathComponent("\(recordID).jpg")
+    nonisolated static func localFile(for recordID: String, owner: UUID? = nil) -> URL {
+        coversDir.appendingPathComponent(owner?.uuidString.lowercased() ?? "signed-out").appendingPathComponent("\(recordID).jpg")
     }
 
     nonisolated static func publicStorageURL(path: String) -> URL? {
@@ -119,7 +136,7 @@ final class CoverArtCache: ObservableObject {
 
     /// Remove the on-device file (e.g. record was deleted).
     func evict(recordID: String) {
-        let file = Self.localFile(for: recordID)
+        let file = Self.localFile(for: recordID, owner: owner)
         try? fileManager.removeItem(at: file)
     }
 

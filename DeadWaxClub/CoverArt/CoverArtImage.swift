@@ -31,11 +31,12 @@ struct CoverArtImage: View {
         .clipped()
         .task(id: record.id) {
             renderedURL = services.coverArt.displayURL(for: record)
+            let imageRepository = services.records
             await services.coverArt.cacheIfNeeded(record: record) { newPath in
                 Task { @MainActor in
-                    await services.records.updateStoragePath(recordID: record.id, storagePath: newPath)
+                    await imageRepository.updateStoragePath(recordID: record.id, storagePath: newPath)
                     // After caching, switch to the local file URL.
-                    renderedURL = CoverArtCache.localFile(for: record.id)
+                    renderedURL = CoverArtCache.localFile(for: record.id, owner: services.auth.currentUserID)
                 }
             }
         }

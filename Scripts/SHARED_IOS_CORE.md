@@ -67,7 +67,7 @@ The shared files read app-specific values from these places only:
 - `Auth/AuthAppConfiguration.swift` — callback scheme, Keychain service and
   other values the shared auth code needs, plus the sign-in screen's logo,
   title and tagline, how the reset-password sheet is left
-  (`passwordRecoveryExit`) and `didDiscardLocalAccount`.
+  (`passwordRecoveryExit`).
 - `App/AppQuickAction.swift` — the quick actions, their pending-storage key
   and where each routes; URL parsing for them stays app-specific.
 - `Widgets/WidgetSnapshotStore.swift` — the app group ID, widget kinds and
@@ -115,7 +115,8 @@ The shared files read app-specific values from these places only:
   `PushManager.shared` with `auth.beforeSessionInvalidation` (deactivate) and
   `afterSessionInvalidationFailure` (activate), starts billing and
   `sync.startObservingAuth()`, and exposes `creationQuota`. Its `applyAuth`
-  starts the feature watches and push activation on sign-in, and on sign-out
+  replaces account repositories through `sync.accountDatabaseDidChange` before
+  publishing sign-in, starts the feature watches and push activation on sign-in, and on sign-out
   calls `PushManager.sessionEnded()`, `billing.resetForSignOut()` and stops
   the watches. `RootView` bootstraps auth with `sync.offlineAccount`, shows
   the shared `SignInView` until `auth.canAccessMainApp`, presents
@@ -176,14 +177,18 @@ feature folder. Billing only reads the lifetime count through
 `PowerSyncManager`, `APIConnector` and `SyncIssueStore` are the PowerSync
 connection, upload and issue core:
 
-- Signed in connects; signed out, or a session that needs reauthentication,
-  only disconnects and keeps local data and the upload queue. `.unknown`
-  during bootstrap leaves PowerSync alone. `wipe()` is the only path that
-  clears local data and is reserved for explicit sign-out, password-reset
-  sign-out and account deletion. A failed wipe blocks the next connection
-  until it succeeds.
-- `offlineAccount()` reports every owner of local data so `AuthClient` can
-  bind the cache to its original account before adopting a session.
+- Each authenticated UUID selects a separate SQLite file and CRUD queue before
+  the session is published. Feature repositories are recreated against that
+  handle; an old task can never start writing into the next account's file.
+- Sign-out (including offline sign-out and password-recovery exit) closes the
+  account database without clearing it. Signing back in reopens its rows and
+  pending queue. A signed-out screen never identifies a retained account.
+- `offlineAccount()` verifies ownership of the legacy database. Its original
+  owner keeps that file in place, including local-only tables, the sync cursor,
+  and pending CRUD; other accounts get separate files. Unverifiable legacy
+  ownership fails closed rather than guessing or dropping queued writes.
+- Only account deletion or explicit "Sign out and remove local data" clears
+  the selected account. Other databases and their queues are untouched.
 - The connector is bound to that owner. Credentials and every upload use the
   owner's current token, and uploads without it throw and stay queued.
 - Only tables in the writable allowlist upload; anything else throws.
