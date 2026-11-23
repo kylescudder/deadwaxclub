@@ -58,11 +58,10 @@ struct ResetPasswordSheet: View {
                         Button("Cancel") {
                             services.auth.cancelPasswordRecovery()
                         }
-                    case .signOutAndClearLocalData:
+                    case .signOut:
                         Button("Sign out") {
                             Task {
                                 if await services.auth.signOut() {
-                                    await services.sync.wipe()
                                     services.auth.isPasswordRecovery = false
                                 }
                             }
@@ -95,6 +94,6 @@ struct ResetPasswordSheet: View {
 enum PasswordRecoveryExit: Sendable {
     /// Forget the reset link and return to the app.
     case cancelRecovery
-    /// Sign out and clear this device's data.
-    case signOutAndClearLocalData
+    /// Sign out while retaining this account’s offline data.
+    case signOut
 }

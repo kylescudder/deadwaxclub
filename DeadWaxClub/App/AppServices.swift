@@ -10,15 +10,15 @@ final class AppServices: ObservableObject {
     let sync: PowerSyncManager
     let syncIssues: SyncIssueStore
     let billing: BillingRepository
-    let discogs: DiscogsClient
-    let coverArt: CoverArtCache
-    let records: RecordsRepository
-    let prices: PriceEntriesRepository
-    let recordImages: RecordImagesRepository
-    let profile: ProfileRepository
-    let lists: ListsRepository
-    let collections: CollectionsRepository
-    let notifications: NotificationsRepository
+    private(set) var discogs: DiscogsClient
+    private(set) var coverArt: CoverArtCache
+    private(set) var records: RecordsRepository
+    private(set) var prices: PriceEntriesRepository
+    private(set) var recordImages: RecordImagesRepository
+    private(set) var profile: ProfileRepository
+    private(set) var lists: ListsRepository
+    private(set) var collections: CollectionsRepository
+    private(set) var notifications: NotificationsRepository
     let onboarding: OnboardingCoordinator
 
     /// Set when iOS hands us a notification with a `record_id`; RootView
@@ -34,12 +34,12 @@ final class AppServices: ObservableObject {
     var creationQuota: any CreationQuotaProviding { records }
 
     private var cancellables = Set<AnyCancellable>()
+    private var accountCancellables = Set<AnyCancellable>()
 
-    init() {
+    init(auth: AuthClient = AuthClient(), databaseFilename: String = SyncAppConfiguration.databaseFilename) {
         Log.breadcrumb("app services initializing", category: "app.lifecycle")
-        let auth = AuthClient()
         let syncIssues = SyncIssueStore()
-        let sync = PowerSyncManager(auth: auth, issues: syncIssues)
+        let sync = PowerSyncManager(auth: auth, issues: syncIssues, databaseFilename: databaseFilename)
         let billing = BillingRepository(auth: auth)
         let discogs = DiscogsClient()
         let coverArt = CoverArtCache(authClient: auth)
@@ -50,16 +50,16 @@ final class AppServices: ObservableObject {
         self.billing = billing
         self.discogs = discogs
         self.coverArt = coverArt
-        self.records = RecordsRepository(database: sync.database, issues: syncIssues, auth: auth, billing: billing)
+        self.records = RecordsRepository(database: sync.database, issues: syncIssues, auth: auth, billing: billing, owner: sync.accountID)
         self.prices = PriceEntriesRepository(database: sync.database)
         self.recordImages = RecordImagesRepository(database: sync.database)
         self.profile = ProfileRepository(database: sync.database, auth: auth)
-        self.lists = ListsRepository(database: sync.database, auth: auth)
-        self.collections = CollectionsRepository(database: sync.database, auth: auth)
+        self.lists = ListsRepository(database: sync.database, auth: auth, owner: sync.accountID)
+        self.collections = CollectionsRepository(database: sync.database, auth: auth, owner: sync.accountID)
         self.notifications = NotificationsRepository(database: sync.database)
         self.onboarding = OnboardingCoordinator()
 
-        for child: any ObservableObject in [auth, sync, syncIssues, billing, discogs, records, prices, recordImages, profile, lists, collections, notifications, onboarding] {
+        for child: any ObservableObject in [auth, sync, syncIssues, billing, onboarding] {
             (child.objectWillChange as? ObservableObjectPublisher)?
                 .sink { [weak self] in self?.objectWillChange.send() }
                 .store(in: &cancellables)
@@ -73,6 +73,13 @@ final class AppServices: ObservableObject {
         auth.afterSessionInvalidationFailure = { [weak pushManager] in
             await pushManager?.activate()
         }
+        auth.deleteLocalAccount = { [weak self, weak sync] in
+            try await sync?.deleteAccountData()
+            self?.discogs.clearToken()
+            self?.coverArt.removeAccountCache()
+        }
+        sync.accountDatabaseDidChange = { [weak self] in self?.replaceAccountRepositories() }
+        bindAccountPublishers()
         billing.start()
         Task { await sync.startObservingAuth() }
 
@@ -104,28 +111,67 @@ final class AppServices: ObservableObject {
             }
             .store(in: &cancellables)
 
+    }
+
+    private func replaceAccountRepositories() {
+        records.stopWatching()
+        prices.stopWatching()
+        recordImages.stopWatching()
+        profile.stopWatching()
+        lists.stopWatching()
+        collections.stopWatching()
+        notifications.stopWatching()
+        SpotlightIndex.clearAll()
+        pendingDeepLinkRecord = nil
+        pendingDeepLinkCollectionID = nil
+        onboarding.resetForSignOut()
+        billing.resetForSignOut()
+        records = RecordsRepository(database: sync.database, issues: syncIssues, auth: auth, billing: billing, owner: sync.accountID)
+        prices = PriceEntriesRepository(database: sync.database)
+        recordImages = RecordImagesRepository(database: sync.database)
+        profile = ProfileRepository(database: sync.database, auth: auth)
+        lists = ListsRepository(database: sync.database, auth: auth, owner: sync.accountID)
+        collections = CollectionsRepository(database: sync.database, auth: auth, owner: sync.accountID)
+        notifications = NotificationsRepository(database: sync.database)
+        coverArt = CoverArtCache(authClient: auth, owner: sync.accountID, legacyOwner: auth.legacyOwnerID)
+        discogs = DiscogsClient(owner: sync.accountID, legacyOwner: auth.legacyOwnerID)
+        bindAccountPublishers()
+        objectWillChange.send()
+    }
+
+    private func bindAccountPublishers() {
+        accountCancellables.removeAll()
+        for child: any ObservableObject in [discogs, records, prices, recordImages, profile, lists, collections, notifications] {
+            (child.objectWillChange as? ObservableObjectPublisher)?
+                .sink { [weak self] in self?.objectWillChange.send() }
+                .store(in: &accountCancellables)
+        }
         profile.$profile
             .map { $0?.isPremiumAccount == true }
             .removeDuplicates()
             .sink { [weak billing] isPremiumAccount in
                 billing?.setAccessOverride(isPremiumAccount)
             }
-            .store(in: &cancellables)
+            .store(in: &accountCancellables)
     }
 
     private func applyAuth(state: AuthClient.State) {
         guard auth.state == state else { return }
         Log.event("app services applying auth state", category: "app.auth", metadata: ["state": state.loggingDescription])
-        guard case let .signedIn(userID, _) = state else {
+        guard auth.canAccessMainApp, case let .signedIn(userID, _) = state else {
             PushManager.shared.sessionEnded()
             onboarding.resetForSignOut()
             billing.resetForSignOut()
+            records.stopWatching()
+            prices.stopWatching()
+            recordImages.stopWatching()
             profile.stopWatching()
             lists.stopWatching()
             collections.stopWatching()
             notifications.stopWatching()
             return
         }
+        onboarding.selectAccount(userID)
         let id = userID.lowerUUID
         profile.startWatching(userID: id)
         lists.startWatching(userID: id)
@@ -191,9 +237,11 @@ final class AppServices: ObservableObject {
     }
 
     func evaluateOnboarding() {
+        guard auth.canAccessMainApp, let owner = auth.currentUserID else { return }
         Log.breadcrumb("onboarding evaluation scheduled", category: "onboarding")
         Task { @MainActor in
             await PushManager.shared.refreshAuthorizationStatus()
+            guard auth.canAccessMainApp, auth.currentUserID == owner else { return }
             let notificationsAuthorized = PushManager.shared.authorizationStatus == .authorized
             Log.event("onboarding evaluation running", category: "onboarding", metadata: [
                 "profileLoaded": profile.hasLoadedFromLocal,
@@ -220,17 +268,19 @@ final class AppServices: ObservableObject {
     /// Storage immediately rather than waiting for the user to swipe to that
     /// carousel slide (which may never happen).
     func ingestDiscogsImages(recordID: String, collectionID: String, sourceURLs: [String]) async {
-        guard !sourceURLs.isEmpty else { return }
+        guard !sourceURLs.isEmpty, auth.canAccessMainApp, let owner = auth.currentUserID else { return }
+        let imageRepository = recordImages
         Log.event("discogs image ingestion started", category: "images.ingest", metadata: [
             "recordID": recordID,
             "collectionID": collectionID,
             "sourceCount": sourceURLs.count,
         ])
-        await recordImages.bulkInsertFromDiscogs(
+        await imageRepository.bulkInsertFromDiscogs(
             recordID: recordID,
             collectionID: collectionID,
             sourceURLs: sourceURLs
         )
+        guard auth.canAccessMainApp, auth.currentUserID == owner else { return }
         await mirrorPendingImages(forRecord: recordID)
         Log.event("discogs image ingestion completed", category: "images.ingest", metadata: ["recordID": recordID])
     }
@@ -239,14 +289,19 @@ final class AppServices: ObservableObject {
     /// but no storage_path yet. Safe to call repeatedly. Detail screens call
     /// this on appear to catch any rows that weren't mirrored at save time.
     func mirrorPendingImages(forRecord recordID: String) async {
+        guard auth.canAccessMainApp else { return }
+        let recordRepository = records
+        let imageRepository = recordImages
+        let database = sync.database
+        let coverArt = coverArt
         Log.event("pending image mirror started", category: "images.mirror", metadata: ["recordID": recordID])
-        guard let record = await records.findByID(recordID) else {
+        guard let record = await recordRepository.findByID(recordID) else {
             Log.warning("pending image mirror skipped: record not found", category: "images.mirror")
             return
         }
         let rows: [RecordImage]
         do {
-            let raw: [RecordImage?] = try await sync.database.getAll(
+            let raw: [RecordImage?] = try await database.getAll(
                 sql: """
                 select * from record_images
                 where record_id = ?
@@ -269,13 +324,13 @@ final class AppServices: ObservableObject {
         }
 
         for image in rows {
-            await coverArt.mirrorIfNeeded(image: image, record: record) { [weak self] newPath in
+            await coverArt.mirrorIfNeeded(image: image, record: record) { newPath in
                 Log.event("pending image mirrored", category: "images.mirror", metadata: [
                     "recordID": recordID,
                     "imageID": image.id,
                 ])
-                Task { @MainActor [weak self] in
-                    await self?.recordImages.updateStoragePath(
+                Task { @MainActor in
+                    await imageRepository.updateStoragePath(
                         imageID: image.id,
                         storagePath: newPath
                     )

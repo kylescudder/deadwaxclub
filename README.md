@@ -244,6 +244,8 @@ if any of them drift:
 
 ## Development notes
 
+Each account keeps a separate local database and upload queue. Signing out retains offline changes on this device; signing back in resumes them. Choose **Sign out and remove local data** to discard that account’s local changes explicitly. A fresh sign-in requires connectivity.
+
 [AGENTS.md](AGENTS.md) describes the architecture in detail. In short:
 
 - `AppServices` owns the long-lived services and repositories; views read it with `@EnvironmentObject`.

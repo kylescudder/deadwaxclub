@@ -83,17 +83,19 @@ final class SharedAuthClientTests: XCTestCase {
         XCTAssertNotNil(store.data)
     }
 
-    func testSavedSessionMustMatchOfflineOwner() async throws {
+    func testSavedSessionSelectsItsOwnAccountWhilePreservingTheLegacyOwner() async throws {
         let owner = UUID()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
         let store = MemoryStore()
-        store.data = session(user: UUID(), token: "wrong-owner")
+        let signedInOwner = UUID()
+        store.data = session(user: signedInOwner, token: "another-owner")
         let auth = AuthClient(sessionStore: store, defaults: defaults)
         await auth.bootstrap(offlineAccount: { ([owner], true) })
-        XCTAssertNotNil(auth.lastError)
-        XCTAssertNil(auth.currentUserID)
+        XCTAssertNil(auth.lastError)
+        XCTAssertEqual(auth.currentUserID, signedInOwner)
+        XCTAssertEqual(auth.legacyOwnerID, owner)
         let token = await auth.currentAccessToken()
-        XCTAssertNil(token)
+        XCTAssertEqual(token, "another-owner")
         XCTAssertNotNil(store.data)
     }
 
@@ -104,8 +106,8 @@ final class SharedAuthClientTests: XCTestCase {
         store.failReads = true
         let auth = AuthClient(sessionStore: store, defaults: defaults)
         await auth.bootstrap(offlineAccount: { ([owner], true) })
-        XCTAssertEqual(auth.currentUserID, owner)
-        XCTAssertTrue(auth.requiresReauthentication)
+        XCTAssertNil(auth.currentUserID)
+        XCTAssertEqual(auth.state, .signedOut)
         XCTAssertFalse(auth.canAccessMainApp)
         XCTAssertEqual(defaults.string(forKey: AuthClient.ownerKey), owner.uuidString.lowercased())
         let token = await auth.currentAccessToken()
@@ -166,36 +168,97 @@ final class SharedAuthClientTests: XCTestCase {
         }
     }
 
-    func testReauthenticationAcceptsOriginalOwnerAndRejectsAnotherAccount() async throws {
+    func testSignInCanSelectAnotherAccountWithoutDiscardingTheOriginalBinding() async throws {
         let owner = UUID()
-        for candidate in [owner, UUID()] {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [UnauthorizedProtocol.self]
-            let session = URLSession(configuration: configuration)
-            defer { session.invalidateAndCancel() }
-            let client = APIClient(session: session, baseURL: URL(string: "https://auth.example.test")!, configurationError: nil)
-            let store = MemoryStore()
-            let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
-            let auth = AuthClient(sessionStore: store, defaults: defaults, api: client)
-            await auth.bootstrap(offlineAccount: { ([owner], true) })
-            let body = self.session(user: candidate, token: "reauthenticated")
-            UnauthorizedProtocol.onStart = { urlProtocol in urlProtocol.finish(status: 200, data: body) }
-            await auth.signIn(email: "auth@example.test", password: "test-password")
-            if candidate == owner {
-                XCTAssertFalse(auth.requiresReauthentication)
-                XCTAssertTrue(auth.canAccessMainApp)
-                let token = await auth.currentAccessToken()
-                XCTAssertEqual(token, "reauthenticated")
-                XCTAssertNotNil(store.data)
-            } else {
-                XCTAssertTrue(auth.requiresReauthentication)
-                XCTAssertFalse(auth.canAccessMainApp)
-                XCTAssertNotNil(auth.lastError)
-                XCTAssertNil(store.data)
-            }
-            XCTAssertEqual(auth.currentUserID, owner)
-            UnauthorizedProtocol.onStart = nil
+        let candidate = UUID()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnauthorizedProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); UnauthorizedProtocol.onStart = nil }
+        let client = APIClient(session: session, baseURL: URL(string: "https://auth.example.test")!, configurationError: nil)
+        let store = MemoryStore()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let auth = AuthClient(sessionStore: store, defaults: defaults, api: client)
+        await auth.bootstrap(offlineAccount: { ([owner], true) })
+        let body = self.session(user: candidate, token: "another-account")
+        UnauthorizedProtocol.onStart = { urlProtocol in urlProtocol.finish(status: 200, data: body) }
+
+        await auth.signIn(email: "auth@example.test", password: "test-password")
+
+        XCTAssertNil(auth.lastError)
+        XCTAssertEqual(auth.currentUserID, candidate)
+        XCTAssertTrue(auth.canAccessMainApp)
+        let token = await auth.currentAccessToken(for: candidate)
+        XCTAssertEqual(token, "another-account")
+        XCTAssertEqual(defaults.string(forKey: AuthClient.ownerKey), owner.uuidString.lowercased(), "Keep the original database bound to its owner")
+    }
+
+    func testAccountStorageFailureDoesNotPublishASession() async throws {
+        let owner = UUID()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnauthorizedProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); UnauthorizedProtocol.onStart = nil }
+        let client = APIClient(session: session, baseURL: URL(string: "https://auth.example.test")!, configurationError: nil)
+        let store = MemoryStore()
+        let auth = AuthClient(sessionStore: store, defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)), api: client)
+        await auth.bootstrap(offlineAccount: { ([], false) })
+        auth.prepareAccount = { _ in throw CocoaError(.fileWriteOutOfSpace) }
+        let body = self.session(user: owner, token: "candidate")
+        UnauthorizedProtocol.onStart = { $0.finish(status: 200, data: body) }
+        await auth.signIn(email: "auth@example.test", password: "test-password")
+        XCTAssertFalse(auth.canAccessMainApp)
+        XCTAssertNil(auth.currentUserID)
+        XCTAssertNil(auth.api.token)
+        XCTAssertNil(store.data)
+        XCTAssertNotNil(auth.lastError)
+    }
+
+    func testKeychainFailureAfterSelectingStorageFailsClosed() async throws {
+        let first = UUID(), second = UUID()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnauthorizedProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); UnauthorizedProtocol.onStart = nil }
+        let client = APIClient(session: session, baseURL: URL(string: "https://auth.example.test")!, configurationError: nil)
+        let store = MemoryStore()
+        store.data = self.session(user: first, token: "previous")
+        let auth = AuthClient(sessionStore: store, defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)), api: client)
+        await auth.bootstrap(offlineAccount: { ([first], false) })
+        var selected: UUID?
+        auth.prepareAccount = { selected = $0 }
+        store.failWrites = true
+        let body = self.session(user: second, token: "candidate")
+        UnauthorizedProtocol.onStart = { $0.finish(status: 200, data: body) }
+        await auth.signIn(email: "auth@example.test", password: "test-password")
+        XCTAssertEqual(selected, second)
+        XCTAssertFalse(auth.canAccessMainApp)
+        XCTAssertNil(auth.currentUserID)
+        XCTAssertNil(auth.api.token)
+        XCTAssertNotNil(auth.lastError)
+    }
+
+    func testSignOutInvalidatesAnEarlierSignInResponse() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnauthorizedProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); UnauthorizedProtocol.onStart = nil }
+        let auth = AuthClient(sessionStore: MemoryStore(), defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)), api: APIClient(session: session, baseURL: URL(string: "https://auth.example.test")!, configurationError: nil))
+        await auth.bootstrap(offlineAccount: { ([], false) })
+        let started = expectation(description: "sign-in request")
+        var pending: UnauthorizedProtocol?
+        UnauthorizedProtocol.onStart = { request in
+            Task { @MainActor in pending = request; started.fulfill() }
         }
+        let signIn = Task { await auth.signIn(email: "auth@example.test", password: "test-password") }
+        await fulfillment(of: [started], timeout: 5)
+        let signedOut = await auth.signOut()
+        XCTAssertTrue(signedOut)
+        pending?.finish(status: 200, data: self.session(user: UUID(), token: "stale"))
+        await signIn.value
+        XCTAssertEqual(auth.state, .signedOut)
+        XCTAssertNil(auth.api.token)
+        XCTAssertNil(auth.lastError)
     }
 
     func testSignOutDuringPasswordRecoveryRevokesTheServerSession() async throws {
@@ -287,11 +350,15 @@ final class SharedAuthClientTests: XCTestCase {
 private final class MemoryStore: SessionStore {
     var data: Data?
     var failReads = false
+    var failWrites = false
     func read() throws -> Data? {
         if failReads { throw URLError(.userAuthenticationRequired) }
         return data
     }
-    func write(_ data: Data?) throws { self.data = data }
+    func write(_ data: Data?) throws {
+        if failWrites { throw CocoaError(.fileWriteNoPermission) }
+        self.data = data
+    }
 }
 
 private final class UnauthorizedProtocol: URLProtocol, @unchecked Sendable {

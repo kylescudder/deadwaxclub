@@ -14,6 +14,11 @@ final class PriceEntriesRepository: ObservableObject {
 
     deinit { watchTask?.cancel() }
 
+    func stopWatching() {
+        watchTask?.cancel(); watchTask = nil
+        entries = []
+    }
+
     func startWatching(recordID: String) {
         Log.event("price watch starting", category: "prices.watch", metadata: ["recordID": recordID])
         watchTask?.cancel()
@@ -31,6 +36,7 @@ final class PriceEntriesRepository: ObservableObject {
                     mapper: { PriceEntry.from(cursor: $0) }
                 )
                 for try await rows in stream {
+                    guard !Task.isCancelled else { return }
                     let mapped = rows.compactMap { $0 }
                     Log.event("price watch emitted", category: "prices.watch", metadata: [
                         "recordID": recordID,

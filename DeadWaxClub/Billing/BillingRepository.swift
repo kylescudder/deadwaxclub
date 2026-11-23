@@ -33,6 +33,7 @@ final class BillingRepository: ObservableObject {
     private let auth: AuthClient
     private let mirror: any TransactionMirroring
     private let pause: @Sendable (UInt64) async -> Void
+    private var accountGeneration = 0
     private var transactionTask: Task<Void, Never>?
 
     init(
@@ -65,6 +66,7 @@ final class BillingRepository: ObservableObject {
     }
 
     func resetForSignOut() {
+        accountGeneration += 1
         Log.breadcrumb("billing state reset for sign out", category: "billing")
         hasLocalSubscription = false
         hasAccessOverride = false
@@ -171,6 +173,7 @@ final class BillingRepository: ObservableObject {
     /// `Transaction.updates` own finishing.
     func syncEntitlements() async {
         Log.breadcrumb("billing entitlement sync started", category: "billing.entitlements")
+        let generation = accountGeneration
         var activeEntitlements: [String] = []
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result,
@@ -178,12 +181,14 @@ final class BillingRepository: ObservableObject {
                   transaction.isActiveSubscriptionEntitlement else { continue }
             activeEntitlements.append(result.jwsRepresentation)
         }
+        guard generation == accountGeneration else { return }
         await reconcileEntitlements(activeJWSRepresentations: activeEntitlements)
     }
 
     /// Applies the locally verified, active entitlements found by
     /// `syncEntitlements`. Internal so tests can drive it without StoreKit.
     func reconcileEntitlements(activeJWSRepresentations: [String]) async {
+        let generation = accountGeneration
         lastError = nil
         for jwsRepresentation in activeJWSRepresentations {
             if await confirmLocallyVerifiedEntitlement(jwsRepresentation: jwsRepresentation, finish: {}) {
@@ -192,6 +197,7 @@ final class BillingRepository: ObservableObject {
             }
         }
 
+        guard generation == accountGeneration else { return }
         if activeJWSRepresentations.isEmpty {
             hasLocalSubscription = false
             subscriptionState = .free
@@ -211,10 +217,12 @@ final class BillingRepository: ObservableObject {
         jwsRepresentation: String,
         finish: () async -> Void
     ) async -> Bool {
+        let generation = accountGeneration
         hasLocalSubscription = true
         subscriptionState = .verifying
-        guard await confirmWithServer(jwsRepresentation: jwsRepresentation) else { return false }
+        guard await confirmWithServer(jwsRepresentation: jwsRepresentation), generation == accountGeneration else { return false }
         await finish()
+        guard generation == accountGeneration else { return false }
         subscriptionState = .active
         lastError = nil
         return true
@@ -257,10 +265,12 @@ final class BillingRepository: ObservableObject {
     }
 
     private func confirmWithServer(jwsRepresentation: String) async -> Bool {
+        let generation = accountGeneration
         if let response = await mirrorWithRetry(jwsRepresentation: jwsRepresentation) {
             if response.confirmsActiveEntitlement { return true }
             Log.error(BillingSyncError.entitlementNotActive, category: "billing.syncTransaction")
         }
+        guard generation == accountGeneration else { return false }
         subscriptionState = .verifying
         lastError = BillingAppConfiguration.verificationPendingMessage
         return false
@@ -271,9 +281,12 @@ final class BillingRepository: ObservableObject {
     /// transaction, or nil when it could not.
     private func mirrorWithRetry(jwsRepresentation: String) async -> TransactionMirrorResponse? {
         Log.breadcrumb("billing transaction sync started", category: "billing.syncTransaction")
+        let generation = accountGeneration
         for attempt in 0..<TransactionMirrorPolicy.maxAttempts {
+            guard generation == accountGeneration else { return nil }
             do {
                 let response = try await mirror.mirror(jwsRepresentation: jwsRepresentation)
+                guard generation == accountGeneration else { return nil }
                 Log.breadcrumb("billing transaction sync completed", category: "billing.syncTransaction")
                 return response
             } catch {

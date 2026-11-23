@@ -9,6 +9,7 @@ final class NotificationsRepository: ObservableObject {
     @Published private(set) var notifications: [InboxNotification] = []
     @Published private(set) var unreadCount: Int = 0
 
+    private var owner: UUID?
     private let database: PowerSyncDatabaseProtocol
     private var watchTask: Task<Void, Never>?
 
@@ -20,6 +21,7 @@ final class NotificationsRepository: ObservableObject {
 
     func startWatching(userID: String) {
         watchTask?.cancel()
+        owner = UUID(uuidString: userID)
         watchTask = Task { [weak self, database] in
             guard let self else { return }
             let sql = """
@@ -35,6 +37,7 @@ final class NotificationsRepository: ObservableObject {
                     mapper: { InboxNotification.from(cursor: $0) }
                 )
                 for try await rows in stream {
+                    guard !Task.isCancelled else { return }
                     let mapped = rows.compactMap { $0 }
                     let unread = mapped.reduce(0) { $0 + ($1.isRead ? 0 : 1) }
                     await MainActor.run {
@@ -82,6 +85,7 @@ final class NotificationsRepository: ObservableObject {
     }
 
     private func refreshWishlistPriceWidget(from notifications: [InboxNotification]) async {
+        guard !Task.isCancelled else { return }
         let priceAlerts = notifications.filter { $0.kind == .priceAlert }
         let recordIDs = Array(Set(priceAlerts.compactMap { $0.payload["record_id"] }))
         guard !recordIDs.isEmpty else {
@@ -141,6 +145,7 @@ final class NotificationsRepository: ObservableObject {
                     )
                 )
             }
+            guard !Task.isCancelled else { return }
             WidgetSnapshotStore.saveWishlistPriceAlerts(snapshots)
             WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshotStore.priceAlertWidgetKind)
         } catch {
@@ -149,8 +154,8 @@ final class NotificationsRepository: ObservableObject {
     }
 
     private func saveWidgetCoverArt(for record: WidgetWishlistRecord) async -> String? {
-        if let data = try? Data(contentsOf: CoverArtCache.localFile(for: record.id)) {
-            return WidgetSnapshotStore.saveCoverArt(data, recordID: record.id)
+        if let data = try? Data(contentsOf: CoverArtCache.localFile(for: record.id, owner: owner)) {
+            return WidgetSnapshotStore.saveCoverArt(data, recordID: "\(owner?.uuidString.lowercased() ?? "signed-out")-\(record.id)")
         }
 
         let remoteURL: URL? = {
@@ -168,7 +173,7 @@ final class NotificationsRepository: ObservableObject {
             guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
                 return nil
             }
-            return WidgetSnapshotStore.saveCoverArt(data, recordID: record.id)
+            return WidgetSnapshotStore.saveCoverArt(data, recordID: "\(owner?.uuidString.lowercased() ?? "signed-out")-\(record.id)")
         } catch {
             Log.error(error, category: "notifications.widgetCover")
             return nil

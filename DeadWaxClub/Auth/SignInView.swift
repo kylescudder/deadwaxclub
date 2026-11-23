@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The shared sign-in screen: email and password, Apple, Google, password
-/// reset, and the offline-account recovery choice. This file is identical in
+/// reset. Retained local accounts never affect the signed-out screen. This file is identical in
 /// every app; branding comes from `AuthAppConfiguration`.
 struct SignInView: View {
     @EnvironmentObject private var services: AppServices
@@ -10,7 +10,6 @@ struct SignInView: View {
     @State private var isWorking = false
     @State private var showSignUp = false
     @State private var showForgotPassword = false
-    @State private var showDiscardConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -30,13 +29,6 @@ struct SignInView: View {
                         .multilineTextAlignment(.center)
                 }
                 .padding(.top, Theme.Spacing.xxl)
-
-                if services.auth.requiresReauthentication {
-                    Text("Please sign in again to pick up where you left off.")
-                        .font(.callout)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                        .multilineTextAlignment(.center)
-                }
 
                 VStack(spacing: Theme.Spacing.md) {
                     TextField("Email", text: $email)
@@ -96,16 +88,9 @@ struct SignInView: View {
                     .disabled(isWorking)
                 }
 
-                if services.auth.requiresReauthentication {
-                    Button("Use a different account") {
-                        showDiscardConfirmation = true
-                    }
+                Button("Create an account") { showSignUp = true }
                     .font(.callout)
-                } else {
-                    Button("Create an account") { showSignUp = true }
-                        .font(.callout)
-                        .padding(.top, Theme.Spacing.sm)
-                }
+                    .padding(.top, Theme.Spacing.sm)
             }
             .disabled(isWorking)
             .padding(.horizontal, Theme.Spacing.lg)
@@ -113,14 +98,6 @@ struct SignInView: View {
         }
         .background(Theme.Colors.background)
         .scrollDismissesKeyboard(.interactively)
-        .alert("Use a different account?", isPresented: $showDiscardConfirmation) {
-            Button("Switch account", role: .destructive) {
-                Task { await discardLocalAccount() }
-            }
-            Button("Stay here", role: .cancel) {}
-        } message: {
-            Text("Any changes on this phone that haven’t been saved to your account will be lost. Everything already saved to your account will still be there when you sign back in.")
-        }
         .navigationDestination(isPresented: $showSignUp) { SignUpView() }
         .sheet(isPresented: $showForgotPassword) {
             ForgotPasswordSheet(initialEmail: email)
@@ -130,19 +107,6 @@ struct SignInView: View {
 
     private var isFormValid: Bool {
         !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && password.count >= 6
-    }
-
-    private func discardLocalAccount() async {
-        guard !isWorking else { return }
-        isWorking = true
-        defer { isWorking = false }
-        if await services.auth.signOut() {
-            await services.sync.wipe()
-            AuthAppConfiguration.didDiscardLocalAccount(services)
-            services.auth.lastError = nil
-            email = ""
-            password = ""
-        }
     }
 
     private func signIn() async {

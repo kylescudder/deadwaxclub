@@ -180,10 +180,11 @@ struct RecordDetailView: View {
         .task {
             services.prices.startWatching(recordID: currentRecord.id)
             services.recordImages.startWatching(recordID: currentRecord.id)
+            let imageRepository = services.records
             await services.coverArt.cacheIfNeeded(record: currentRecord) { newPath in
                 Task { @MainActor in
                     self.currentRecord.coverArtStoragePath = newPath
-                    await services.records.updateStoragePath(recordID: currentRecord.id, storagePath: newPath)
+                    await imageRepository.updateStoragePath(recordID: currentRecord.id, storagePath: newPath)
                 }
             }
             // Backfill: mirror any record_images rows that still have a

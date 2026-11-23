@@ -91,6 +91,7 @@ struct RootView: View {
                 NavigationStack { SignInView() }
             } else {
                 MainTabView()
+                    .id(services.auth.currentUserID)
                     .sheet(isPresented: Binding(
                         get: { services.onboarding.isOnboarding },
                         set: { _ in }

@@ -15,6 +15,11 @@ final class RecordImagesRepository: ObservableObject {
     deinit { watchTask?.cancel() }
 
     /// Watch every image attached to a record, ordered by position.
+    func stopWatching() {
+        watchTask?.cancel(); watchTask = nil
+        images = []
+    }
+
     func startWatching(recordID: String) {
         watchTask?.cancel()
         watchTask = Task { [weak self, database] in
@@ -31,6 +36,7 @@ final class RecordImagesRepository: ObservableObject {
                     mapper: { RecordImage.from(cursor: $0) }
                 )
                 for try await rows in stream {
+                    guard !Task.isCancelled else { return }
                     let mapped = rows.compactMap { $0 }
                     await MainActor.run { self.images = mapped }
                 }
