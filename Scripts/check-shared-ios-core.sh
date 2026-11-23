@@ -1,8 +1,8 @@
 #!/bin/sh
 # Verify the shared iOS core against Scripts/shared-ios-core.sha256.
 #
-# `@APP@` in a manifest path is the app name from project.yml (Diald,
-# DeadWaxClub, ...). The iOS workflows are hashed with that name replaced by
+# `@APP@` in a manifest path is the app name from project.yml (its target and
+# folder name). The iOS workflows are hashed with that name replaced by
 # `@APP@` and its upper-case form by `@APP_UPPER@`, so only the target name may
 # differ between apps. Pass --write to regenerate the manifest after an
 # intentional change, then copy the changed files and manifest to every app.

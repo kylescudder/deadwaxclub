@@ -7,8 +7,7 @@ import { authApp } from '../src/auth-app'
 import { isPublicAuthPath } from '../src/auth-routes'
 import { renderEmail } from '../src/email'
 
-const databaseURL =
-  process.env.TEST_DATABASE_URL ?? process.env.DEADWAX_TEST_DATABASE_URL
+const databaseURL = process.env.TEST_DATABASE_URL
 if (!databaseURL) throw new Error('A disposable auth test database is required')
 const { db, pool } = connectDatabase(databaseURL)
 const origin = 'http://localhost:3199'

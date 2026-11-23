@@ -359,8 +359,8 @@ apps:
     production:
       keyId: KEY1234567
       secretArn: arn:aws:secretsmanager:eu-west-1:...:secret:apns/prod/team-a
-  diald:
-    bundleId: app.dialdclub
+  another-app:
+    bundleId: com.example.another-app
     teamId: ABC123DEFG
     production:
       keyId: KEY1234567

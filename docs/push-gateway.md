@@ -1,6 +1,6 @@
 # Shared APNs gateway
 
-Deadwax Club, Diald and the other iOS apps share one APNs provider: a small
+Deadwax Club and the other iOS apps share one APNs provider: a small
 authenticated gateway that owns device installations, queues notifications and
 delivers them to Apple over HTTP/2. This document defines the contract the app
 and the Deadwax API follow. The platform research behind it is in

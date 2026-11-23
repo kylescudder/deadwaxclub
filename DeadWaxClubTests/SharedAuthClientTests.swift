@@ -2,13 +2,7 @@ import AuthenticationServices
 import Foundation
 import Network
 import XCTest
-#if canImport(Diald)
-@testable import Diald
-#elseif canImport(DeadWaxClub)
-@testable import DeadWaxClub
-#else
-@testable import Moss
-#endif
+@testable import AppUnderTest
 
 @MainActor
 final class SharedAuthClientTests: XCTestCase {

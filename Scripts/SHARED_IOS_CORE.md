@@ -1,7 +1,7 @@
 # Shared iOS app conventions
 
-Every iOS app (Diald, Deadwax Club, Moss and any new app) uses the same
-repository layout, tooling and app scaffolding. The files in
+Every iOS app uses the same repository layout, tooling and app scaffolding.
+No app refers to another app by name: shared files use the hooks below. The files in
 `shared-ios-core.sha256` are byte-for-byte identical in every app. `@APP@` in
 that manifest is the `name:` from `project.yml`, and the iOS workflows may
 differ only in that name, which the check normalizes. Run
@@ -63,7 +63,8 @@ folder; the profile repository lives in `Settings/`.
 
 The shared files read app-specific values from these places only:
 
-- `project.yml` `name:` — the target, scheme, project and folder name.
+- `project.yml` `name:` — the target, scheme, project and folder name, and the
+  test target's `-module-alias AppUnderTest=<App>` flag.
 - The `*.auth` URL type in `project.yml` — `AppSecrets.authRedirectURL`.
 - `Auth/AuthAppConfiguration.swift` — callback scheme, Keychain service and
   other values the shared auth code needs, plus the sign-in screen's logo,
@@ -134,8 +135,10 @@ The shared files read app-specific values from these places only:
   repositories are `@MainActor`; justify any `@unchecked Sendable`.
 - **Plists.** Info.plist, entitlements and ExportOptions use Xcode's format:
   tab indentation and keys in alphabetical order.
-- **Tests.** `Shared*Tests.swift` import whichever app module is present with
-  `#if canImport(...)`; add the new module there when adding an app.
+- **Tests.** Every test file imports the app as `@testable import AppUnderTest`.
+  The test target maps that name to the app's module with
+  `OTHER_SWIFT_FLAGS: $(inherited) -module-alias AppUnderTest=<App>` in
+  `project.yml`, so `Shared*Tests.swift` never name an app.
 - **CI.** `ios-build.yml` runs the shared checks, an unsigned simulator build
   and the unit tests on any available iPhone simulator. `ios-testflight.yml`
   archives `main` with manual signing, verifies the release endpoints and the
@@ -207,6 +210,6 @@ Copy every file in this manifest, `shared-auth.sha256`, `shared-push-core.sha256
 `shared-infra.sha256` and `shared-site.sha256` from an existing app, then add the
 app's own hooks above, `AGENTS.md`, `README.md` (same section order as the other
 apps) and `project.yml`. The site has its own hooks, starting with
-`Site/app.json`; see `SHARED_SITE.md`. Add the new module to the `#if canImport`
-lists in the shared tests of every app. All five checks must pass before the
+`Site/app.json`; see `SHARED_SITE.md`. Give the test target the
+`-module-alias AppUnderTest=<App>` flag. All five checks must pass before the
 first pull request.

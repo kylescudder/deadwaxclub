@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import DeadWaxClub
+@testable import AppUnderTest
 
 @MainActor
 final class AccountCoverArtTests: XCTestCase {

@@ -2,9 +2,9 @@ import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 
-const databaseURL = process.env.DEADWAX_TEST_DATABASE_URL
+const databaseURL = process.env.TEST_DATABASE_URL
 if (!databaseURL || new URL(databaseURL).pathname !== '/deadwax_test') {
-  throw new Error('Set DEADWAX_TEST_DATABASE_URL to a disposable deadwax_test database')
+  throw new Error('Set TEST_DATABASE_URL to a disposable deadwax_test database')
 }
 const pool = new Pool({ connectionString: databaseURL, max: 1 })
 const users = [crypto.randomUUID(), crypto.randomUUID()]

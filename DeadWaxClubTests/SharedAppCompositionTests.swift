@@ -1,13 +1,7 @@
 import Foundation
 import Combine
 import XCTest
-#if canImport(Diald)
-@testable import Diald
-#elseif canImport(DeadWaxClub)
-@testable import DeadWaxClub
-#else
-@testable import Moss
-#endif
+@testable import AppUnderTest
 
 /// The shared app-composition pieces: quick-action replay, app-group storage
 /// and the sign-in hooks every app must provide.
