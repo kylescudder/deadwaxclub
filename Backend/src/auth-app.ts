@@ -1,1 +1,1 @@
-export const authApp = { name: 'Deadwax Club', cookiePrefix: 'deadwaxclub-auth', callbackURL: 'deadwaxclub://auth-callback', emailFooter: 'Deadwax Club', emailBudgetKey: 'deadwax-email-budget' }
+export const authApp = { name: 'Deadwax Club', cookiePrefix: 'deadwaxclub-auth', callbackURL: 'deadwaxclub://auth-callback', emailFooter: 'Deadwax Club', emailBudgetKey: 'deadwax-email-budget', invitesURL: 'https://deadwaxclub.app/invites' }

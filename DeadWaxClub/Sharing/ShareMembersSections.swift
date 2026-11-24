@@ -140,7 +140,7 @@ struct ShareMembersSections: View {
             case .added:
                 inviteMessage = "Added \(email) to \(sharing.space.copy.destination)."
             case .pending:
-                inviteMessage = "Invitation saved. They'll join when they sign up with \(email)."
+                inviteMessage = "Invite sent to \(email). They'll join once they accept it."
             }
             inviteEmail = ""
             successCount += 1

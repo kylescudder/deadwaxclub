@@ -4,7 +4,8 @@
       {
         "appIDs": ["6AAGJ9Y234.com.deadwaxclub.app"],
         "components": [
-          { "/": "/l/*", "comment": "Public list share links" }
+          { "/": "/l/*", "comment": "Public list share links" },
+          { "/": "/invites", "comment": "Sharing invite emails" }
         ]
       }
     ]

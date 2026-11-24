@@ -8,6 +8,11 @@ import { libraryAction } from './library'
 import { mirrorEntitlement } from './iap'
 import { nativeOAuth } from './native-oauth'
 import type { NotificationSpool } from './notification-spool'
+import { authApp } from './auth-app'
+import type { InviteDetails } from './email'
+
+type SendInviteEmail = (email: string, kind: 'invite', url: string, invite: InviteDetails) => Promise<void>
+type CollectionInvitation = { status: string, email: string, inviter: string, target: string }
 
 
 async function asAccount<T>(pool: Pool, userId: string | null, work: (client: PoolClient) => Promise<T>) {
@@ -45,7 +50,18 @@ function withPublicCORS(response: Response) {
   return response
 }
 
-export function createApplication(auth: Auth, pool: Pool, origin: string, spool?: NotificationSpool) {
+export function createApplication(auth: Auth, pool: Pool, origin: string, spool?: NotificationSpool, sendEmail?: SendInviteEmail) {
+  // The invite is saved before its email goes out, and stays usable in the
+  // app if the email can't be sent.
+  async function emailInvitation(invitation: CollectionInvitation) {
+    if (!sendEmail) return
+    try {
+      await sendEmail(invitation.email, 'invite', authApp.invitesURL, { inviter: invitation.inviter, target: invitation.target })
+    } catch {
+      // Budget exhausted or Brevo unavailable; the invite is in the app.
+    }
+  }
+
   return async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url)
     if (publicListPaths.has(pathname)) {
@@ -163,9 +179,15 @@ export function createApplication(auth: Auth, pool: Pool, origin: string, spool?
 
       if (request.method === 'POST' && pathname.startsWith('/api/library/')) {
         const body = await request.json()
+        const action = pathname.slice('/api/library/'.length)
         const result = await asAccount(pool, userId, (client) =>
-          libraryAction(client, pathname.slice('/api/library/'.length), body)
+          libraryAction(client, action, body)
         )
+        if (action === 'invite_to_collection') {
+          const invitation = result as CollectionInvitation
+          await emailInvitation(invitation)
+          return Response.json({ status: invitation.status })
+        }
         return Response.json(result)
       }
 
@@ -182,6 +204,10 @@ export function createApplication(auth: Auth, pool: Pool, origin: string, spool?
       if (error instanceof AppleVerificationError) return errorResponse('apple_verification_failed', 422)
       if (error instanceof SyntaxError) return errorResponse('invalid_request', 400)
       const code = error instanceof Error && 'code' in error ? String(error.code) : ''
+      // Sharing refusals carry fixed messages written for the app to show.
+      if ((code === 'DW004' || code === 'DW005') && error instanceof Error) {
+        return Response.json({ code, message: error.message }, { status: code === 'DW005' ? 403 : 422, headers: { 'cache-control': 'no-store' } })
+      }
       if (code === '42501') return errorResponse('permission_denied', 403)
       if (['DW001', 'DW002', 'DW003', '23502', '23503', '23505', '23514', '22P02'].includes(code)) {
         return errorResponse(code, 422)

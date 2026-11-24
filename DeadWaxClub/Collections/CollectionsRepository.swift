@@ -12,6 +12,8 @@ final class CollectionsRepository: ObservableObject {
     @Published private(set) var collections: [VinylCollection] = []
 
     let sharing: SharingRepository
+    /// Collection invites sent to this account.
+    let inbox: SharingInbox
 
     private let database: PowerSyncDatabaseProtocol
     private let auth: AuthClient
@@ -22,6 +24,7 @@ final class CollectionsRepository: ObservableObject {
         self.database = database
         self.auth = auth
         self.sharing = SharingRepository(space: .collection, database: database, auth: auth, owner: owner)
+        self.inbox = SharingInbox([sharing])
         sharingChanges = sharing.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 

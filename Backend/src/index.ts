@@ -21,6 +21,12 @@ function origin(name: string) {
 const baseURL = origin('BETTER_AUTH_URL')
 const spool = new NotificationSpool(required('NOTIFICATION_SPOOL'))
 const { db, pool } = connectDatabase(required('DATABASE_URL'))
+const sendEmail = createEmailSender(pool, {
+  key: required('BREVO_API_KEY'),
+  from: required('AUTH_EMAIL_FROM'),
+  origin: baseURL,
+  dailyLimit: 40
+})
 const auth = createAuth(db, {
   baseURL,
   secret: required('BETTER_AUTH_SECRET'),
@@ -31,19 +37,14 @@ const auth = createAuth(db, {
     clientSecret: required('APPLE_CLIENT_SECRET'),
     appBundleIdentifier: 'com.deadwaxclub.app'
   },
-  sendEmail: createEmailSender(pool, {
-    key: required('BREVO_API_KEY'),
-    from: required('AUTH_EMAIL_FROM'),
-    origin: baseURL,
-    dailyLimit: 40
-  })
+  sendEmail
 })
 
 const server = Bun.serve({
   hostname: '0.0.0.0',
   port: 3147,
   maxRequestBodySize: 5 * 1024 * 1024,
-  fetch: createApplication(auth, pool, baseURL, spool)
+  fetch: createApplication(auth, pool, baseURL, spool, sendEmail)
 })
 let replaying = false
 const replay = setInterval(async () => {

@@ -1,0 +1,35 @@
+---
+import app from "../../app.json";
+import LegalArticle from "../components/LegalArticle.astro";
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout
+  title="Invites — Deadwax Club"
+  description="Accept an invite to a shared Collection in Deadwax Club."
+  bodyClass="legal-page"
+>
+  <LegalArticle title="Your invite">
+    <p>Someone invited you to share a record Collection in Deadwax Club.</p>
+
+    <h2>Accept it in the app</h2>
+    <ol>
+      <li>Install Deadwax Club from the App Store on your iPhone.</li>
+      <li>
+        Sign in, or create an account, with the email address the invite was
+        sent to.
+      </li>
+      <li>Open Settings, then Sharing, and tap Accept on the invite.</li>
+    </ol>
+    <p>
+      If Deadwax Club is already installed, opening this link on your iPhone
+      takes you straight to your invites. Nobody joins a Collection until they
+      accept.
+    </p>
+
+    <h2>Questions</h2>
+    <p>
+      Email <a href={`mailto:${app.contact}`}>{app.contact}</a>.
+    </p>
+  </LegalArticle>
+</BaseLayout>

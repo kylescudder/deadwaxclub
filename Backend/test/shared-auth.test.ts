@@ -209,6 +209,59 @@ test('email links keep each app branding and refuse another origin', () => {
   ).toThrow()
 })
 
+test('invite mail links only to the app invites page and keeps sender text to one line', () => {
+  const page = (authApp as { invitesURL?: string }).invitesURL
+  const details = {
+    inviter: 'Sam\r\nBcc: x',
+    target: 'the trip “<b>Lisbon</b>”'
+  }
+  if (!page) {
+    // Apps without sharing never send invite mail.
+    expect(() =>
+      renderEmail('invite', origin + '/invites', origin, details)
+    ).toThrow('Invalid email link')
+    return
+  }
+  const rendered = renderEmail('invite', page, origin, details)
+  expect(rendered.subject).toBe(
+    `Sam Bcc: x invited you to the trip “<b>Lisbon</b>” on ${authApp.name}`
+  )
+  expect(rendered.htmlContent).toContain('&lt;b&gt;Lisbon&lt;/b&gt;')
+  expect(rendered.htmlContent).not.toContain('<b>Lisbon')
+  expect(rendered.htmlContent).toContain(authApp.emailFooter)
+  expect(() =>
+    renderEmail('invite', 'https://evil.example/invites', origin, details)
+  ).toThrow('Invalid email link')
+  expect(() => renderEmail('invite', page, origin)).toThrow(
+    'Invalid email link'
+  )
+})
+
+test('invites to someone never use up their sign-in email limits', async () => {
+  const page = (authApp as { invitesURL?: string }).invitesURL
+  if (!page) return
+  const { createEmailSender } = await import('../src/email')
+  let sends = 0
+  const send = (async () => {
+    sends++
+    return new Response(null, { status: 201 })
+  }) as unknown as typeof fetch
+  const sender = createEmailSender(
+    pool,
+    { key: 'test-only', from: 'hello@example.test', origin, dailyLimit: 1000 },
+    send
+  )
+  const email = crypto.randomUUID() + '@example.test'
+  const details = { inviter: 'Sam', target: 'a test' }
+  await sender(email, 'invite', page, details)
+  // A second invite inside the minute is dropped silently.
+  await sender(email, 'invite', page, details)
+  expect(sends).toBe(1)
+  // Their own verification mail still goes out.
+  await sender(email, 'verify', origin + '/api/auth/verify-email?token=t')
+  expect(sends).toBe(2)
+})
+
 test('native Apple names initialize profiles and returning sign-ins preserve user edits', async () => {
   const appleAuth = createAuth(db, {
     baseURL: origin,

@@ -39,7 +39,10 @@ final class SharedSharingTests: XCTestCase {
             XCTAssertEqual(space.removeMember.keys.count, 2, space.removeMember.path)
             XCTAssertEqual(space.revokeInvite.keys.count, 1, space.revokeInvite.path)
             XCTAssertEqual(space.memberProfiles.keys.count, 1, space.memberProfiles.path)
-            for endpoint in [space.invite, space.removeMember, space.revokeInvite, space.memberProfiles] {
+            XCTAssertEqual(space.incoming.keys.count, 0, space.incoming.path)
+            XCTAssertEqual(space.accept.keys.count, 1, space.accept.path)
+            XCTAssertEqual(space.decline.keys.count, 1, space.decline.path)
+            for endpoint in [space.invite, space.removeMember, space.revokeInvite, space.memberProfiles, space.incoming, space.accept, space.decline] {
                 XCTAssertFalse(endpoint.path.hasPrefix("/"), endpoint.path)
                 XCTAssertEqual(Set(endpoint.keys).count, endpoint.keys.count, endpoint.path)
             }
@@ -239,6 +242,92 @@ final class SharedSharingTests: XCTestCase {
         let left = await sharing.leave(spaceID: "s")
         XCTAssertFalse(left)
         XCTAssertTrue(requests.values.isEmpty)
+    }
+
+    // MARK: Answering invites
+
+    func testIncomingInvitesAreFetchedAndAnsweredWithTheirIDs() async throws {
+        let (auth, _) = try await makeSignedInAuth(token: "invitee-token")
+        let requests = SharingRequestLog()
+        for space in SharingAppConfiguration.spaces {
+            SharingStubProtocol.handler = { request in
+                requests.append(request)
+                if request.path == "/" + space.incoming.path {
+                    return (200, Data(#"[{"id":"i1","space_id":"s1","space_name":"Lisbon","inviter_name":"Sam","role":"viewer","created_at":"2026-11-24T10:00:00.000Z"},{"id":"i2","space_id":"s2","space_name":null,"inviter_name":null,"role":"editor","created_at":"2026-11-24T11:00:00.000Z"}]"#.utf8))
+                }
+                return (200, Data(#"{"status":"accepted","space_id":"s1"}"#.utf8))
+            }
+            let sharing = SharingRepository(space: space, database: makeDatabase(), auth: auth)
+
+            await sharing.refreshIncomingInvites()
+
+            XCTAssertEqual(sharing.incomingInvites.map(\.id), ["i1", "i2"], space.name)
+            let first = try XCTUnwrap(sharing.incomingInvites.first)
+            XCTAssertEqual(first.spaceName, "Lisbon")
+            XCTAssertEqual(first.inviterName, "Sam")
+            XCTAssertEqual(first.role, .viewer)
+            XCTAssertNotNil(first.createdAt)
+            XCTAssertNil(sharing.incomingInvites[1].spaceName)
+
+            try await sharing.accept(first)
+            let accepted = try XCTUnwrap(requests.values.last)
+            XCTAssertEqual(accepted.path, "/" + space.accept.path)
+            XCTAssertEqual(accepted.authorization, "Bearer invitee-token")
+            XCTAssertEqual(accepted.body[space.accept.keys[0]] as? String, "i1")
+
+            try await sharing.decline(sharing.incomingInvites[0])
+            let declined = try XCTUnwrap(requests.values.last)
+            XCTAssertEqual(declined.path, "/" + space.decline.path)
+            XCTAssertEqual(declined.body[space.decline.keys[0]] as? String, "i2")
+            XCTAssertTrue(sharing.incomingInvites.isEmpty)
+        }
+    }
+
+    func testARefusedAnswerKeepsTheInviteAndExplainsWhy() async throws {
+        let (auth, _) = try await makeSignedInAuth()
+        let space = try XCTUnwrap(SharingAppConfiguration.spaces.first)
+        SharingStubProtocol.handler = { request in
+            if request.path == "/" + space.incoming.path {
+                return (200, Data(#"[{"id":"i1","space_id":"s1","role":"editor"}]"#.utf8))
+            }
+            return (422, Data(#"{"code":"invalid","message":"This invite is no longer available."}"#.utf8))
+        }
+        let sharing = SharingRepository(space: space, database: makeDatabase(), auth: auth)
+        await sharing.refreshIncomingInvites()
+        let invite = try XCTUnwrap(sharing.incomingInvites.first)
+
+        do {
+            try await sharing.accept(invite)
+            XCTFail("Expected the server's refusal")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "This invite is no longer available.")
+        }
+        XCTAssertEqual(sharing.incomingInvites, [invite])
+    }
+
+    func testTheInboxListsEverySpacesInvitesNewestFirstAndAnswersThroughTheRightSpace() async throws {
+        let (auth, _) = try await makeSignedInAuth()
+        let requests = SharingRequestLog()
+        let spaces = SharingAppConfiguration.spaces
+        SharingStubProtocol.handler = { request in
+            requests.append(request)
+            for (index, space) in spaces.enumerated() where request.path == "/" + space.incoming.path {
+                return (200, Data(#"[{"id":"\#(space.name)","space_id":"s","role":"editor","created_at":"2026-11-2\#(index)T10:00:00Z"}]"#.utf8))
+            }
+            return (200, Data("null".utf8))
+        }
+        let repositories = spaces.map { SharingRepository(space: $0, database: makeDatabase(), auth: auth) }
+        let inbox = SharingInbox(repositories)
+
+        await inbox.refresh()
+
+        XCTAssertEqual(inbox.entries.map(\.invite.id), spaces.reversed().map(\.name))
+        let oldest = try XCTUnwrap(inbox.entries.last)
+        try await inbox.accept(oldest)
+        XCTAssertEqual(requests.values.last?.path, "/" + oldest.space.accept.path)
+        XCTAssertEqual(inbox.entries.count, spaces.count - 1)
+        for repository in repositories { repository.stopWatching() }
+        XCTAssertTrue(inbox.entries.isEmpty)
     }
 
     // MARK: Helpers
