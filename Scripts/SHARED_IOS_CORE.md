@@ -50,13 +50,15 @@ case-sensitive filesystems.
 <App>/Notifications/       shared push core and adapters (SHARED_PUSH_CORE.md), PushAppConfiguration, app-only notification features
 <App>/Resources/           Assets.xcassets, <App>.icon, Animations/, StoreKit/<App>.storekit, Fonts/
 <App>/Settings/            SettingsView, AppearanceManager*, PushAuthorizationRow*, ProfileRepository, preferences
+<App>/Sharing/             (apps that share) SharingModels†, SharingRepository†, ShareMembersSections†, SharingAppConfiguration, app sharing screens
 <App>/Sync/                PowerSyncManager*, APIConnector*, SyncIssueStore*, DatabaseSchema, SyncAppConfiguration, SyncIssueStore+App
 <App>/Utilities/           small app-only helpers (formatters, Keychain wrappers)
 <App>/Widgets/             AppGroupStore*, WidgetSnapshotStore (both compiled into the app and the widget)
 <App>/<Feature>/           one folder per product area: its views and repositories together
 ```
 
-`*` marks files in the shared manifest. A repository lives in its feature's
+`*` marks files in the shared manifest; `†` marks files in the optional
+sharing manifest (`SHARED_SHARING_CORE.md`). A repository lives in its feature's
 folder; the profile repository lives in `Settings/`.
 
 ## App hooks
@@ -223,10 +225,20 @@ connection, upload and issue core:
 Schema, writable tables, error codes and quota replay rules stay in the app's
 hooks.
 
+### Sharing (optional)
+
+Apps that let people share their data with other accounts (owner, editor and
+viewer members, email invites) also carry `shared-sharing-core.sha256`. Its
+models, `SharingRepository`, `ShareMembersSections` and `SharedSharingTests`
+are identical in every app that has them; the app declares what can be shared
+in `Sharing/SharingAppConfiguration.swift`. iOS CI runs
+`check-shared-sharing-core.sh` when it exists. See `SHARED_SHARING_CORE.md`.
+
 ## Adding an app
 
 Copy every file in this manifest, `shared-auth.sha256`, `shared-push-core.sha256`,
-`shared-infra.sha256` and `shared-site.sha256` from an existing app, then add the
+`shared-infra.sha256` and `shared-site.sha256` (and `shared-sharing-core.sha256`
+if people can share the app's data) from an existing app, then add the
 app's own hooks above, `AGENTS.md`, `README.md` (same section order as the other
 apps) and `project.yml`. The site has its own hooks, starting with
 `Site/app.json`; see `SHARED_SITE.md`. Give the test target the

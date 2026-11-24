@@ -10,7 +10,7 @@ Deadwax Club — native iOS 17+ SwiftUI app for tracking owned/wishlist vinyl, p
 
 Every iOS app uses the same repository layout, app scaffolding and CI. Read
 `Scripts/SHARED_IOS_CORE.md` before adding folders, shared UI primitives,
-configuration keys or workflows. Five checksum manifests keep shared files
+configuration keys or workflows. Six checksum manifests keep shared files
 byte-for-byte identical with the other apps, and CI runs all of them:
 
 - `Scripts/check-shared-ios-core.sh` — `AppSecrets`, `AppBootstrap`, `Theme`, `LoadingView`, `LottieAnimationView`, `PrimaryButton`, `Logger`, `AppearanceManager`, `Card`, `EmptyState`, `PushAuthorizationRow`, `AppDelegate`, `QuickActionRouter`, `AppGroupStore`, the shared sign-in views (`SignInView`, `ForgotPasswordSheet`, `ResetPasswordSheet`, `AppleSignInButton`), the billing core (`BillingRepository`, `SubscriptionAccessState`, `CreationQuotaProviding`, `SubscriptionPaywallView`), the sync core (`PowerSyncManager`, `APIConnector`, `SyncIssueStore`), the `Shared*Tests`, `setup.sh` and the iOS workflows.
@@ -18,6 +18,7 @@ byte-for-byte identical with the other apps, and CI runs all of them:
 - `Scripts/check-shared-push-core.sh` — push registration core and its adapters (`PushManager`, `PushRegistration`, `AuthClient+PushIdentity`; `SHARED_PUSH_CORE.md`).
 - `Scripts/check-shared-infra.sh` — backend deployment and provisioning (`SHARED_INFRA.md`).
 - `Scripts/check-shared-site.sh` — the `Site/` layout, tooling, image and site workflows (`SHARED_SITE.md`).
+- `Scripts/check-shared-sharing-core.sh` — the sharing core (`SharingModels`, `SharingRepository`, `ShareMembersSections`, `SharedSharingTests`; `SHARED_SHARING_CORE.md`), shared only with the other apps that let people share data. The app's spaces live in `Sharing/SharingAppConfiguration.swift`.
 
 Never edit a shared file in one app only. Put app-specific values behind the
 hooks listed in `SHARED_IOS_CORE.md` (`Theme+App.swift`, `AuthAppConfiguration`,
@@ -105,6 +106,7 @@ identical across all application repositories.
 
 - A user belongs to one or more **Collections** via `collection_members` (`role ∈ {owner, editor, viewer}`). The Records tab shows the union of records across every Collection the user is in; queries gate visibility with `where collection_id in (select collection_id from collection_members where user_id = ?)`. This is the same one-level subquery shape edition-3 sync rules use, so the local query and the sync stream agree on visibility.
 - The signup trigger (`handle_new_user`) creates a personal Collection per user, makes them its `owner`, and points `profiles.primary_collection_id` at it. New records default to that Collection. Pending email invites for both Collections and Lists are auto-accepted by the same trigger.
+- Membership and invites use the shared sharing core (`Scripts/SHARED_SHARING_CORE.md`): `CollectionsRepository.sharing` is a `SharingRepository` for the `.collection` space declared in `DeadWaxClub/Sharing/SharingAppConfiguration.swift`, and `CollectionDetailView` embeds the shared `ShareMembersSections`. Its endpoints are the existing `api/library/*` calls (`invite_to_collection`, `remove_collection_member`, `revoke_collection_invite`, `get_collection_member_profiles`).
 - RLS on collection-scoped tables (`collections`, `collection_members`, `records`, `price_entries`, `record_images`) goes through `security definer` helper functions `is_collection_member` / `is_collection_writer` / `is_collection_owner`. The helpers run with the function-owner's privileges and skip RLS, which is what breaks the recursion that an inlined `exists (select … from collection_members …)` policy hits. **Never inline that subquery in a new policy** — call the helpers.
 
 ### Notifications inbox

@@ -41,6 +41,10 @@ jobs:
       - name: Verify shared auth checksums
         run: sh Scripts/check-shared-auth.sh
 
+      # Only apps that let people share their data carry the sharing core.
+      - name: Verify shared sharing core checksums
+        run: if [ -f Scripts/check-shared-sharing-core.sh ]; then sh Scripts/check-shared-sharing-core.sh; fi
+
       - name: Show Xcode version
         run: xcodebuild -version
 

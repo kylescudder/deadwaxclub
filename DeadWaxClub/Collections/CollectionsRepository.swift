@@ -1,71 +1,53 @@
+import Combine
 import Foundation
 import PowerSync
 
-/// Watches every Collection the user belongs to plus its members and pending
-/// invites. Mirrors `ListsRepository`. Writes to `collections` flow through
-/// PowerSync's CRUD queue; membership changes go through the Deadwax API (`api/library/...`) because
-/// `collection_members` is read-only locally (composite PK + computed `id`).
+/// Watches every Collection the user belongs to. Writes to `collections` flow
+/// through PowerSync's CRUD queue. Membership and invites live in the shared
+/// sharing core (`sharing`), which changes them through the Deadwax API
+/// (`api/library/...`) because `collection_members` is read-only locally
+/// (composite PK + computed `id`).
 @MainActor
 final class CollectionsRepository: ObservableObject {
     @Published private(set) var collections: [VinylCollection] = []
-    @Published private(set) var members: [CollectionMember] = []
-    @Published private(set) var pendingInvites: [CollectionPendingInvite] = []
-    @Published private(set) var memberProfilesByID: [String: CollectionMemberProfile] = [:]
+
+    let sharing: SharingRepository
 
     private let database: PowerSyncDatabaseProtocol
-    private let owner: UUID?
     private let auth: AuthClient
     private var collectionsTask: Task<Void, Never>?
-    private var membersTask: Task<Void, Never>?
-    private var invitesTask: Task<Void, Never>?
-    private var refreshedProfileCollectionIDs: Set<String> = []
+    private var sharingChanges: AnyCancellable?
 
     init(database: PowerSyncDatabaseProtocol, auth: AuthClient, owner: UUID? = nil) {
         self.database = database
         self.auth = auth
-        self.owner = owner ?? auth.currentUserID
+        self.sharing = SharingRepository(space: .collection, database: database, auth: auth, owner: owner)
+        sharingChanges = sharing.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
     deinit {
         collectionsTask?.cancel()
-        membersTask?.cancel()
-        invitesTask?.cancel()
     }
 
     func startWatching(userID: String) {
         Log.breadcrumb("collections watch starting", category: "collections.watch")
         watchCollections(userID: userID)
-        watchMembers(userID: userID)
-        watchPendingInvites(userID: userID)
+        sharing.startWatching(userID: userID)
     }
 
     func stopWatching() {
         Log.breadcrumb("collections watch stopping", category: "collections.watch")
         collectionsTask?.cancel(); collectionsTask = nil
-        membersTask?.cancel(); membersTask = nil
-        invitesTask?.cancel(); invitesTask = nil
         collections = []
-        members = []
-        pendingInvites = []
-        memberProfilesByID = [:]
-        refreshedProfileCollectionIDs = []
+        sharing.stopWatching()
     }
 
-    func members(of collectionID: String) -> [CollectionMember] {
-        members.filter { $0.collectionID == collectionID }
+    func members(of collectionID: String) -> [ShareMember] {
+        sharing.members(of: collectionID)
     }
 
-    func pendingInvites(for collectionID: String) -> [CollectionPendingInvite] {
-        pendingInvites.filter { $0.collectionID == collectionID }
-    }
-
-    func role(in collectionID: String, userID: String) -> CollectionMemberRole? {
-        members.first(where: { $0.collectionID == collectionID && $0.userID == userID })?.role
-    }
-
-    func displayName(for userID: String) -> String? {
-        let trimmed = memberProfilesByID[userID]?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed?.isEmpty == false ? trimmed : nil
+    func role(in collectionID: String, userID: String) -> ShareRole? {
+        sharing.role(in: collectionID, userID: userID)
     }
 
     private func watchCollections(userID: String) {
@@ -92,68 +74,6 @@ final class CollectionsRepository: ObservableObject {
                 }
             } catch {
                 Log.error(error, category: "collections.watch")
-            }
-        }
-    }
-
-    private func watchMembers(userID: String) {
-        membersTask?.cancel()
-        membersTask = Task { [weak self, database] in
-            guard let self else { return }
-            let sql = """
-            select * from collection_members
-            where collection_id in (
-              select collection_id from collection_members where user_id = ?
-            )
-            """
-            do {
-                let stream = try database.watch(
-                    sql: sql,
-                    parameters: [userID],
-                    mapper: { CollectionMember.from(cursor: $0) }
-                )
-                for try await rows in stream {
-                    guard !Task.isCancelled else { return }
-                    let mapped = rows.compactMap { $0 }
-                    Log.event("collection members watch emitted", category: "collections.members.watch", metadata: ["count": mapped.count])
-                    await MainActor.run { self.members = mapped }
-                    let collectionIDs = Set(mapped.map(\.collectionID))
-                    for collectionID in collectionIDs where !self.refreshedProfileCollectionIDs.contains(collectionID) {
-                        await self.refreshMemberProfiles(collectionID: collectionID)
-                    }
-                }
-            } catch {
-                Log.error(error, category: "collections.members.watch")
-            }
-        }
-    }
-
-    private func watchPendingInvites(userID: String) {
-        invitesTask?.cancel()
-        invitesTask = Task { [weak self, database] in
-            guard let self else { return }
-            let sql = """
-            select * from collection_pending_invites
-            where collection_id in (
-              select collection_id from collection_members where user_id = ?
-            )
-            and accepted_at is null
-            order by created_at desc
-            """
-            do {
-                let stream = try database.watch(
-                    sql: sql,
-                    parameters: [userID],
-                    mapper: { CollectionPendingInvite.from(cursor: $0) }
-                )
-                for try await rows in stream {
-                    guard !Task.isCancelled else { return }
-                    let mapped = rows.compactMap { $0 }
-                    Log.event("collection invites watch emitted", category: "collections.invites.watch", metadata: ["count": mapped.count])
-                    await MainActor.run { self.pendingInvites = mapped }
-                }
-            } catch {
-                Log.error(error, category: "collections.invites.watch")
             }
         }
     }
@@ -208,78 +128,6 @@ final class CollectionsRepository: ObservableObject {
             )
         } catch {
             Log.error(error, category: "collections.softDelete")
-        }
-    }
-
-    enum InviteOutcome: Equatable {
-        case added       // Email matched an existing user; they're now in collection_members.
-        case pending     // No account yet; stored in collection_pending_invites and resolved on signup.
-    }
-
-    func invite(collectionID: String, email: String, role: CollectionMemberRole) async throws -> InviteOutcome {
-        Log.event("collection invite started", category: "collections.invite", metadata: [
-            "collectionID": collectionID,
-            "role": role.rawValue,
-        ])
-        guard let owner, let token = await auth.currentAccessToken(for: owner) else { throw URLError(.userAuthenticationRequired) }
-        struct InviteResult: Decodable { let status: String }
-        let result: InviteResult = try await auth.api.library("invite_to_collection", [
-                "p_collection_id": collectionID,
-                "p_email": email,
-                "p_role": role.rawValue,
-            ], expectedToken: token)
-        Log.event("collection invite completed", category: "collections.invite", metadata: [
-            "collectionID": collectionID,
-            "status": result.status,
-        ])
-        switch result.status {
-        case "added":   return .added
-        case "pending": return .pending
-        default:
-            throw NSError(domain: "deadwaxclub.collections", code: 500, userInfo: [
-                NSLocalizedDescriptionKey: "Unexpected invite response: \(result.status)"
-            ])
-        }
-    }
-
-    func removeMember(collectionID: String, userID: String) async {
-        guard let owner, let token = await auth.currentAccessToken(for: owner) else { return }
-        do {
-            _ = try await auth.api.json("api/library/remove_collection_member", values: [
-                "parent_id": collectionID, "user_id": userID
-            ], expectedToken: token)
-        } catch {
-            Log.error(error, category: "collections.removeMember")
-        }
-    }
-
-    func refreshMemberProfiles(collectionID: String) async {
-        guard let owner, let token = await auth.currentAccessToken(for: owner) else { return }
-        do {
-            let profiles: [CollectionMemberProfile] = try await auth.api.library("get_collection_member_profiles", ["p_collection_id": collectionID], expectedToken: token)
-            guard auth.currentUserID == owner, !Task.isCancelled else { return }
-            var updated = memberProfilesByID
-            for profile in profiles {
-                updated[profile.id] = profile
-            }
-            memberProfilesByID = updated
-            refreshedProfileCollectionIDs.insert(collectionID)
-        } catch {
-            Log.error(error, category: "collections.memberProfiles")
-        }
-    }
-
-    func leave(collectionID: String) async {
-        guard let userID = auth.currentUserID?.lowerUUID else { return }
-        await removeMember(collectionID: collectionID, userID: userID)
-    }
-
-    func revokePendingInvite(inviteID: String) async {
-        guard let owner, let token = await auth.currentAccessToken(for: owner) else { return }
-        do {
-            _ = try await auth.api.json("api/library/revoke_collection_invite", values: ["p_invite_id": inviteID], expectedToken: token)
-        } catch {
-            Log.error(error, category: "collections.revokePendingInvite")
         }
     }
 
