@@ -215,6 +215,27 @@ final class SharedBillingTests: XCTestCase {
         XCTAssertEqual(billing.subscriptionState, .free)
     }
 
+    func testPremiumAccessSurvivesStoreKitReconciliationAndCanBeRevoked() async throws {
+        let billing = try makeBilling(mirror: FakeMirror([]))
+        billing.setAccessOverride(true)
+        await billing.reconcileEntitlements(activeJWSRepresentations: [])
+        XCTAssertTrue(billing.isSubscribed)
+        XCTAssertFalse(billing.hasLocalSubscription)
+        billing.setAccessOverride(false)
+        XCTAssertFalse(billing.isSubscribed)
+    }
+
+    func testPremiumRevocationKeepsAConfirmedSubscription() async throws {
+        let billing = try makeBilling(mirror: FakeMirror([
+            .success(TransactionMirrorResponse(verified: true, active: true)),
+        ]))
+        _ = await billing.confirmLocallyVerifiedEntitlement(jwsRepresentation: "paid", finish: {})
+        billing.setAccessOverride(true)
+        billing.setAccessOverride(false)
+        XCTAssertTrue(billing.isSubscribed)
+        XCTAssertEqual(billing.subscriptionState, .active)
+    }
+
     func testSignOutClearsServerConfirmedAccess() async throws {
         let mirror = FakeMirror([.success(TransactionMirrorResponse(verified: true, active: true))])
         let billing = try makeBilling(mirror: mirror)

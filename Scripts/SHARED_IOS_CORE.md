@@ -158,8 +158,8 @@ below. Change a rule in every app at once, together with its tests.
 - A locally verified, active entitlement moves `subscriptionState` to
   `.verifying`. Only a `/api/iap/transactions` response with `active: true`
   (and not `verified: false`) moves it to `.active`. `isSubscribed` is
-  `.active` or `hasAccessOverride`, which an app may set from a server-side
-  premium flag.
+  `.active` or `hasAccessOverride`, which every app sets from the synced
+  `profiles.is_premium_account` flag.
 - Transactions are finished only after the server confirms them. StoreKit
   re-delivers an unfinished transaction through `Transaction.updates`, so a
   failed mirror is retried on the next launch. A revoked or expired update is
@@ -170,6 +170,25 @@ below. Change a rule in every app at once, together with its tests.
   and 5xx failures. Client errors, sign-in failures and an inactive verdict
   are final and leave the state `.verifying` with the app's message.
 - Sign-out resets the in-memory state, including the override.
+- **Complimentary access is required in every app.** `profiles.is_premium_account`
+  is a non-null boolean, default false, controlled only by the database
+  administrator. Keep it out of profile-upload allowlists and deny request-role
+  INSERT/UPDATE privileges on that column. Sync it in the owner profile stream,
+  represent it in the local schema and `Profile`, and bind profile changes to
+  `BillingRepository.setAccessOverride` in `AppServices`. A missing profile is
+  false; account replacement and sign-out must clear the in-memory override.
+- Server quota status and insert enforcement both accept the premium flag OR a
+  cryptographically verified, active subscription. The existing
+  `has_verified_entitlement` quota-response field represents either grant of
+  unlimited creation. Offline status and local writes must accept the same flag
+  from the account's cached profile. Keep counting lifetime creations while
+  premium is enabled; revocation restores the cap without resetting usage.
+  Revocation is effective offline once the new profile has synced. Do not forge
+  StoreKit entitlement rows or mark a complimentary account's subscription active.
+- Shared composition tests cover profile-to-billing propagation, offline account
+  restoration, revocation and account isolation. Shared billing tests ensure
+  StoreKit refresh does not erase complimentary access, and removing it does not
+  remove a separately confirmed subscription.
 
 Each app's creation-quota gate (server status endpoint, offline quota and
 entitlement snapshot, pending-creation ledger and free limit) stays in its

@@ -72,17 +72,21 @@ final class SharedAppCompositionTests: XCTestCase {
         XCTAssertTrue(auth.canAccessMainApp)
         let originalProfile = services.profile
         let originalDatabase = services.sync.database
-        try await originalDatabase.execute(sql: "insert into profiles (id, display_name) values (?, ?)", parameters: [first.uuidString.lowercased(), "First offline name"])
+        try await originalDatabase.execute(sql: "insert into profiles (id, display_name, is_premium_account) values (?, ?, 1)", parameters: [first.uuidString.lowercased(), "First offline name"])
         let loaded = expectation(description: "first account profile is visible")
         let firstWatch = services.profile.$profile.sink { if $0?.displayName == "First offline name" { loaded.fulfill() } }
         await fulfillment(of: [loaded], timeout: 5)
         firstWatch.cancel()
+        XCTAssertTrue(services.billing.hasAccessOverride)
+        XCTAssertTrue(services.billing.isSubscribed)
         let signedOut = await auth.signOut()
         XCTAssertTrue(signedOut)
         XCTAssertNil(services.profile.profile)
+        XCTAssertFalse(services.billing.hasAccessOverride)
         CompositionAuthProtocol.owner = second
         await auth.signIn(email: "second@example.test", password: "test-password")
         XCTAssertTrue(auth.canAccessMainApp)
+        XCTAssertFalse(services.billing.hasAccessOverride, "Premium access must not leak into another account")
         XCTAssertFalse(originalProfile === services.profile)
         XCTAssertNil(services.profile.profile, "B must not briefly see A's profile")
         do {
@@ -96,6 +100,13 @@ final class SharedAppCompositionTests: XCTestCase {
         let restoredWatch = services.profile.$profile.sink { if $0?.displayName == "First offline name" { restored.fulfill() } }
         await fulfillment(of: [restored], timeout: 5)
         restoredWatch.cancel()
+        XCTAssertTrue(services.billing.hasAccessOverride, "Cached premium access is restored offline")
+        let revoked = expectation(description: "synced premium access is revoked")
+        let revokedWatch = services.billing.$hasAccessOverride.sink { if !$0 { revoked.fulfill() } }
+        try await services.sync.database.execute(sql: "update profiles set is_premium_account = 0 where id = ?", parameters: [first.uuidString.lowercased()])
+        await fulfillment(of: [revoked], timeout: 5)
+        revokedWatch.cancel()
+        XCTAssertFalse(services.billing.hasAccessOverride, "A synced revocation removes complimentary access")
         _ = await auth.signOut()
     }
 

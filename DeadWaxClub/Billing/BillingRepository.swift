@@ -22,7 +22,7 @@ final class BillingRepository: ObservableObject {
     /// StoreKit reports an active, locally verified entitlement for `productID`.
     @Published private(set) var hasLocalSubscription = false
     @Published private(set) var subscriptionState: SubscriptionAccessState = .free
-    /// Access granted outside StoreKit, such as a server-side premium account.
+    /// Complimentary access from the synced, administrator-only profiles.is_premium_account flag.
     @Published private(set) var hasAccessOverride = false
     @Published private(set) var lastError: String?
 

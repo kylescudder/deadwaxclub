@@ -36,6 +36,7 @@ declare
   v_failed boolean;
   v_signed_at timestamptz := now() - interval '10 minutes';
   v_status text;
+  v_premium boolean;
   v_transaction_id text;
 begin
   select id, primary_collection_id
@@ -154,9 +155,21 @@ begin
   -- An active row whose payload was never server-verified is
   -- not trusted. Missing verification metadata must not bypass the cap.
   update public.profiles set is_premium_account = true where id = v_user_id;
+  select has_verified_entitlement into v_premium from public.get_record_creation_status();
+  if not v_premium then raise exception 'Premium grant missing from quota status'; end if;
   insert into public.records (id, record_pressing_id, collection_id, status)
   values (gen_random_uuid(), v_pressing_id, v_collection_id, 'owned');
   update public.profiles set is_premium_account = false where id = v_user_id;
+  select has_verified_entitlement, lifetime_record_count into v_premium, v_count
+  from public.get_record_creation_status();
+  if v_premium or v_count <> 6 then raise exception 'Revocation reset usage or retained premium access'; end if;
+  v_failed := false;
+  begin
+    insert into public.records (id, record_pressing_id, collection_id, status)
+    values (gen_random_uuid(), v_pressing_id, v_collection_id, 'owned');
+  exception when sqlstate 'DW001' then v_failed := true;
+  end;
+  if not v_failed then raise exception 'Revoked premium access bypassed the free cap'; end if;
   insert into public.iap_entitlements (user_id, product_id, status, expires_at)
   values (v_user_id, 'club.deadwax.supporter.monthly', 'active', now() + interval '1 day');
   v_failed := false;
