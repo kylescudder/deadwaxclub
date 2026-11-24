@@ -62,3 +62,18 @@ test('authoritative record creation quota and entitlement checks pass', async ()
   const checks = await readFile(new URL('./record-creation-quota-checks.sql', import.meta.url), 'utf8')
   await pool.query(checks)
 })
+
+
+test('the request role cannot self-grant complimentary access', async () => {
+  await refreshLease()
+  const client = await pool.connect()
+  try {
+    await client.query('begin')
+    await client.query('set local role deadwax_api')
+    await client.query("select set_config('deadwax.user_id', $1, true)", [users[0]])
+    await expect(client.query('update profiles set is_premium_account = true where id = $1', [users[0]])).rejects.toMatchObject({ code: '42501' })
+  } finally {
+    await client.query('rollback')
+    client.release()
+  }
+})

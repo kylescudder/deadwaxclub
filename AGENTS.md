@@ -158,3 +158,6 @@ The app folders are `DeadWaxClub/`, `DeadWaxClubTests/` and `DeadWaxClubWidgets/
 ## What not to commit
 
 `Config/Secrets.xcconfig`, `Site/public/js/config.js`, `.env*`, `DeadWaxClub.xcodeproj/`, `build/`, `DerivedData/`, `.build/`, `.swiftpm/`, `Package.resolved`, `Site/node_modules/`, `Site/.astro/`, `Site/dist/`, or signing certificates/provisioning profiles. These are already git-ignored where applicable; don't add overrides.
+
+Complimentary billing access follows `Scripts/SHARED_IOS_CORE.md`; see
+`docs/complimentary-access.md` for the administrator grant and revoke procedure.
