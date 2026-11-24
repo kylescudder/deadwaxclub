@@ -6,6 +6,69 @@ import XCTest
 
 @MainActor
 final class SharedAuthClientTests: XCTestCase {
+    func testAppleNameIsSentWithAuthenticationBeforeTheOptionalProfileRequest() async throws {
+        let owner = UUID()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnauthorizedProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel(); UnauthorizedProtocol.onStart = nil }
+        let auth = AuthClient(sessionStore: MemoryStore(), defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)), api: APIClient(session: session, baseURL: URL(string: "https://auth.example.test")!, configurationError: nil))
+        await auth.bootstrap(offlineAccount: { ([], false) })
+        let response = self.session(user: owner, token: "apple-session")
+        let sent = expectation(description: "Apple credential sent with its name")
+        UnauthorizedProtocol.onStart = { stub in
+            if stub.request.url?.path == "/api/auth/sign-in/social" {
+                let body = try? JSONSerialization.jsonObject(with: stub.requestBody) as? [String: Any]
+                let idToken = body?["idToken"] as? [String: Any]
+                let user = idToken?["user"] as? [String: Any]
+                let name = user?["name"] as? [String: String]
+                XCTAssertEqual(body?["provider"] as? String, "apple")
+                XCTAssertEqual(idToken?["token"] as? String, "identity-token")
+                XCTAssertEqual(idToken?["nonce"] as? String, "original-nonce")
+                XCTAssertEqual(name?["firstName"], "Taylor")
+                XCTAssertNil(name?["lastName"], "Keep the given-name display convention")
+                sent.fulfill()
+                stub.finish(status: 200, data: response)
+            } else {
+                // Losing this optional legacy request must not lose the first name.
+                stub.finish(status: 503)
+            }
+        }
+        var name = PersonNameComponents()
+        name.givenName = "  Taylor \n"
+        name.familyName = "Traveller"
+        try await auth.authenticateApple(identityToken: "identity-token", nonce: "original-nonce", fullName: name, revision: 0)
+        await fulfillment(of: [sent], timeout: 5)
+        XCTAssertEqual(auth.currentUserID, owner)
+        XCTAssertTrue(auth.canAccessMainApp)
+        XCTAssertNil(auth.lastError)
+    }
+
+    func testReturningAppleSignInWithoutANameDoesNotSendAnEmptyName() async throws {
+        for suppliedName in [nil, " \n "] as [String?] {
+            let owner = UUID()
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [UnauthorizedProtocol.self]
+            let session = URLSession(configuration: configuration)
+            defer { session.invalidateAndCancel(); UnauthorizedProtocol.onStart = nil }
+            let auth = AuthClient(sessionStore: MemoryStore(), defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)), api: APIClient(session: session, baseURL: URL(string: "https://auth.example.test")!, configurationError: nil))
+            await auth.bootstrap(offlineAccount: { ([], false) })
+            let response = self.session(user: owner, token: "returning-session")
+            UnauthorizedProtocol.onStart = { stub in
+                XCTAssertEqual(stub.request.url?.path, "/api/auth/sign-in/social", "No empty profile repair request")
+                let body = try? JSONSerialization.jsonObject(with: stub.requestBody) as? [String: Any]
+                let idToken = body?["idToken"] as? [String: Any]
+                XCTAssertNil(idToken?["user"])
+                stub.finish(status: 200, data: response)
+            }
+            var name = PersonNameComponents()
+            name.givenName = suppliedName
+            try await auth.authenticateApple(identityToken: "returning-token", nonce: "nonce", fullName: suppliedName == nil ? nil : name, revision: 0)
+            XCTAssertEqual(auth.currentUserID, owner)
+            XCTAssertTrue(auth.canAccessMainApp)
+        }
+    }
+
     func testCancellingAppleSignInKeepsAccountAndClearsPreviousError() async throws {
         let owner = UUID()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
@@ -368,6 +431,20 @@ private final class UnauthorizedProtocol: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() { Self.onStart?(self) }
     override func stopLoading() {}
+    var requestBody: Data {
+        if let data = request.httpBody { return data }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            result.append(contentsOf: buffer.prefix(count))
+        }
+        return result
+    }
     func finish(status: Int = 401, data: Data = Data("{\"code\":\"sign_in_required\"}".utf8)) {
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

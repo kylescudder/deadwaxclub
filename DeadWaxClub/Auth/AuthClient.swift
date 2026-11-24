@@ -305,12 +305,33 @@ final class AuthClient: ObservableObject {
             let authorization = try result.get()
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let data = credential.identityToken, let token = String(data: data, encoding: .utf8), let nonce = pendingAppleNonce else { return }
-            try await authenticate("api/auth/sign-in/social", values: ["provider": "apple", "idToken": ["token": token, "nonce": nonce]], revision: revision)
-            guard revision == authenticationRevision, canAccessMainApp else { return }
-            if let name = credential.fullName?.givenName, !name.isEmpty {
-                _ = try? await api.json(AuthAppConfiguration.initialDisplayNamePath, values: ["name": name])
-            }
+            try await authenticateApple(identityToken: token, nonce: nonce, fullName: credential.fullName, revision: revision)
         } catch { if revision == authenticationRevision { handleSocialSignInError(error, category: "auth.apple") } }
+    }
+
+    /// The credential adapter above is the OS boundary; keep the HTTP handoff
+    /// testable without presenting a real Apple authorization sheet.
+    func authenticateApple(identityToken: String, nonce: String, fullName: PersonNameComponents?, revision: Int) async throws {
+        guard revision == authenticationRevision else { return }
+        let name = fullName?.givenName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var idToken: [String: Any] = ["token": identityToken, "nonce": nonce]
+        if let name, !name.isEmpty {
+            // Apple supplies this separately from its JWT, usually only once.
+            // Persist it with account creation rather than relying on a second request.
+            // Keep the app's given-name display convention.
+            idToken["user"] = ["name": ["firstName": name]]
+        }
+        try await authenticate("api/auth/sign-in/social", values: ["provider": "apple", "idToken": idToken], revision: revision)
+        guard revision == authenticationRevision, canAccessMainApp, let token = api.token else { return }
+        if let name, !name.isEmpty {
+            // Repair a returning account's empty profile if Apple supplies a name
+            // again. The server fills empty names only, preserving user edits.
+            do {
+                _ = try await api.json(AuthAppConfiguration.initialDisplayNamePath, values: ["name": name], expectedToken: token)
+            } catch {
+                Log.error(error, category: "auth.apple.profileName")
+            }
+        }
     }
 
     /// Dismissing a provider sheet is a choice, not a failed sign-in. Compare
