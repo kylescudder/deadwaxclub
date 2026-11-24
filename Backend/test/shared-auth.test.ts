@@ -208,3 +208,64 @@ test('email links keep each app branding and refuse another origin', () => {
     )
   ).toThrow()
 })
+
+test('native Apple names initialize profiles and returning sign-ins preserve user edits', async () => {
+  const appleAuth = createAuth(db, {
+    baseURL: origin,
+    secret: 'shared-local-auth-test-secret-123456789',
+    powerSyncURL: 'https://sync.example.test',
+    // Only the external Apple verification boundary is stubbed. Exercise the
+    // real Better Auth name mapping and each application's profile triggers.
+    apple: Object.assign(
+      { clientId: 'test', clientSecret: 'test', appBundleIdentifier: 'test' },
+      { verifyIdToken: async () => true }
+    ),
+    sendEmail: async () => {}
+  })
+  const subject = crypto.randomUUID()
+  const claims = {
+    sub: subject,
+    email: subject + '@example.test',
+    email_verified: true
+  }
+  const token =
+    Buffer.from('{"alg":"RS256"}').toString('base64url') +
+    '.' +
+    Buffer.from(JSON.stringify(claims)).toString('base64url') +
+    '.test'
+  const signIn = async (name?: string) => {
+    const response = await appleAuth.handler(
+      request('sign-in/social', {
+        provider: 'apple',
+        idToken: {
+          token,
+          nonce: 'test-nonce',
+          ...(name ? { user: { name: { firstName: name } } } : {})
+        }
+      })
+    )
+    expect(response.status).toBe(200)
+    return (await response.json()) as {
+      token: string
+      user: { id: string; name: string }
+    }
+  }
+  const first = await signIn('Taylor')
+  expect(first.user.name).toBe('Taylor')
+  const profileName = async () =>
+    (
+      await pool.query('select display_name from profiles where id = $1', [
+        first.user.id
+      ])
+    ).rows[0]?.display_name
+  expect(await profileName()).toBe('Taylor')
+  // Model a name chosen in Settings before another Apple authorization.
+  await pool.query('update profiles set display_name = $2 where id = $1', [
+    first.user.id,
+    'My chosen name'
+  ])
+  expect((await signIn()).user.id).toBe(first.user.id)
+  expect(await profileName()).toBe('My chosen name')
+  expect((await signIn('Different Apple name')).user.id).toBe(first.user.id)
+  expect(await profileName()).toBe('My chosen name')
+})
