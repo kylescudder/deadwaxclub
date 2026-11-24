@@ -52,7 +52,7 @@ DeadWaxClub/
   App/             entry point, AppServices, AppSecrets, AppDelegate, routing
   Auth/            AuthClient, APIClient, sign-in views, Apple + Google flows
   Billing/         StoreKit repository, paywall
-  Collections/     shared collections and membership
+  Collections/     shared collections (membership through Sharing/)
   Components/      Theme, Theme+App, Card, PrimaryButton, LoadingView, EmptyState, Lottie
   CoverArt/        on-device + API cover cache, camera, carousel
   Discogs/         release + marketplace stats client
@@ -67,6 +67,7 @@ DeadWaxClub/
   Resources/       assets, DeadWaxClub.icon, animations, fonts, StoreKit configuration
   Scanner/         VisionKit DataScanner + permission handling
   Settings/        settings, appearance, preferences, profile repository
+  Sharing/         shared sharing core and the Collection space
   Stats/           aggregates + Swift Charts
   Sync/            PowerSync schema, manager, connector, sync issues
   Utilities/       currency formatting, Keychain helper
@@ -234,7 +235,7 @@ wait for Apple's processing of an earlier upload.
 Complimentary billing access follows `Scripts/SHARED_IOS_CORE.md`; see
 `docs/complimentary-access.md` for the administrator grant and revoke procedure.
 
-Deadwax Club keeps five sets of files byte-for-byte identical with the other iOS
+Deadwax Club keeps six sets of files byte-for-byte identical with the other iOS
 apps. CI fails if any of them drift:
 
 | Check | Covers |
@@ -244,6 +245,7 @@ apps. CI fails if any of them drift:
 | `Scripts/check-shared-push-core.sh` | Push registration core ([SHARED_PUSH_CORE.md](Scripts/SHARED_PUSH_CORE.md)) |
 | `Scripts/check-shared-infra.sh` | Backend deployment and provisioning ([SHARED_INFRA.md](Scripts/SHARED_INFRA.md)) |
 | `Scripts/check-shared-site.sh` | Astro site layout, tooling, image and site workflows ([SHARED_SITE.md](Scripts/SHARED_SITE.md)) |
+| `Scripts/check-shared-sharing-core.sh` | Sharing models, repository, member screen and tests, used by the apps that share data ([SHARED_SHARING_CORE.md](Scripts/SHARED_SHARING_CORE.md)) |
 
 ## Development notes
 

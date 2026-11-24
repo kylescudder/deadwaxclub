@@ -105,11 +105,6 @@ private struct CollectionDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var editingName: String = ""
-    @State private var inviteEmail: String = ""
-    @State private var inviteRole: CollectionMemberRole = .editor
-    @State private var inviteError: String?
-    @State private var inviteBanner: String?
-    @State private var isInviting = false
     @State private var showLeaveConfirm = false
     @State private var showDeleteConfirm = false
     @State private var showMoveConfirm = false
@@ -124,7 +119,7 @@ private struct CollectionDetailView: View {
         services.auth.currentUserID?.lowerUUID
     }
 
-    private var currentRole: CollectionMemberRole? {
+    private var currentRole: ShareRole? {
         guard let uid = currentUserID else { return nil }
         return services.collections.role(in: collection.id, userID: uid)
     }
@@ -151,84 +146,11 @@ private struct CollectionDetailView: View {
                 }
             }
 
-            Section("Members") {
-                let members = services.collections.members(of: collection.id)
-                if members.isEmpty {
-                    Text("No one yet.")
-                        .font(.callout)
-                        .foregroundStyle(Theme.Colors.textSecondary)
-                }
-                ForEach(members) { member in
-                    HStack {
-                        Text(memberName(member))
-                            .font(.callout)
-                        Spacer()
-                        Text(member.role.label)
-                            .captionSecondary()
-                        if isOwner && member.userID != currentUserID {
-                            Button(role: .destructive) {
-                                Task { await services.collections.removeMember(collectionID: collection.id, userID: member.userID) }
-                            } label: { Image(systemName: "minus.circle") }
-                                .buttonStyle(.borderless)
-                        }
-                    }
-                }
-            }
-
-            let pending = services.collections.pendingInvites(for: collection.id)
-            if !pending.isEmpty {
-                Section {
-                    ForEach(pending) { invite in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(invite.email).font(.callout)
-                                Text("Pending · \(invite.role.label)")
-                                    .captionSecondary()
-                            }
-                            Spacer()
-                            if isOwner {
-                                Button(role: .destructive) {
-                                    Task { await services.collections.revokePendingInvite(inviteID: invite.id) }
-                                } label: { Image(systemName: "minus.circle") }
-                                    .buttonStyle(.borderless)
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Pending invites")
-                } footer: {
-                    Text("Auto-accepted when the invitee signs up with the matching email.")
-                }
-            }
-
-            if isOwner {
-                Section {
-                    HStack {
-                        TextField("name@example.com", text: $inviteEmail)
-                            .keyboardType(.emailAddress)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        Picker("", selection: $inviteRole) {
-                            Text("Editor").tag(CollectionMemberRole.editor)
-                            Text("Viewer").tag(CollectionMemberRole.viewer)
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                    }
-                    Button("Send invite") { Task { await invite() } }
-                        .disabled(inviteEmail.trimmingCharacters(in: .whitespaces).isEmpty || isInviting)
-                    if let inviteBanner {
-                        Text(inviteBanner).font(.footnote).foregroundStyle(.green)
-                    }
-                    if let inviteError {
-                        Text(inviteError).font(.footnote).foregroundStyle(.red)
-                    }
-                } header: {
-                    Text("Invite by email")
-                } footer: {
-                    Text("If they already have an account they're added straight away (and notified). Otherwise we'll save the invite and add them when they sign up.")
-                }
-            }
+            ShareMembersSections(
+                sharing: services.collections.sharing,
+                spaceID: collection.id,
+                currentUserID: currentUserID
+            )
 
             Section {
                 if !isPrimary {
@@ -267,13 +189,10 @@ private struct CollectionDetailView: View {
         .navigationTitle(collection.name)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { editingName = collection.name }
-        .task(id: services.collections.members(of: collection.id)) {
-            await services.collections.refreshMemberProfiles(collectionID: collection.id)
-        }
         .alert("Leave this Collection?", isPresented: $showLeaveConfirm) {
             Button("Leave", role: .destructive) {
                 Task {
-                    await services.collections.leave(collectionID: collection.id)
+                    await services.collections.sharing.leave(spaceID: collection.id)
                     dismiss()
                 }
             }
@@ -309,37 +228,6 @@ private struct CollectionDetailView: View {
         guard !trimmed.isEmpty, trimmed != collection.name, isOwner else { return }
         await services.collections.rename(collectionID: collection.id, name: trimmed)
         successCount += 1
-    }
-
-    private func memberName(_ member: CollectionMember) -> String {
-        if member.userID == currentUserID {
-            return services.collections.displayName(for: member.userID) ?? "You"
-        }
-        return services.collections.displayName(for: member.userID) ?? String(member.userID.prefix(8) + "…")
-    }
-
-    private func invite() async {
-        let email = inviteEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-        isInviting = true
-        defer { isInviting = false }
-        inviteError = nil
-        inviteBanner = nil
-        do {
-            let outcome = try await services.collections.invite(
-                collectionID: collection.id,
-                email: email,
-                role: inviteRole
-            )
-            switch outcome {
-            case .added:   inviteBanner = "Added \(email) to the Collection."
-            case .pending: inviteBanner = "Invitation saved. They'll join when they sign up with \(email)."
-            }
-            inviteEmail = ""
-            successCount += 1
-        } catch {
-            inviteError = error.localizedDescription
-            errorCount += 1
-        }
     }
 
     private func moveAllFromPrimary() async {
