@@ -73,7 +73,10 @@ final class SharedAppCompositionTests: XCTestCase {
         let originalProfile = services.profile
         let originalDatabase = services.sync.database
         try await originalDatabase.execute(sql: "insert into profiles (id, display_name, is_premium_account) values (?, ?, 1)", parameters: [first.uuidString.lowercased(), "First offline name"])
+        // Each watch can publish the matching value more than once before it is
+        // cancelled; a second fulfill must not crash the test run.
         let loaded = expectation(description: "first account profile is visible")
+        loaded.assertForOverFulfill = false
         let firstWatch = services.profile.$profile.sink { if $0?.displayName == "First offline name" { loaded.fulfill() } }
         await fulfillment(of: [loaded], timeout: 5)
         firstWatch.cancel()
@@ -97,11 +100,13 @@ final class SharedAppCompositionTests: XCTestCase {
         CompositionAuthProtocol.owner = first
         await auth.signIn(email: "first@example.test", password: "test-password")
         let restored = expectation(description: "returning account's offline profile is restored")
+        restored.assertForOverFulfill = false
         let restoredWatch = services.profile.$profile.sink { if $0?.displayName == "First offline name" { restored.fulfill() } }
         await fulfillment(of: [restored], timeout: 5)
         restoredWatch.cancel()
         XCTAssertTrue(services.billing.hasAccessOverride, "Cached premium access is restored offline")
         let revoked = expectation(description: "synced premium access is revoked")
+        revoked.assertForOverFulfill = false
         let revokedWatch = services.billing.$hasAccessOverride.sink { if !$0 { revoked.fulfill() } }
         try await services.sync.database.execute(sql: "update profiles set is_premium_account = 0 where id = ?", parameters: [first.uuidString.lowercased()])
         await fulfillment(of: [revoked], timeout: 5)
