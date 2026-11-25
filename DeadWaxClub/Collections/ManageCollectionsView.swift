@@ -10,6 +10,8 @@ struct ManageCollectionsView: View {
 
     var body: some View {
         Form {
+            ShareInvitesSection(inbox: services.collections.inbox)
+
             Section {
                 ForEach(services.collections.collections) { collection in
                     NavigationLink {
@@ -43,6 +45,8 @@ struct ManageCollectionsView: View {
         }
         .navigationTitle("Sharing")
         .navigationBarTitleDisplayMode(.large)
+        .task { await services.collections.inbox.refresh() }
+        .refreshable { await services.collections.inbox.refresh() }
         // Programmatic push (after create + deep-link). Tap navigation goes
         // through the inline NavigationLink above; declaring both an inline
         // destination *and* a `navigationDestination(for: VinylCollection.self)`

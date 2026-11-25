@@ -33,6 +33,20 @@ const calls = {
     sql: 'select public.revoke_collection_invite($1) as result',
     scalar: true
   },
+  get_incoming_collection_invites: {
+    keys: [],
+    sql: 'select * from public.get_incoming_collection_invites()'
+  },
+  accept_collection_invite: {
+    keys: ['p_invite_id'],
+    sql: 'select public.accept_collection_invite($1) as result',
+    scalar: true
+  },
+  decline_collection_invite: {
+    keys: ['p_invite_id'],
+    sql: 'select public.decline_collection_invite($1) as result',
+    scalar: true
+  },
   revoke_pending_invite: {
     keys: ['p_invite_id'],
     sql: 'select public.revoke_pending_invite($1) as result',

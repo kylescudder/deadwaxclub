@@ -19,6 +19,7 @@ such app's iOS build and tests.
 <App>/Sharing/SharingModels.swift        ShareRole, SharingSpace, SharingEndpoint, SharingCopy, ShareMember, SharePendingInvite, ShareMemberProfile
 <App>/Sharing/SharingRepository.swift    watches one space kind's members and invites; invite, remove, leave, revoke, member names
 <App>/Sharing/ShareMembersSections.swift Members, Pending invites and Invite by email sections for a Form
+<App>/Sharing/SharingInbox.swift         invites sent to the account across every space; ShareInvitesSection and ShareInvitesView
 <App>Tests/SharedSharingTests.swift      the rules below, run against every space the app declares
 ```
 
@@ -34,12 +35,16 @@ in its hook, `Sharing/SharingAppConfiguration.swift`, and lists them in
   synthesised as `id = <space>:<user>` in the sync stream.
 - An invites table, synced read-only, with columns
   `id, <spaceColumn>, email, role, invited_by, created_at, accepted_at`.
-- Four endpoints. The repository passes their values in a fixed order and
+- Seven endpoints. The repository passes their values in a fixed order and
   sends them under the endpoint's `keys`, so each app keeps its own API:
-  - `invite`: space ID, email, role. Responds `{"status": "added" | "pending"}`.
+  - `invite`: space ID, email, role. Responds `{"status": "pending"}`.
   - `removeMember`: space ID, user ID.
   - `revokeInvite`: invite ID.
   - `memberProfiles`: space ID. Responds `[{"id", "display_name"}]`.
+  - `incoming`: no values. Responds the open invites sent to the caller's
+    verified email: `[{"id", "space_id", "space_name", "inviter_name", "role", "created_at"}]`.
+  - `accept`: invite ID. Makes the caller a member with the invite's role.
+  - `decline`: invite ID.
 - The wording `ShareMembersSections` shows (`SharingCopy`).
 
 ## Rules
@@ -52,8 +57,18 @@ in its hook, `Sharing/SharingAppConfiguration.swift`, and lists them in
   token. Without that session nothing is sent.
 - A member sees every member of each space they belong to. Owners see the
   remove buttons and the invite form; members can leave.
-- An invite to an email with an account adds them straight away. Otherwise it
-  is saved and accepted when that email signs up.
+- Inviting never adds anyone. Every invite is pending; the server emails the
+  invitee a link to the app's invites page (the shared `invite` email kind,
+  `invitesURL` in `auth-app.ts`), and they accept or decline it in the app.
+  Only a signed-in account whose verified email matches the invite can see,
+  accept or decline it, so a forwarded email or a leaked invite ID gives
+  nothing away. Signing up never joins anything by itself.
+- Incoming invites come from the API, not the sync stream, because the
+  invitee can't see the space until they accept. `SharingInbox` merges every
+  space's invites; apps show `ShareInvitesSection` where people look for
+  shared things and present `ShareInvitesView` when the invite link
+  (`<origin>/invites`, a universal link) or an invite notification opens the
+  app.
 - The server enforces every rule. The app's checks only decide what the UI
   offers.
 

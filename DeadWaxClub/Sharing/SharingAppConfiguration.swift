@@ -17,10 +17,13 @@ extension SharingSpace {
         removeMember: SharingEndpoint(path: "api/library/remove_collection_member", keys: ["parent_id", "user_id"]),
         revokeInvite: SharingEndpoint(path: "api/library/revoke_collection_invite", keys: ["p_invite_id"]),
         memberProfiles: SharingEndpoint(path: "api/library/get_collection_member_profiles", keys: ["p_collection_id"]),
+        incoming: SharingEndpoint(path: "api/library/get_incoming_collection_invites", keys: []),
+        accept: SharingEndpoint(path: "api/library/accept_collection_invite", keys: ["p_invite_id"]),
+        decline: SharingEndpoint(path: "api/library/decline_collection_invite", keys: ["p_invite_id"]),
         copy: SharingCopy(
             destination: "the Collection",
-            pendingFooter: "Auto-accepted when the invitee signs up with the matching email.",
-            inviteFooter: "If they already have an account they're added straight away (and notified). Otherwise we'll save the invite and add them when they sign up."
+            pendingFooter: "They join once they accept the invite in Deadwax Club.",
+            inviteFooter: "We'll email them an invite (and notify them in the app if they already have an account). They join the Collection once they accept it."
         )
     )
 }

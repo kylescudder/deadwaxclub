@@ -209,6 +209,109 @@ test('email links keep each app branding and refuse another origin', () => {
   ).toThrow()
 })
 
+test('invite mail links only to the app invites page and keeps sender text to one line', () => {
+  const page = (authApp as { invitesURL?: string }).invitesURL
+  const details = {
+    inviter: 'Sam\r\nBcc: x',
+    target: 'the trip “<b>Lisbon</b>”',
+    senderID: 'sender'
+  }
+  if (!page) {
+    // Apps without sharing never send invite mail.
+    expect(() =>
+      renderEmail('invite', origin + '/invites', origin, details)
+    ).toThrow('Invalid email link')
+    return
+  }
+  const rendered = renderEmail('invite', page, origin, details)
+  expect(rendered.subject).toBe(
+    `Sam Bcc: x invited you to the trip “<b>Lisbon</b>” on ${authApp.name}`
+  )
+  expect(rendered.htmlContent).toContain('&lt;b&gt;Lisbon&lt;/b&gt;')
+  expect(rendered.htmlContent).not.toContain('<b>Lisbon')
+  expect(rendered.htmlContent).toContain(authApp.emailFooter)
+  expect(() =>
+    renderEmail('invite', 'https://evil.example/invites', origin, details)
+  ).toThrow('Invalid email link')
+  expect(() => renderEmail('invite', page, origin)).toThrow(
+    'Invalid email link'
+  )
+})
+
+test('invites to someone never use up their sign-in email limits', async () => {
+  const page = (authApp as { invitesURL?: string }).invitesURL
+  if (!page) return
+  const { createEmailSender } = await import('../src/email')
+  let sends = 0
+  const send = (async () => {
+    sends++
+    return new Response(null, { status: 201 })
+  }) as unknown as typeof fetch
+  const sender = createEmailSender(
+    pool,
+    { key: 'test-only', from: 'hello@example.test', origin, dailyLimit: 1000 },
+    send
+  )
+  const email = crypto.randomUUID() + '@example.test'
+  const details = { inviter: 'Sam', target: 'a test', senderID: 'sender' }
+  await sender(email, 'invite', page, details)
+  // A second invite inside the minute is dropped silently.
+  await sender(email, 'invite', page, details)
+  expect(sends).toBe(1)
+  // Their own verification mail still goes out.
+  await sender(email, 'verify', origin + '/api/auth/verify-email?token=t')
+  expect(sends).toBe(2)
+})
+
+test('invite mail never crowds out sign-in mail, and each sender has a daily cap', async () => {
+  const page = (authApp as { invitesURL?: string }).invitesURL
+  if (!page) return
+  const { createEmailSender, inviteSenderDailyLimit } =
+    await import('../src/email')
+  await pool.query('truncate auth_email_limit')
+  let sends = 0
+  const send = (async () => {
+    sends++
+    return new Response(null, { status: 201 })
+  }) as unknown as typeof fetch
+  const someone = () => crypto.randomUUID() + '@example.test'
+  const invite = (senderID: string) => ({
+    inviter: 'Sam',
+    target: 'a test',
+    senderID
+  })
+  const verify = origin + '/api/auth/verify-email?token=t'
+  const small = createEmailSender(
+    pool,
+    { key: 'test-only', from: 'hello@example.test', origin, dailyLimit: 4 },
+    send
+  )
+  // Invites may use half of the app's daily budget...
+  for (let i = 0; i < 3; i++)
+    await small(someone(), 'invite', page, invite(crypto.randomUUID()))
+  expect(sends).toBe(2)
+  // ...so sign-in and reset mail always has the rest.
+  await small(someone(), 'verify', verify)
+  await small(someone(), 'verify', verify)
+  expect(sends).toBe(4)
+
+  // One account's invite mail is capped per day, whatever it does with its
+  // invites; other senders are unaffected.
+  await pool.query('truncate auth_email_limit')
+  sends = 0
+  const large = createEmailSender(
+    pool,
+    { key: 'test-only', from: 'hello@example.test', origin, dailyLimit: 1000 },
+    send
+  )
+  for (let i = 0; i < inviteSenderDailyLimit + 2; i++)
+    await large(someone(), 'invite', page, invite('busy-sender'))
+  expect(sends).toBe(inviteSenderDailyLimit)
+  await large(someone(), 'invite', page, invite('other-sender'))
+  expect(sends).toBe(inviteSenderDailyLimit + 1)
+  await pool.query('truncate auth_email_limit')
+})
+
 test('native Apple names initialize profiles and returning sign-ins preserve user edits', async () => {
   const appleAuth = createAuth(db, {
     baseURL: origin,

@@ -11,13 +11,14 @@
     "/": "Support for Deadwax Club",
     "/privacy": "Privacy Policy",
     "/terms": "Terms of Use",
-    "/l/": "/js/list.js"
+    "/l/": "/js/list.js",
+    "/invites": "Accept it in the app"
   },
   "routes": {
     "/l/ci-share-token": "/js/list.js"
   },
   "appLinks": {
     "appIDs": ["6AAGJ9Y234.com.deadwaxclub.app"],
-    "paths": ["/l/*"]
+    "paths": ["/l/*", "/invites"]
   }
 }

@@ -55,8 +55,9 @@ struct SharingCopy: Hashable, Sendable {
 /// Something people can be invited into: one row per member in `membersTable`
 /// and one row per unanswered email invite in `invitesTable`, both keyed by
 /// `spaceColumn`. Both tables sync read-only; membership changes go through
-/// the API endpoints below. The app declares its spaces in
-/// `SharingAppConfiguration.swift`.
+/// the API endpoints below. Inviting never adds anyone: the invitee is
+/// emailed and accepts or declines in the app. The app declares its spaces
+/// in `SharingAppConfiguration.swift`.
 ///
 /// Members table columns: `<spaceColumn>, user_id, role, invited_by, joined_at`.
 /// Invites table columns: `<spaceColumn>, email, role, invited_by, created_at, accepted_at`.
@@ -66,7 +67,7 @@ struct SharingSpace: Hashable, Sendable {
     let membersTable: String
     let invitesTable: String
     let spaceColumn: String
-    /// Values: space ID, email, role. Responds `{"status": "added" | "pending"}`.
+    /// Values: space ID, email, role. Responds `{"status": "pending"}`.
     let invite: SharingEndpoint
     /// Values: space ID, user ID. Owners remove others; anyone but the owner removes themselves.
     let removeMember: SharingEndpoint
@@ -74,13 +75,20 @@ struct SharingSpace: Hashable, Sendable {
     let revokeInvite: SharingEndpoint
     /// Values: space ID. Responds `[{"id": …, "display_name": …}]` for every member.
     let memberProfiles: SharingEndpoint
+    /// No values. Responds the open invites sent to the caller's verified email:
+    /// `[{"id", "space_id", "space_name", "inviter_name", "role", "created_at"}]`.
+    let incoming: SharingEndpoint
+    /// Values: invite ID. Makes the caller a member with the invite's role.
+    let accept: SharingEndpoint
+    /// Values: invite ID.
+    let decline: SharingEndpoint
     let copy: SharingCopy
 }
 
 enum ShareInviteOutcome: Equatable, Sendable {
-    /// The email belongs to an account, which is now a member.
+    /// An older server added an existing account straight away.
     case added
-    /// No account yet; the invite is kept and accepted when they sign up with that email.
+    /// The invite was sent; they join once they accept it in the app.
     case pending
 }
 
@@ -146,6 +154,43 @@ struct SharePendingInvite: Identifiable, Hashable, Sendable {
         } catch {
             return nil
         }
+    }
+}
+
+/// An invite someone sent to the signed-in account's email, waiting for an answer.
+struct ShareIncomingInvite: Identifiable, Decodable, Hashable, Sendable {
+    let id: String
+    let spaceID: String
+    let spaceName: String?
+    let inviterName: String?
+    let role: ShareRole
+    let createdAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, role
+        case spaceID = "space_id"
+        case spaceName = "space_name"
+        case inviterName = "inviter_name"
+        case createdAt = "created_at"
+    }
+
+    init(id: String, spaceID: String, spaceName: String?, inviterName: String?, role: ShareRole, createdAt: Date?) {
+        self.id = id
+        self.spaceID = spaceID
+        self.spaceName = spaceName
+        self.inviterName = inviterName
+        self.role = role
+        self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        spaceID = try container.decode(String.self, forKey: .spaceID)
+        spaceName = try container.decodeIfPresent(String.self, forKey: .spaceName)
+        inviterName = try container.decodeIfPresent(String.self, forKey: .inviterName)
+        role = try container.decode(ShareRole.self, forKey: .role)
+        createdAt = sharingDate(try container.decodeIfPresent(String.self, forKey: .createdAt))
     }
 }
 

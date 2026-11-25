@@ -34,6 +34,12 @@ struct RootView: View {
         )) { presentation in
             NavigationStack { PublicListView(token: presentation.token) }
         }
+        .sheet(isPresented: Binding(
+            get: { services.auth.canAccessMainApp && services.showsInvites },
+            set: { services.showsInvites = $0 }
+        )) {
+            ShareInvitesView(inbox: services.collections.inbox, signedInEmail: signedInEmail)
+        }
         .sheet(item: Binding(
             get: { services.auth.canAccessMainApp ? services.pendingDeepLinkRecord : nil },
             set: { services.pendingDeepLinkRecord = $0 }
@@ -118,8 +124,19 @@ struct RootView: View {
         }
     }
 
+    private var signedInEmail: String? {
+        if case let .signedIn(_, email) = services.auth.state { return email }
+        return nil
+    }
+
     private func handle(url: URL) {
         Log.breadcrumb("incoming url: \(Log.redactedURLDescription(url))", category: "deeplink")
+        // Invite emails link to https://deadwaxclub.app/invites.
+        if url.host == "deadwaxclub.app", url.path == "/invites" {
+            Log.breadcrumb("deeplink routed to invites", category: "deeplink")
+            services.showsInvites = true
+            return
+        }
         // Public list share link: https://deadwaxclub.app/l/<token> or deadwaxclub://list/<token>
         if url.host == "deadwaxclub.app", url.pathComponents.count >= 3, url.pathComponents[1] == "l" {
             Log.breadcrumb("deeplink routed to public list", category: "deeplink")

@@ -10,6 +10,9 @@ final class SharingRepository: ObservableObject {
     @Published private(set) var members: [ShareMember] = []
     @Published private(set) var pendingInvites: [SharePendingInvite] = []
     @Published private(set) var memberProfilesByID: [String: ShareMemberProfile] = [:]
+    /// Invites sent to the signed-in account's verified email. Fetched from the
+    /// API, not synced: the account can't see the space until it accepts.
+    @Published private(set) var incomingInvites: [ShareIncomingInvite] = []
 
     let space: SharingSpace
 
@@ -18,6 +21,7 @@ final class SharingRepository: ObservableObject {
     private let owner: UUID?
     private var membersTask: Task<Void, Never>?
     private var invitesTask: Task<Void, Never>?
+    private var incomingTask: Task<Void, Never>?
     private var refreshedProfileSpaceIDs: Set<String> = []
 
     init(space: SharingSpace, database: PowerSyncDatabaseProtocol, auth: AuthClient, owner: UUID? = nil) {
@@ -30,6 +34,7 @@ final class SharingRepository: ObservableObject {
     deinit {
         membersTask?.cancel()
         invitesTask?.cancel()
+        incomingTask?.cancel()
     }
 
     // MARK: Reading
@@ -38,13 +43,17 @@ final class SharingRepository: ObservableObject {
         Log.breadcrumb("\(space.name) sharing watch starting", category: category("watch"))
         watchMembers(userID: userID)
         watchPendingInvites(userID: userID)
+        incomingTask?.cancel()
+        incomingTask = Task { [weak self] in await self?.refreshIncomingInvites() }
     }
 
     func stopWatching() {
         membersTask?.cancel(); membersTask = nil
         invitesTask?.cancel(); invitesTask = nil
+        incomingTask?.cancel(); incomingTask = nil
         members = []
         pendingInvites = []
+        incomingInvites = []
         memberProfilesByID = [:]
         refreshedProfileSpaceIDs = []
     }
@@ -202,6 +211,31 @@ final class SharingRepository: ObservableObject {
         } catch {
             Log.error(error, category: category("memberProfiles"))
         }
+    }
+
+    // MARK: Answering invites
+
+    func refreshIncomingInvites() async {
+        do {
+            let data = try await send(space.incoming, [])
+            let invites = try JSONDecoder().decode([ShareIncomingInvite].self, from: data)
+            guard auth.currentUserID == owner, !Task.isCancelled else { return }
+            incomingInvites = invites
+        } catch {
+            Log.error(error, category: category("incoming"))
+        }
+    }
+
+    /// Joins the space. PowerSync then syncs it and its members.
+    func accept(_ invite: ShareIncomingInvite) async throws {
+        Log.event("\(space.name) invite accept started", category: category("accept"), metadata: ["role": invite.role.rawValue])
+        _ = try await send(space.accept, [invite.id])
+        incomingInvites.removeAll { $0.id == invite.id }
+    }
+
+    func decline(_ invite: ShareIncomingInvite) async throws {
+        _ = try await send(space.decline, [invite.id])
+        incomingInvites.removeAll { $0.id == invite.id }
     }
 
     private func send(_ endpoint: SharingEndpoint, _ values: [String]) async throws -> Data {
