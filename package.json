@@ -1,7 +1,7 @@
 {
   "name": "deadwaxclub",
   "private": true,
-  "packageManager": "bun@1.4.4",
+  "packageManager": "bun@1.4.5",
   "scripts": {
     "build": "bun install --cwd Site && cd Site && bun run build",
     "dev": "bun install --cwd Site && cd Site && bun run dev",
