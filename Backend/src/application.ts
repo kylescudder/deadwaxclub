@@ -53,10 +53,10 @@ function withPublicCORS(response: Response) {
 export function createApplication(auth: Auth, pool: Pool, origin: string, spool?: NotificationSpool, sendEmail?: SendInviteEmail) {
   // The invite is saved before its email goes out, and stays usable in the
   // app if the email can't be sent.
-  async function emailInvitation(invitation: CollectionInvitation) {
+  async function emailInvitation(invitation: CollectionInvitation, senderID: string) {
     if (!sendEmail) return
     try {
-      await sendEmail(invitation.email, 'invite', authApp.invitesURL, { inviter: invitation.inviter, target: invitation.target })
+      await sendEmail(invitation.email, 'invite', authApp.invitesURL, { inviter: invitation.inviter, target: invitation.target, senderID })
     } catch {
       // Budget exhausted or Brevo unavailable; the invite is in the app.
     }
@@ -185,7 +185,7 @@ export function createApplication(auth: Auth, pool: Pool, origin: string, spool?
         )
         if (action === 'invite_to_collection') {
           const invitation = result as CollectionInvitation
-          await emailInvitation(invitation)
+          await emailInvitation(invitation, userId)
           return Response.json({ status: invitation.status })
         }
         return Response.json(result)

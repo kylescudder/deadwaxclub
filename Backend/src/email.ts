@@ -13,7 +13,15 @@ const escape = (value: string) =>
 export type EmailKind = 'verify' | 'reset' | 'invite'
 
 /// Who invited the recipient and to what, e.g. "Sam" and "the trip “Lisbon”".
-export type InviteDetails = { inviter: string; target: string }
+/// `senderID` is the inviting account, whose invite mail is capped per day.
+export type InviteDetails = {
+  inviter: string
+  target: string
+  senderID: string
+}
+
+/// Invite mail one account may send a day, however its invites change.
+export const inviteSenderDailyLimit = 20
 
 // Invite text comes from other users: keep it to one short line.
 const plain = (value: string, max: number) =>
@@ -76,9 +84,9 @@ export function createEmailSender(
     invite?: InviteDetails
   ) => {
     const rendered = renderEmail(kind, url, settings.origin, invite)
-    const recipientKey = new Bun.CryptoHasher('sha256')
-      .update(email.trim().toLowerCase())
-      .digest('hex')
+    const hash = (value: string) =>
+      new Bun.CryptoHasher('sha256').update(value).digest('hex')
+    const recipientKey = hash(email.trim().toLowerCase())
     const client = await pool.connect()
     try {
       await client.query('begin')
@@ -86,12 +94,24 @@ export function createEmailSender(
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [
         authApp.emailBudgetKey
       ])
-      // Invites have their own, stricter recipient limits, so other people's
-      // invites can never use up someone's sign-in and reset emails.
+      // Invite mail can never crowd out sign-in and reset mail: invites use
+      // at most half of the app's daily budget, have their own recipient
+      // limits, and each sender has a daily cap counted here, where revoking
+      // or re-sending an invite can't reset it.
       const limits =
         kind === 'invite'
           ? [
               { key: 'day', seconds: 86400, max: settings.dailyLimit },
+              {
+                key: 'invite:day',
+                seconds: 86400,
+                max: Math.floor(settings.dailyLimit / 2)
+              },
+              {
+                key: 'invite-sender:' + hash(invite!.senderID) + ':day',
+                seconds: 86400,
+                max: inviteSenderDailyLimit
+              },
               { key: recipientKey + ':invite:day', seconds: 86400, max: 3 },
               { key: recipientKey + ':invite:minute', seconds: 60, max: 1 }
             ]

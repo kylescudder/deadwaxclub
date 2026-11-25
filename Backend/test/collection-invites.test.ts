@@ -19,7 +19,7 @@ const auth = createAuth(db, {
     if (kind === 'verify') verifyLinks.set(email, url)
   }
 })
-const invites: { email: string, url: string, invite: { inviter: string, target: string } }[] = []
+const invites: { email: string, url: string, invite: { inviter: string, target: string, senderID: string } }[] = []
 let emailDown = false
 const app = createApplication(auth, pool, origin, undefined, async (email, _kind, url, invite) => {
   if (emailDown) throw new Error('Email delivery unavailable')
@@ -93,7 +93,7 @@ test('an invite to an existing account waits until they accept it in the app', a
   expect([...invites].reverse().find((m) => m.email === invitee.email)).toEqual({
     email: invitee.email,
     url: 'https://deadwaxclub.app/invites',
-    invite: { inviter: 'Owner', target: 'the Collection “Owner\'s Collection”' }
+    invite: { inviter: 'Owner', target: 'the Collection “Owner\'s Collection”', senderID: owner.id }
   })
   const notice = await pool.query("select title, body, payload from public.notifications where user_id = $1 and kind = 'collection_invite'", [invitee.id])
   expect(notice.rows).toHaveLength(1)
