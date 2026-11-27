@@ -1,4 +1,4 @@
-FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS build
+FROM oven/bun:1.4.5@sha256:3aa040e5445efa09d75bb428a64ba50db13e2b3ac9b6b0c7f145615f62b2ee18 AS build
 WORKDIR /app/Backend
 ENV HUSKY=0 CI=true
 COPY Backend/package.json Backend/bun.lock ./
@@ -11,7 +11,7 @@ COPY Backend/deploy ./deploy
 COPY Backend/tsconfig.json ./
 RUN bunx --no-install tsc --noEmit && bun build src/index.ts --target=bun --outdir=dist --packages=external
 
-FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d
+FROM oven/bun:1.4.5@sha256:3aa040e5445efa09d75bb428a64ba50db13e2b3ac9b6b0c7f145615f62b2ee18
 WORKDIR /app/Backend
 ENV NODE_ENV=production HUSKY=0
 COPY Backend/package.json Backend/bun.lock ./
