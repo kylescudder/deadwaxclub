@@ -21,6 +21,7 @@ import LegalArticle from "../components/LegalArticle.astro";
       <li><strong>Camera and photo content.</strong> If you scan a barcode, camera access is used on device to read the barcode. If you take or choose a record photo, that image is stored with the record so it can appear in your collection and sync across your devices.</li>
       <li><strong>Device tokens.</strong> If you enable push notifications we store an Apple Push Notification service token so we can send you alerts such as price drops and collection invites.</li>
       <li><strong>Discogs access token.</strong> If you connect a Discogs account, your personal Discogs token is stored securely on your device in the iOS keychain and is used only to fetch record details on your behalf. It is not sent to our servers.</li>
+      <li><strong>Usage and diagnostics.</strong> The app sends PostHog usage events, such as when the app is installed, opened or updated, and reports of errors and crashes with the recent in-app steps that led to them. These include your device model, iOS version, app version and, while you are signed in, your account ID. We do not add your name or email address to them.</li>
     </ul>
 
     <h2>How we use your information</h2>
@@ -34,7 +35,7 @@ import LegalArticle from "../components/LegalArticle.astro";
     <p>We do not sell your personal information. Information is shared only in the following circumstances:</p>
     <ul>
       <li><strong>With other users you choose.</strong> When you share a list or invite someone to a collection, the relevant content becomes visible to those people. A collection invite stores the invitee's email address and emails them, through Brevo, a link to accept it in the app; they join only if they accept, and the invite is kept until they accept or decline it or you cancel it. Public list links are accessible to anyone with the link until you disable sharing.</li>
-      <li><strong>With service providers.</strong> We use service providers to host and operate the app, Apple and Google for sign-in when selected, Apple's Push Notification service to deliver notifications, and the Discogs API to look up record information. These providers process data only to deliver these features.</li>
+      <li><strong>With service providers.</strong> We use service providers to host and operate the app, Apple and Google for sign-in when selected, Apple's Push Notification service to deliver notifications, the Discogs API to look up record information, and PostHog for app usage analytics and error and crash reports. These providers process data only to deliver these features.</li>
       <li><strong>When required by law.</strong> We may disclose information if required to do so by law or valid legal process.</li>
     </ul>
 

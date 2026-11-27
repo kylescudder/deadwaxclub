@@ -22,9 +22,9 @@ packages:
   Lottie:
     url: https://github.com/airbnb/lottie-ios
     from: 4.6.1
-  Sentry:
-    url: https://github.com/getsentry/sentry-cocoa
-    from: 8.40.0
+  PostHog:
+    url: https://github.com/PostHog/posthog-ios
+    from: 4.0.5
 
 schemes:
   DeadWaxClub:
@@ -84,7 +84,8 @@ targets:
         POWERSYNC_URL: $(POWERSYNC_URL)
         PUSH_GATEWAY_URL: $(PUSH_GATEWAY_URL)
         PUSH_GATEWAY_APPLICATION_ID: $(PUSH_GATEWAY_APPLICATION_ID)
-        SENTRY_DSN: $(SENTRY_DSN)
+        POSTHOG_PROJECT_TOKEN: $(POSTHOG_PROJECT_TOKEN)
+        POSTHOG_HOST: $(POSTHOG_HOST)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.deadwaxclub.app
@@ -107,8 +108,8 @@ targets:
         product: PowerSync
       - package: Lottie
         product: Lottie
-      - package: Sentry
-        product: Sentry
+      - package: PostHog
+        product: PostHog
       - target: DeadWaxClubWidgets
         embed: true
 

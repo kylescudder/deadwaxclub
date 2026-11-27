@@ -23,7 +23,7 @@ and lets you share lists with friends — privately, by link, or collaboratively
 - Supporter subscription for unlimited records
 - Light / Dark / System appearance
 - Account deletion (App Store 5.1.1(v) compliant)
-- Error reporting through Sentry (optional)
+- Product analytics, error tracking and crash reports through PostHog (optional)
 
 ## Stack
 
@@ -39,7 +39,7 @@ and lets you share lists with friends — privately, by link, or collaboratively
 | Charts        | Swift Charts                                                           |
 | Barcode       | VisionKit `DataScannerViewController`                                  |
 | Search        | CoreSpotlight + AppIntents                                             |
-| Error logging | `sentry-cocoa`                                                         |
+| Analytics     | `posthog-ios`                                                          |
 | Project gen   | [XcodeGen](https://github.com/yonaskolb/XcodeGen)                      |
 
 ## Repo layout
@@ -59,7 +59,7 @@ DeadWaxClub/
   Extensions/      Foundation helpers
   Intents/         AppIntents, AppShortcuts, Spotlight indexing
   Lists/           lists CRUD, share modes, public viewer
-  Logging/         OSLog/Sentry wrapper
+  Logging/         OSLog/PostHog wrapper
   Models/          VinylRecord, PriceEntry, Profile, VinylList, ...
   Notifications/   shared push core, APNs registration, inbox
   Onboarding/      first-run sheets
@@ -101,7 +101,12 @@ Fill in `Config/Secrets.xcconfig`:
 - `API_URL`: the Deadwax API origin (`https://auth.deadwaxclub.app`).
 - `POWERSYNC_URL`: the PowerSync origin (`https://sync.deadwaxclub.app`).
 - `PUSH_GATEWAY_URL`: optional; leave blank to register devices with the API.
-- `SENTRY_DSN`: optional; leave blank to disable Sentry.
+- `POSTHOG_PROJECT_TOKEN`: optional; leave blank to disable PostHog locally.
+- `POSTHOG_HOST`: the PostHog ingestion origin (`https:/$()/eu.i.posthog.com`
+  or `https:/$()/us.i.posthog.com`).
+
+TestFlight builds take both PostHog values from GitHub, not from
+`IOS_SECRETS_XCCONFIG`.
 
 Escape URL slashes as `https:/$()/...` in xcconfig. The example's placeholders
 build fine but show configuration errors instead of signing in or syncing.
@@ -224,7 +229,9 @@ wait for Apple's processing of an earlier upload.
 | Setting | Kind | Purpose |
 |---|---|---|
 | `API_BASE_URL`, `POWERSYNC_BASE_URL` | repository variables | Release origins written into the build |
-| `IOS_SECRETS_XCCONFIG` | secret | Release `Secrets.xcconfig` (the origins above replace its URLs) |
+| `POSTHOG_HOST` | repository variable | PostHog ingestion origin written into the build |
+| `POSTHOG_PROJECT_TOKEN` | secret | PostHog project token (`phc_…`) written into the build |
+| `IOS_SECRETS_XCCONFIG` | secret | Release `Secrets.xcconfig` (the values above replace its URLs and PostHog token) |
 | `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_API_KEY_ISSUER_ID`, `APP_STORE_CONNECT_API_KEY_P8` | secrets | App Store Connect API key for upload |
 | `APPLE_TEAM_ID` | secret | Development team written into `project.yml` |
 | `IOS_DISTRIBUTION_CERTIFICATE_BASE64`, `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`, `IOS_KEYCHAIN_PASSWORD` | secrets | Distribution certificate and temporary keychain |

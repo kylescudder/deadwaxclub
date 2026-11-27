@@ -162,6 +162,7 @@ final class AppServices: ObservableObject {
         Log.event("app services applying auth state", category: "app.auth", metadata: ["state": state.loggingDescription])
         guard auth.canAccessMainApp, case let .signedIn(userID, _) = state else {
             PushManager.shared.sessionEnded()
+            Analytics.reset()
             onboarding.resetForSignOut()
             billing.resetForSignOut()
             records.stopWatching()
@@ -175,6 +176,7 @@ final class AppServices: ObservableObject {
         }
         onboarding.selectAccount(userID)
         let id = userID.lowerUUID
+        Analytics.identify(userID: id)
         profile.startWatching(userID: id)
         lists.startWatching(userID: id)
         collections.startWatching(userID: id)

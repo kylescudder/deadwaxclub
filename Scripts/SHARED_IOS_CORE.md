@@ -102,6 +102,8 @@ The shared files read app-specific values from these places only:
   TestFlight workflow installs (app first, widgets second).
 - GitHub secrets `IOS_<APP>_PROFILE_BASE64` and
   `IOS_<APP>_WIDGETS_PROFILE_BASE64`, where `<APP>` is the upper-case name.
+- GitHub variable `POSTHOG_HOST` and secret `POSTHOG_PROJECT_TOKEN` — the
+  app's PostHog project, written into TestFlight builds.
 
 ## Conventions
 
@@ -109,10 +111,14 @@ The shared files read app-specific values from these places only:
   `info.properties` → `Info.plist` → `AppSecrets`. Escape `//` as `/$()/`. The
   example uses `.invalid` placeholders, which `AppSecrets` treats as unset, so
   pull-request builds compile without a backend and report a configuration
-  error instead of crashing. An empty `SENTRY_DSN` disables Sentry.
+  error instead of crashing. An empty `POSTHOG_PROJECT_TOKEN` disables PostHog.
+  TestFlight writes `API_URL`, `POWERSYNC_URL` and `POSTHOG_HOST` from the
+  `API_BASE_URL`, `POWERSYNC_BASE_URL` and `POSTHOG_HOST` repository variables
+  and `POSTHOG_PROJECT_TOKEN` from the secret of that name over
+  `IOS_SECRETS_XCCONFIG`, then checks the archived `Info.plist` matches.
 - **Composition.** `<App>App` owns one `@StateObject AppServices`, injects it
   with `environmentObject`, installs the shared `AppDelegate`, applies the
-  saved `Appearance` and calls `AppBootstrap.configureSentry()`.
+  saved `Appearance` and calls `AppBootstrap.configureAnalytics()`.
   `AppServices` is the composition root and re-broadcasts its children's
   `objectWillChange`. It creates `AuthClient`, `SyncIssueStore`,
   `PowerSyncManager(auth:issues:)` and `BillingRepository(auth:)`, binds
@@ -129,7 +135,12 @@ The shared files read app-specific values from these places only:
   `QuickActionRouter.activate()`, `PushManager.refreshRegistration()` and
   `sync.retryConnection()`. The tabs, feature repositories, `Profile` model,
   `SignUpView` fields and Settings sections stay per app.
-- **Logging.** Errors go through `Log` (OSLog plus Sentry), never `print`.
+- **Logging.** Errors go through `Log` (OSLog plus PostHog error tracking),
+  never `print`. Breadcrumbs stay on the device and ride along with the next
+  error or warning. PostHog runs with lifecycle events and crash capture on,
+  and screen views, autocapture, session replay and surveys off.
+  `AppServices.applyAuth` calls `Analytics.identify(userID:)` on sign-in and
+  `Analytics.reset()` on sign-out; only the user ID is sent.
 - **Data.** Repositories read with `database.watch` and write to local SQLite;
   PowerSync uploads through `APIConnector`. Deletes are soft (`deleted_at`).
   UUIDs sent to SQLite or the API are lowercased.
