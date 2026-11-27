@@ -3,8 +3,9 @@ import OSLog
 import PostHog
 
 /// Thin wrapper that fans out to OSLog (visible in Console.app / Xcode) and
-/// PostHog error tracking. Breadcrumbs stay on the device: the most recent
-/// ones ride along with each captured error or warning.
+/// PostHog error tracking. Breadcrumbs become PostHog exception steps: the SDK
+/// buffers them on the device and attaches them to every captured error,
+/// warning and crash, and never sends them on their own.
 enum Log {
     enum Level: String, Sendable {
         case debug, info, warning, error
@@ -18,7 +19,7 @@ enum Log {
 
     static func breadcrumb(_ message: String, category: String = "app", level: Level = .info) {
         logger(category).info("\(message, privacy: .public)")
-        Breadcrumbs.shared.append(message: message, category: category, level: level)
+        PostHogSDK.shared.addExceptionStep(message, properties: ["category": category, "level": level.rawValue])
     }
 
     static func debug(_ message: String, category: String = "app") {
@@ -69,7 +70,7 @@ enum Log {
 
     static func error(_ error: Error, category: String = "app", extra: [String: Any] = [:]) {
         logger(category).error("\(error.localizedDescription, privacy: .public)")
-        var properties = reportProperties(category: category)
+        var properties: [String: Any] = ["category": category]
         if !extra.isEmpty {
             properties["extra"] = extra
         }
@@ -78,44 +79,8 @@ enum Log {
 
     static func warning(_ message: String, category: String = "app") {
         logger(category).warning("\(message, privacy: .public)")
-        var properties = reportProperties(category: category)
-        properties["$exception_level"] = Level.warning.rawValue
+        let properties: [String: Any] = ["category": category, "$exception_level": Level.warning.rawValue]
         let warning = NSError(domain: "\(subsystem).warning", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
         PostHogSDK.shared.captureException(warning, properties: properties)
-    }
-
-    private static func reportProperties(category: String) -> [String: Any] {
-        ["category": category, "breadcrumbs": Breadcrumbs.shared.snapshot()]
-    }
-}
-
-/// The last few breadcrumbs, oldest first, attached to error reports.
-final class Breadcrumbs: Sendable {
-    static let shared = Breadcrumbs()
-
-    private let limit: Int
-    private let entries = OSAllocatedUnfairLock(initialState: [[String: String]]())
-
-    init(limit: Int = 50) {
-        self.limit = limit
-    }
-
-    func append(message: String, category: String, level: Log.Level) {
-        let entry = [
-            "timestamp": Date().formatted(.iso8601),
-            "category": category,
-            "level": level.rawValue,
-            "message": message,
-        ]
-        entries.withLock { entries in
-            entries.append(entry)
-            if entries.count > limit {
-                entries.removeFirst(entries.count - limit)
-            }
-        }
-    }
-
-    func snapshot() -> [[String: String]] {
-        entries.withLock { $0 }
     }
 }

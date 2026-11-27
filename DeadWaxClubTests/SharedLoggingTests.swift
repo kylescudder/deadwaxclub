@@ -1,30 +1,37 @@
 import XCTest
 @testable import AppUnderTest
 
+@MainActor
 final class SharedLoggingTests: XCTestCase {
-    func testBreadcrumbsKeepTheMostRecentEntriesOldestFirst() {
-        let breadcrumbs = Breadcrumbs(limit: 3)
-        for index in 1...5 {
-            breadcrumbs.append(message: "step \(index)", category: "test", level: .info)
-        }
+    private let user = UUID(uuidString: "A1B2C3D4-0000-4000-8000-00000000000A")!
 
-        XCTAssertEqual(breadcrumbs.snapshot().map { $0["message"] }, ["step 3", "step 4", "step 5"])
+    func testSignedInSessionsIdentifyByLowercasedUserID() {
+        XCTAssertEqual(
+            Analytics.action(from: .unknown, to: .signedIn(userID: user, email: "listener@example.com")),
+            .identify(userID: "a1b2c3d4-0000-4000-8000-00000000000a")
+        )
     }
 
-    func testBreadcrumbsRecordCategoryLevelAndTimestamp() throws {
-        let breadcrumbs = Breadcrumbs()
-        breadcrumbs.append(message: "sync failed", category: "sync", level: .warning)
-
-        let entry = try XCTUnwrap(breadcrumbs.snapshot().first)
-        XCTAssertEqual(entry["category"], "sync")
-        XCTAssertEqual(entry["level"], "warning")
-        XCTAssertNotNil(try Date(XCTUnwrap(entry["timestamp"]), strategy: .iso8601))
+    func testBootstrappingKeepsTheStoredIdentity() {
+        // AuthClient publishes .unknown before restoring a saved session.
+        XCTAssertEqual(Analytics.action(from: nil, to: .unknown), .none)
+        XCTAssertEqual(Analytics.action(from: .signedIn(userID: user, email: nil), to: .unknown), .none)
     }
 
-    func testAnalyticsCallsAreSafeWithoutAProjectToken() {
+    func testALaunchThatStartsSignedOutKeepsTheStoredIdentity() {
+        XCTAssertEqual(Analytics.action(from: nil, to: .signedOut), .none)
+        XCTAssertEqual(Analytics.action(from: .unknown, to: .signedOut), .none)
+    }
+
+    func testEndingASignedInSessionResetsTheIdentity() {
+        XCTAssertEqual(Analytics.action(from: .signedIn(userID: user, email: nil), to: .signedOut), .reset)
+    }
+
+    func testLoggingAndAnalyticsAreSafeWithoutAProjectToken() {
         // Simulator and pull-request builds leave POSTHOG_PROJECT_TOKEN empty.
-        Analytics.identify(userID: "00000000-0000-0000-0000-000000000000")
-        Analytics.reset()
+        Log.breadcrumb("step", category: "test")
         Log.warning("analytics disabled", category: "test")
+        Analytics.authStateChanged(.signedIn(userID: user, email: nil))
+        Analytics.authStateChanged(.signedOut)
     }
 }

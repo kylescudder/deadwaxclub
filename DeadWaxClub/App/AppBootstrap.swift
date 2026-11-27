@@ -25,17 +25,48 @@ enum AppBootstrap {
 
 /// Links PostHog events to the signed-in account by its user ID only; no
 /// email or profile fields are sent.
+@MainActor
 enum Analytics {
-    static func identify(userID: String) {
-        guard PostHogSDK.shared.getDistinctId() != userID else { return }
-        PostHogSDK.shared.identify(userID)
+    enum Action: Equatable {
+        case none
+        case identify(userID: String)
+        case reset
     }
 
-    /// Starts a new anonymous identity after sign-out. Signed-out launches
-    /// keep their anonymous ID.
-    static func reset() {
+    private static var lastState: AuthClient.State?
+
+    /// Call with every auth state `AppServices` applies.
+    static func authStateChanged(_ state: AuthClient.State) {
+        let action = action(from: lastState, to: state)
+        lastState = state
         let posthog = PostHogSDK.shared
-        guard posthog.getDistinctId() != posthog.getAnonymousId() else { return }
-        posthog.reset()
+        switch action {
+        case .none:
+            break
+        case let .identify(userID):
+            let current = posthog.getDistinctId()
+            guard current != userID else { return }
+            // Another account was identified: never merge the two people.
+            if current != posthog.getAnonymousId() { posthog.reset() }
+            posthog.identify(userID)
+        case .reset:
+            guard posthog.getDistinctId() != posthog.getAnonymousId() else { return }
+            posthog.reset()
+        }
+    }
+
+    /// Identify any signed-in session. Reset only when a session this launch
+    /// saw signed in ends: `.unknown` while auth bootstraps, and a launch that
+    /// starts signed out, keep the stored identity.
+    static func action(from previous: AuthClient.State?, to state: AuthClient.State) -> Action {
+        switch state {
+        case let .signedIn(userID, _):
+            return .identify(userID: userID.uuidString.lowercased())
+        case .signedOut:
+            if case .signedIn = previous { return .reset }
+            return .none
+        case .unknown:
+            return .none
+        }
     }
 }

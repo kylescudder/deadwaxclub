@@ -136,11 +136,13 @@ The shared files read app-specific values from these places only:
   `sync.retryConnection()`. The tabs, feature repositories, `Profile` model,
   `SignUpView` fields and Settings sections stay per app.
 - **Logging.** Errors go through `Log` (OSLog plus PostHog error tracking),
-  never `print`. Breadcrumbs stay on the device and ride along with the next
-  error or warning. PostHog runs with lifecycle events and crash capture on,
-  and screen views, autocapture, session replay and surveys off.
-  `AppServices.applyAuth` calls `Analytics.identify(userID:)` on sign-in and
-  `Analytics.reset()` on sign-out; only the user ID is sent.
+  never `print`. Breadcrumbs become PostHog exception steps, which the SDK
+  attaches to every error, warning and crash report and never sends alone.
+  PostHog runs with lifecycle events and crash capture on, and screen views,
+  autocapture, session replay and surveys off. `AppServices.applyAuth` passes
+  each auth state to `Analytics.authStateChanged(_:)`, which identifies the
+  signed-in user ID (never the email) and resets only when a session it saw
+  signed in ends, so bootstrapping and signed-out launches keep the identity.
 - **Data.** Repositories read with `database.watch` and write to local SQLite;
   PowerSync uploads through `APIConnector`. Deletes are soft (`deleted_at`).
   UUIDs sent to SQLite or the API are lowercased.
