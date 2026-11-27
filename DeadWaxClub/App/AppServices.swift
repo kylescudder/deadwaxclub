@@ -159,6 +159,7 @@ final class AppServices: ObservableObject {
 
     private func applyAuth(state: AuthClient.State) {
         guard auth.state == state else { return }
+        Analytics.authStateChanged(state)
         Log.event("app services applying auth state", category: "app.auth", metadata: ["state": state.loggingDescription])
         guard auth.canAccessMainApp, case let .signedIn(userID, _) = state else {
             PushManager.shared.sessionEnded()

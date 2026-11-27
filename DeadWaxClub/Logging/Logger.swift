@@ -1,23 +1,25 @@
 import Foundation
 import OSLog
-import Sentry
+import PostHog
 
-/// Thin wrapper that fans out to OSLog (visible in Console.app / Xcode) and Sentry.
+/// Thin wrapper that fans out to OSLog (visible in Console.app / Xcode) and
+/// PostHog error tracking. Breadcrumbs become PostHog exception steps: the SDK
+/// buffers them on the device and attaches them to every captured error,
+/// warning and crash, and never sends them on their own.
 enum Log {
+    enum Level: String, Sendable {
+        case debug, info, warning, error
+    }
+
     private static let subsystem = Bundle.main.bundleIdentifier ?? "app"
 
     static func logger(_ category: String) -> Logger {
         Logger(subsystem: subsystem, category: category)
     }
 
-    static func breadcrumb(_ message: String, category: String = "app", level: SentryLevel = .info) {
-        // Also log to OSLog so the message is visible in Xcode's console
-        // during local debugging — without this, breadcrumbs only show up
-        // in Sentry, which is no-op in dev when SENTRY_DSN is empty.
+    static func breadcrumb(_ message: String, category: String = "app", level: Level = .info) {
         logger(category).info("\(message, privacy: .public)")
-        let crumb = Breadcrumb(level: level, category: category)
-        crumb.message = message
-        SentrySDK.addBreadcrumb(crumb)
+        PostHogSDK.shared.addExceptionStep(message, properties: ["category": category, "level": level.rawValue])
     }
 
     static func debug(_ message: String, category: String = "app") {
@@ -68,17 +70,17 @@ enum Log {
 
     static func error(_ error: Error, category: String = "app", extra: [String: Any] = [:]) {
         logger(category).error("\(error.localizedDescription, privacy: .public)")
-        SentrySDK.capture(error: error) { scope in
-            scope.setContext(value: extra, key: "extra")
-            scope.setTag(value: category, key: "category")
+        var properties: [String: Any] = ["category": category]
+        if !extra.isEmpty {
+            properties["extra"] = extra
         }
+        PostHogSDK.shared.captureException(error, properties: properties)
     }
 
     static func warning(_ message: String, category: String = "app") {
         logger(category).warning("\(message, privacy: .public)")
-        SentrySDK.capture(message: message) { scope in
-            scope.setLevel(.warning)
-            scope.setTag(value: category, key: "category")
-        }
+        let properties: [String: Any] = ["category": category, "$exception_level": Level.warning.rawValue]
+        let warning = NSError(domain: "\(subsystem).warning", code: 0, userInfo: [NSLocalizedDescriptionKey: message])
+        PostHogSDK.shared.captureException(warning, properties: properties)
     }
 }

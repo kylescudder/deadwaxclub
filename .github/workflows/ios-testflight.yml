@@ -70,6 +70,8 @@ jobs:
           IOS_SECRETS: ${{ secrets.IOS_SECRETS_XCCONFIG }}
           API_BASE_URL: ${{ vars.API_BASE_URL }}
           POWERSYNC_BASE_URL: ${{ vars.POWERSYNC_BASE_URL }}
+          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
         run: |
           if [ -z "${IOS_SECRETS}" ]; then
             echo "::error::IOS_SECRETS_XCCONFIG secret is empty"
@@ -82,17 +84,28 @@ jobs:
           from pathlib import Path
 
           config = os.environ["IOS_SECRETS"]
+
+          def replace(setting, value):
+              global config
+              config = re.sub(rf"(?m)^[ \t]*{setting}[ \t]*=[^\n]*(?:\n|$)", "", config)
+              config = f"{config.rstrip(chr(10))}\n{setting} = {value}\n"
+
           origins = {
               "API_URL": "API_BASE_URL",
               "POWERSYNC_URL": "POWERSYNC_BASE_URL",
+              "POSTHOG_HOST": "POSTHOG_HOST",
           }
           for setting, variable in origins.items():
               origin = os.environ[variable]
               if not re.fullmatch(r"https://[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", origin):
                   raise SystemExit(f"::error::{variable} must be a public HTTPS origin")
-              config = re.sub(rf"(?m)^[ \t]*{setting}[ \t]*=[^\n]*(?:\n|$)", "", config)
-              escaped = origin.replace("//", "/$()/", 1)
-              config = f"{config.rstrip(chr(10))}\n{setting} = {escaped}\n"
+              replace(setting, origin.replace("//", "/$()/", 1))
+          # The project token ships in the app, so only accept a public
+          # phc_ project token, never a personal phx_ API key.
+          token = os.environ["POSTHOG_PROJECT_TOKEN"]
+          if not re.fullmatch(r"phc_[A-Za-z0-9]+", token):
+              raise SystemExit("::error::POSTHOG_PROJECT_TOKEN must be a PostHog project token (phc_...)")
+          replace("POSTHOG_PROJECT_TOKEN", token)
           Path("Config/Secrets.xcconfig").write_text(config)
           PYCONFIG
 
@@ -201,6 +214,8 @@ jobs:
         env:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
           POWERSYNC_BASE_URL: ${{ vars.POWERSYNC_BASE_URL }}
+          POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
         run: |
           python3 - <<'PYCONFIG'
           import os
@@ -210,7 +225,12 @@ jobs:
           info_path = Path(os.environ["ARCHIVE_PATH"]) / "Products/Applications" / f"{os.environ['SCHEME']}.app" / "Info.plist"
           with info_path.open("rb") as info_file:
               info = plistlib.load(info_file)
-          for key, variable in (("API_URL", "API_BASE_URL"), ("POWERSYNC_URL", "POWERSYNC_BASE_URL")):
+          for key, variable in (
+              ("API_URL", "API_BASE_URL"),
+              ("POWERSYNC_URL", "POWERSYNC_BASE_URL"),
+              ("POSTHOG_HOST", "POSTHOG_HOST"),
+              ("POSTHOG_PROJECT_TOKEN", "POSTHOG_PROJECT_TOKEN"),
+          ):
               if not os.environ[variable] or info.get(key) != os.environ[variable]:
                   raise SystemExit(f"::error::Archived {key} does not match {variable}")
           PYCONFIG

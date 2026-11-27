@@ -4,7 +4,7 @@ import Foundation
 ///
 /// A missing, unresolved or placeholder origin becomes a configuration error
 /// instead of a crash: simulator and pull-request builds deliberately use the
-/// example xcconfig. An empty `SENTRY_DSN` disables Sentry.
+/// example xcconfig. An empty `POSTHOG_PROJECT_TOKEN` disables PostHog.
 enum AppSecrets {
     static let apiConfigurationError = configurationError(for: "API_URL")
     static let apiURL = origin(from: string(for: "API_URL")) ?? URL(string: "https://configuration.invalid")!
@@ -12,7 +12,9 @@ enum AppSecrets {
     static let powerSyncConfigurationError = configurationError(for: "POWERSYNC_URL")
     static let powerSyncURL = origin(from: string(for: "POWERSYNC_URL"))
 
-    static let sentryDSN = string(for: "SENTRY_DSN")
+    static let postHogProjectToken = string(for: "POSTHOG_PROJECT_TOKEN")
+    /// PostHog ingestion origin; unset falls back to the SDK default.
+    static let postHogHost = origin(from: string(for: "POSTHOG_HOST"))
 
     /// `<scheme>://auth-callback`, where the scheme is the one registered by the
     /// `*.auth` URL type in `Info.plist` (generated from `project.yml`).

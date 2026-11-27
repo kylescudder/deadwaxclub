@@ -62,7 +62,7 @@ struct SharingCopy: Hashable, Sendable {
 /// Members table columns: `<spaceColumn>, user_id, role, invited_by, joined_at`.
 /// Invites table columns: `<spaceColumn>, email, role, invited_by, created_at, accepted_at`.
 struct SharingSpace: Hashable, Sendable {
-    /// Short name for logs and Sentry categories.
+    /// Short name for log and error-report categories.
     let name: String
     let membersTable: String
     let invitesTable: String

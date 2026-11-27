@@ -69,7 +69,7 @@ step "Local secrets"
 if [[ ! -f Config/Secrets.xcconfig ]]; then
     cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
     warn "Created Config/Secrets.xcconfig from the example — fill in real values before running against a backend."
-    note "API_URL, POWERSYNC_URL, optional PUSH_GATEWAY_URL and SENTRY_DSN"
+    note "API_URL, POWERSYNC_URL, optional PUSH_GATEWAY_URL and POSTHOG_PROJECT_TOKEN"
     note "Escape URLs as https:/\$()/… in xcconfig files."
 else
     ok "Config/Secrets.xcconfig already exists"
