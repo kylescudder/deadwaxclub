@@ -103,7 +103,7 @@ The shared files read app-specific values from these places only:
 - GitHub secrets `IOS_<APP>_PROFILE_BASE64` and
   `IOS_<APP>_WIDGETS_PROFILE_BASE64`, where `<APP>` is the upper-case name.
 - GitHub variable `POSTHOG_HOST` and secret `POSTHOG_PROJECT_TOKEN` — the
-  app's PostHog project, written into TestFlight builds.
+  PostHog project all the apps share, written into TestFlight builds.
 
 ## Conventions
 
@@ -139,9 +139,12 @@ The shared files read app-specific values from these places only:
   never `print`. Breadcrumbs become PostHog exception steps, which the SDK
   attaches to every error, warning and crash report and never sends alone.
   PostHog runs with lifecycle events and crash capture on, and screen views,
-  autocapture, session replay and surveys off. `AppServices.applyAuth` passes
+  autocapture, session replay and surveys off. The apps share one PostHog
+  project: `beforeSend` tags every event, error and crash report with `app`
+  (the target name), and identified users are `<bundle ID>:<user ID>`, so
+  accounts from different apps never merge. `AppServices.applyAuth` passes
   each auth state to `Analytics.authStateChanged(_:)`, which identifies the
-  signed-in user ID (never the email) and resets only when a session it saw
+  signed-in account (never the email) and resets only when a session it saw
   signed in ends, so bootstrapping and signed-out launches keep the identity.
 - **Data.** Repositories read with `database.watch` and write to local SQLite;
   PowerSync uploads through `APIConnector`. Deletes are soft (`deleted_at`).
