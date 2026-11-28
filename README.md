@@ -230,7 +230,7 @@ wait for Apple's processing of an earlier upload.
 |---|---|---|
 | `API_BASE_URL`, `POWERSYNC_BASE_URL` | repository variables | Release origins written into the build |
 | `POSTHOG_HOST` | repository variable | PostHog ingestion origin written into the build |
-| `POSTHOG_PROJECT_TOKEN` | secret | PostHog project token (`phc_…`) written into the build |
+| `POSTHOG_PROJECT_TOKEN` | secret | Token (`phc_…`) of the PostHog project the apps share; events carry `app` |
 | `IOS_SECRETS_XCCONFIG` | secret | Release `Secrets.xcconfig` (the values above replace its URLs and PostHog token) |
 | `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_API_KEY_ISSUER_ID`, `APP_STORE_CONNECT_API_KEY_P8` | secrets | App Store Connect API key for upload |
 | `APPLE_TEAM_ID` | secret | Development team written into `project.yml` |
